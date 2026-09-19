@@ -1,15 +1,28 @@
-"""WHOIS + DNS/MX lookups (Tracker Phase 2). Offline-safe with timeouts."""
-from typing import Any
+"""WHOIS + DNS/MX lookups. Offline-safe; live lookups only when ENABLE_LIVE_LOOKUPS=1."""
+import os
 import socket
+from functools import lru_cache
+from typing import Any
+
+
+def _live() -> bool:
+    return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
 
 
 def whois_lookup(domain: str) -> dict[str, Any]:
     domain = (domain or "").strip().lower().lstrip("<>").split("@")[-1].strip(" <>")
     if not domain or "." not in domain:
         return {}
+    if not _live():
+        return {"domain": domain, "note": "live-lookups-disabled"}
     try:
         import whois
-        w = whois.whois(domain)
+        # python-whois has no timeout; run with a socket-level guard.
+        socket.setdefaulttimeout(4)
+        try:
+            w = whois.whois(domain)
+        finally:
+            socket.setdefaulttimeout(None)
         creation = str(w.creation_date) if w.creation_date else ""
         return {
             "domain": domain,
@@ -22,37 +35,34 @@ def whois_lookup(domain: str) -> dict[str, Any]:
         return {"domain": domain, "error": f"whois-unavailable: {e}"[:300]}
 
 
+@lru_cache(maxsize=1024)
 def dns_lookup(domain: str) -> dict[str, Any]:
     domain = (domain or "").strip().lower().split("@")[-1].strip(" <>")
     out: dict[str, Any] = {"domain": domain, "mx": [], "a": [], "txt_spf": ""}
     if not domain or "." not in domain:
         return out
+    if not _live():
+        return out
     try:
         import dns.resolver
         try:
-            mx = dns.resolver.resolve(domain, "MX", lifetime=5)
+            mx = dns.resolver.resolve(domain, "MX", lifetime=2)
             out["mx"] = sorted([f"{r.preference} {r.exchange}" for r in mx])[:10]
         except Exception:
             pass
         try:
-            a = dns.resolver.resolve(domain, "A", lifetime=5)
+            a = dns.resolver.resolve(domain, "A", lifetime=2)
             out["a"] = [r.to_text() for r in a][:10]
         except Exception:
             pass
         try:
-            txt = dns.resolver.resolve(domain, "TXT", lifetime=5)
+            txt = dns.resolver.resolve(domain, "TXT", lifetime=2)
             txts = [b"".join(r.strings).decode(errors="ignore") for r in txt]
             out["txt_spf"] = next((t for t in txts if "v=spf1" in t), "")[:500]
         except Exception:
             pass
     except Exception:
         pass
-    # socket fallback for A
-    if not out["a"]:
-        try:
-            out["a"] = [socket.gethostbyname(domain)]
-        except Exception:
-            pass
     return out
 
 

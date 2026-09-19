@@ -1,4 +1,12 @@
-"""End-to-end pipeline: AppFlow.md Ingest -> Process -> Correlate/Score -> Alert -> Store."""
+"""End-to-end pipeline: AppFlow.md Ingest -> Process -> Correlate/Score -> Alert -> Store.
+
+Robustness contract: a single enrichment failing (DNS down, lib missing, weird
+MIME) must NEVER fail the whole ingestion. Each stage is guarded; blocking
+network lookups run in threads with tight timeouts and are disabled by default
+(ENABLE_LIVE_LOOKUPS=1 to opt in).
+"""
+import asyncio
+import logging
 import re
 from sqlalchemy.orm import Session
 from ..models import EmailRecord, AnalysisResult, TraceabilityData
@@ -11,7 +19,7 @@ from ..modules.traceability.geoip import geolocate
 from ..modules.traceability.whois_dns import whois_lookup, dns_lookup, domain_age_days
 from ..modules.traceability.vpn_tor import flag_infrastructure
 from ..modules.nlp.engine import analyze_text
-from ..modules.threat_intel.url_analyzer import extract_urls, analyze_urls
+from ..modules.threat_intel.url_analyzer import extract_urls, analyze_urls, domain_of
 from ..modules.threat_intel.feeds import aggregate_threat_intel
 from ..modules.correlation.scoring import compute_scores
 from ..modules.graph.store import upsert_email_graph
@@ -19,41 +27,125 @@ from ..modules.graph.attribution import attribute
 from ..modules.privacy.masking import mask_text
 from ..modules.alerting.dispatcher import dispatch_alert
 
+log = logging.getLogger("pipeline")
+
 
 def _sender_domain(from_addr: str) -> str:
     m = re.search(r"@([\w.\-]+)", from_addr or "")
-    return m.group(1).lower() if m else ""
+    return m.group(1).lower().rstrip(".") if m else ""
+
+
+def _url_domains(urls: list[str]) -> list[str]:
+    out: list[str] = []
+    for u in urls[:10]:
+        try:
+            d = domain_of(u)
+            if d and "." in d and d not in out:
+                out.append(d)
+        except Exception:
+            continue
+    return out
+
+
+async def _to_thread(fn, *args, **kwargs):
+    try:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    except Exception as e:
+        log.warning("enrichment %s failed: %s", getattr(fn, "__name__", fn), e)
+        return None
 
 
 async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "", unmask: bool = False) -> dict:
+    if not raw or not raw.strip():
+        raise ValueError("empty email payload")
+
     parsed = parse_eml(raw)
-    headers = parsed["raw_headers"]
-    path = reconstruct_path(headers)
-    hinfo = parse_headers(headers)
-    routing_flags = detect_routing_anomalies(path, headers)
-    origin_ip = extract_origin_ip(path)
-    geo = geolocate(origin_ip)
-    domain = _sender_domain(hinfo.get("from_addr") or parsed["sender_address"])
-    whois = whois_lookup(domain)
-    dnsd = dns_lookup(domain)
-    age = domain_age_days(whois)
-    infra = flag_infrastructure(origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")))
-    auth = validate_all(raw, headers, origin_ip or "127.0.0.1", envelope_from or hinfo.get("return_path"))
-    nlp = analyze_text(parsed["subject"], parsed["body_text"])
-    urls = extract_urls(parsed["body_text"] + "\n" + parsed.get("body_html", ""))
-    url_res = analyze_urls(urls)
-    intel = aggregate_threat_intel([domain], [origin_ip] if origin_ip else [], urls)
+    headers = parsed.get("raw_headers", {})
+
+    try:
+        path = reconstruct_path(headers)
+    except Exception as e:
+        log.warning("reconstruct_path failed: %s", e)
+        path = []
+    try:
+        hinfo = parse_headers(headers)
+    except Exception as e:
+        log.warning("parse_headers failed: %s", e)
+        hinfo = {"from_addr": parsed.get("sender_address", ""), "return_path": "", "flags": []}
+    try:
+        routing_flags = detect_routing_anomalies(path, headers)
+    except Exception:
+        routing_flags = []
+
+    try:
+        origin_ip = extract_origin_ip(path) or ""
+    except Exception:
+        origin_ip = ""
+
+    # Blocking enrichment concurrently in threads (each is internally guarded).
+    geo, whois, dnsd, infra, auth = await asyncio.gather(
+        _to_thread(geolocate, origin_ip),
+        _to_thread(whois_lookup, _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))),
+        _to_thread(dns_lookup, _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))),
+        _to_thread(flag_infrastructure, origin_ip, "", ""),
+        _to_thread(validate_all, raw, headers, origin_ip or "127.0.0.1", envelope_from or hinfo.get("return_path", "")),
+    )
+    geo = geo or {"lat": 0.0, "lon": 0.0, "country": "", "city": "", "source": "fallback"}
+    whois = whois or {}
+    dnsd = dnsd or {}
+    infra = infra or {"is_vpn_tor": False, "infra_flags": []}
+    auth = auth or {"spf": {}, "dkim": {}, "dmarc": {}, "aligned": False}
+
+    # geo may lack isp/asn when offline — refresh infra flags with what we have
+    try:
+        infra = flag_infrastructure(origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")))
+    except Exception:
+        pass
+
+    domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
+    try:
+        age = domain_age_days(whois)
+    except Exception:
+        age = None
+
+    try:
+        nlp = analyze_text(parsed.get("subject", ""), parsed.get("body_text", ""))
+    except Exception as e:
+        log.warning("nlp failed: %s", e)
+        nlp = {"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []}
+
+    try:
+        urls = extract_urls((parsed.get("body_text") or "") + "\n" + (parsed.get("body_html") or ""))
+    except Exception:
+        urls = []
+    try:
+        url_res = analyze_urls(urls)
+    except Exception as e:
+        log.warning("url analysis failed: %s", e)
+        url_res = {"urls": urls[:50], "hits": [], "malicious_count": 0}
+    try:
+        intel = aggregate_threat_intel([domain] if domain else [], [origin_ip] if origin_ip else [], urls)
+    except Exception as e:
+        log.warning("threat intel failed: %s", e)
+        intel = {"hits": [], "count": 0}
     intel["malicious_count"] = url_res.get("malicious_count", 0)
     intel_hits = intel.get("hits", []) + [{"type": "url", **h} for h in url_res.get("hits", [])]
-    contains_payment = bool(re.search(r"pay|wire|transfer|invoice|bank|payment", parsed["body_text"], re.I))
-    scoring = compute_scores(nlp, auth, intel, routing_flags, hinfo.get("flags", []), age, contains_payment)
 
-    masked_body = mask_text(parsed["body_text"], unmask=unmask)
+    body = parsed.get("body_text", "") or ""
+    contains_payment = bool(re.search(r"pay|wire|transfer|invoice|bank|payment", body, re.I))
+    try:
+        scoring = compute_scores(nlp, auth, intel, routing_flags, hinfo.get("flags", []), age, contains_payment)
+    except Exception as e:
+        log.warning("scoring failed: %s", e)
+        scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
+                   "action": "Deliver", "breakdown": {}}
+
+    masked_body = mask_text(body, unmask=unmask)
     email_row = EmailRecord(
-        message_id=parsed["message_id"], sender_address=parsed["sender_address"],
-        recipient_address=parsed["recipient_address"], subject=parsed["subject"],
-        raw_headers=headers, body_text=parsed["body_text"], body_text_masked=masked_body,
-        attachments_metadata=parsed["attachments_metadata"], raw_eml_hash=parsed["raw_eml_hash"],
+        message_id=parsed.get("message_id", ""), sender_address=parsed.get("sender_address", ""),
+        recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
+        raw_headers=headers, body_text=body, body_text_masked=masked_body,
+        attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
     )
     db.add(email_row)
     db.flush()
@@ -61,13 +153,13 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     trace_row = TraceabilityData(
         email_id=email_row.id, origin_ip=origin_ip, relay_chain=path,
         geolocation=geo, isp_asn=f"{geo.get('isp','')} {geo.get('asn','')}".strip(),
-        is_vpn_tor=infra["is_vpn_tor"], whois_data=whois, dns_data=dnsd,
+        is_vpn_tor=bool(infra.get("is_vpn_tor")), whois_data=whois, dns_data=dnsd,
     )
     db.add(trace_row)
     analysis_row = AnalysisResult(
         email_id=email_row.id, fraud_score=scoring["fraud_score"],
         threat_classification=scoring["threat_classification"],
-        nlp_cues_detected=nlp["nlp_cues_detected"] + routing_flags + hinfo.get("flags", []),
+        nlp_cues_detected=list(nlp.get("nlp_cues_detected", [])) + list(routing_flags) + list(hinfo.get("flags", [])),
         authentication_results=auth,
         trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path)},
         threat_intel_hits=intel_hits, action_taken=scoring["action"],
@@ -75,13 +167,25 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     db.add(analysis_row)
     db.commit()
 
-    attribution = attribute(hinfo.get("from_addr"), origin_ip, [domain] + [_d for _d in [u.split("/")[2] for u in urls[:10] if "://" in u] if "." in _d])
-    upsert_email_graph(hinfo.get("from_addr"), origin_ip, [domain], campaign=str(attribution.get("campaign", "")))
-    alert = dispatch_alert(email_row.id, scoring["fraud_score"], scoring["threat_classification"], scoring["breakdown"])
+    try:
+        attribution = attribute(hinfo.get("from_addr", ""), origin_ip, ([domain] if domain else []) + _url_domains(urls))
+    except Exception as e:
+        log.warning("attribution failed: %s", e)
+        attribution = {"campaign": "unknown", "confidence": 0.0, "signals": []}
+    try:
+        upsert_email_graph(hinfo.get("from_addr", ""), origin_ip, [domain] if domain else [],
+                           campaign=str(attribution.get("campaign", "")))
+    except Exception as e:
+        log.warning("graph upsert failed: %s", e)
+    try:
+        alert = dispatch_alert(email_row.id, scoring["fraud_score"], scoring["threat_classification"], scoring.get("breakdown", {}))
+    except Exception as e:
+        log.warning("alert dispatch failed: %s", e)
+        alert = {"severity": "Low", "action": scoring.get("action", "Deliver"), "sent": ["dashboard"]}
 
     return {
         "email_id": email_row.id, "fraud_score": scoring["fraud_score"],
         "classification": scoring["threat_classification"], "action": scoring["action"],
-        "breakdown": scoring["breakdown"], "origin_ip": origin_ip, "geo": geo,
+        "breakdown": scoring.get("breakdown", {}), "origin_ip": origin_ip, "geo": geo,
         "alert": alert, "attribution": attribution,
     }

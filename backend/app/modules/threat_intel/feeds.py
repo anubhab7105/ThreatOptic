@@ -1,8 +1,13 @@
-"""Threat intel: local blocklists + MISP/OTX + VirusTotal/URLhaus wrappers."""
-from typing import Any
+"""Threat intel: local blocklists + MISP/OTX + VirusTotal/URLhaus wrappers (offline-safe)."""
 import os
+from functools import lru_cache
+from typing import Any
 
 SUSPICIOUS_TLDS = {".tk", ".ml", ".ga", ".cf", ".gq", ".top", ".xyz", ".buzz"}
+
+
+def _live() -> bool:
+    return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
 
 
 def check_domain_blocklists(domain: str) -> list[str]:
@@ -17,15 +22,17 @@ def check_domain_blocklists(domain: str) -> list[str]:
     return hits
 
 
+@lru_cache(maxsize=2048)
 def check_ip_blocklists(ip: str) -> list[str]:
-    # placeholder for Spamhaus/DNSBL live checks — implement DNSBL query
     hits: list[str] = []
+    if not ip or not _live():
+        return hits
     try:
         import dns.resolver
         rev = ".".join(reversed(ip.split(".")))
         for zone in ["zen.spamhaus.org"]:
             try:
-                dns.resolver.resolve(f"{rev}.{zone}", "A", lifetime=3)
+                dns.resolver.resolve(f"{rev}.{zone}", "A", lifetime=2)
                 hits.append(f"dnsbl:{zone}")
             except Exception:
                 continue
@@ -44,7 +51,7 @@ def query_misp(value: str) -> dict[str, Any]:
         r = requests.post(
             f"{url.rstrip('/')}/attributes/restSearch",
             headers={"Authorization": key, "Accept": "application/json", "Content-Type": "application/json"},
-            json={"value": value}, timeout=10,
+            json={"value": value}, timeout=5,
         )
         return {"source": "misp", "status": r.status_code, "hits": len(r.json().get("response", {}).get("Attribute", [])) if r.status_code == 200 else 0}
     except Exception as e:

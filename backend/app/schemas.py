@@ -76,3 +76,4 @@ class DashboardStats(BaseModel):
     active_campaigns: int = 0
     by_classification: dict = {}
     recent: list[dict] = []
+    score_distribution: dict = {"critical": 0, "high": 0, "medium": 0, "low": 0}

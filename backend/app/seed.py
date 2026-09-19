@@ -1,10 +1,12 @@
 """Seed demo org + users + 2 sample emails through the pipeline."""
 import asyncio
-from .database import SessionLocal, init_db
-from .models import Organization, User
-from passlib.context import CryptContext
+import hashlib
+import os
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _hash(pw: str) -> str:
+    return "pbkdf2$" + hashlib.pbkdf2_hmac("sha256", pw.encode(), b"soc-demo-salt", 100_000).hex()
+
 
 PHISH_EML = b"""From: "CEO" <ceo@xn--paypa1-secure.top>
 To: finance@company.com
@@ -32,23 +34,27 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.
 
 
 async def main():
+    from .database import SessionLocal, init_db
+    from .models import Organization, User
     init_db()
     db = SessionLocal()
-    if not db.query(Organization).first():
-        org = Organization(name="Demo SOC", compliance_policy={"retention_clean_days": 7, "retention_malicious_days": 90})
-        db.add(org)
-        db.flush()
-        db.add(User(username="admin", password_hash=pwd.hash("admin123"), role="Admin", organization_id=org.id))
-        db.add(User(username="analyst", password_hash=pwd.hash("analyst123"), role="Analyst", organization_id=org.id))
-        db.commit()
-    from .services.pipeline import process_raw_email
-    for raw in (PHISH_EML, CLEAN_EML):
-        try:
-            res = await process_raw_email(db, raw, source="seed")
-            print(res)
-        except Exception as e:
-            print("seed error:", e)
-    db.close()
+    try:
+        if not db.query(Organization).first():
+            org = Organization(name="Demo SOC", compliance_policy={"retention_clean_days": 7, "retention_malicious_days": 90})
+            db.add(org)
+            db.flush()
+            db.add(User(username="admin", password_hash=_hash("admin123"), role="Admin", organization_id=org.id))
+            db.add(User(username="analyst", password_hash=_hash("analyst123"), role="Analyst", organization_id=org.id))
+            db.commit()
+        from .services.pipeline import process_raw_email
+        for raw in (PHISH_EML, CLEAN_EML):
+            try:
+                res = await process_raw_email(db, raw, source="seed")
+                print({k: res.get(k) for k in ("email_id", "fraud_score", "classification", "action")})
+            except Exception as e:
+                print("seed error:", e)
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
