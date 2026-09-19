@@ -1,0 +1,57 @@
+"""Full header parsing: X-Mailer, Message-ID, auth headers, display-name spoof checks."""
+import re
+from typing import Any
+
+EMAIL_RE = re.compile(r"([\w\.\-+]+@[\w\.\-]+\.\w+)")
+DISPLAY_RE = re.compile(r'^\s*"?([^"<]+)"?\s*<([^>]+)>\s*$')
+
+
+def parse_headers(raw_headers: dict[str, Any]) -> dict[str, Any]:
+    frm = str(raw_headers.get("From", ""))
+    reply_to = str(raw_headers.get("Reply-To", ""))
+    return_path = str(raw_headers.get("Return-Path", ""))
+    x_mailer = str(raw_headers.get("X-Mailer", raw_headers.get("User-Agent", "")))
+    message_id = str(raw_headers.get("Message-ID", raw_headers.get("Message-Id", "")))
+    auth_results = str(raw_headers.get("Authentication-Results", ""))
+
+    def extract(addr: str) -> tuple[str, str]:
+        m = DISPLAY_RE.match(addr.strip())
+        if m:
+            return m.group(1).strip().strip('"'), m.group(2).strip()
+        e = EMAIL_RE.search(addr)
+        return "", e.group(1) if e else addr.strip()
+
+    disp_name, from_addr = extract(frm)
+    _, reply_addr = extract(reply_to) if reply_to else ("", "")
+    _, rp_addr = extract(return_path) if return_path else ("", "")
+
+    flags: list[str] = []
+    # display-name spoof: display name looks like email / different domain
+    if disp_name and "@" in disp_name and from_addr and disp_name.strip().lower() != from_addr.lower():
+        flags.append("display-name-spoof")
+    # reply-to mismatch
+    if reply_addr and from_addr and reply_addr.lower() != from_addr.lower():
+        # only flag if domains differ
+        try:
+            d1 = reply_addr.split("@")[1].lower()
+            d2 = from_addr.split("@")[1].lower()
+            if d1 != d2:
+                flags.append("reply-to-mismatch")
+        except IndexError:
+            flags.append("reply-to-mismatch")
+    # lookalike: punycode / homoglyph hints
+    for val in [from_addr, reply_addr, rp_addr]:
+        if "xn--" in val.lower():
+            flags.append("punycode-domain")
+            break
+
+    return {
+        "from_display": disp_name,
+        "from_addr": from_addr,
+        "reply_to": reply_addr,
+        "return_path": rp_addr,
+        "x_mailer": x_mailer,
+        "message_id": message_id,
+        "auth_results_header": auth_results[:2000],
+        "flags": flags,
+    }
