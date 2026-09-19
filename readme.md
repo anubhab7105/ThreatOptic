@@ -40,7 +40,12 @@ docker compose up --build
 - GET /api/v1/reports/{id}.pdf / .json | GET /api/v1/graph/related?value=...
 - POST /api/v1/cases | PATCH /api/v1/cases/{id}
 
-Default SQLite file: `email_forensics.db`. Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
+Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
+
+### Configuration
+- `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
+- `VITE_API_URL` (frontend) — backend base URL for split hosting; same-origin by default. See `frontend/.env.example`.
+- Health: `GET /health` (liveness) and `GET /health/detailed` (DB + NLP status).
 
 ## Contributing
 Please adhere to the coding standards defined in the repository wiki. Ensure all commits referencing feature additions are tied to tasks in `Tracker.md`.

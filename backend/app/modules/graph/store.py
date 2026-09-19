@@ -76,9 +76,13 @@ def related_entities(value: str, depth: int = 2) -> dict[str, Any]:
     if key is None:
         return {"nodes": [], "edges": []}
     sub = nx.ego_graph(G.to_undirected(), key, radius=depth)
+    edges = []
+    for u, v in sub.edges:
+        data = sub.get_edge_data(u, v) or {}
+        edges.append({"source": u, "target": v, "rel": data.get("rel", "")})
     return {
         "nodes": [{"id": n, **G.nodes[n]} for n in sub.nodes],
-        "edges": [{"source": u, "target": v, "rel": G[u][v].get("rel", "")} for u, v in sub.edges],
+        "edges": edges,
     }
 
 

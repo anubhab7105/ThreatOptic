@@ -1,6 +1,11 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+// Dev proxy target: `VITE_PROXY_TARGET=http://localhost:8000 npm run dev` to point elsewhere.
+const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000';
+
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173, proxy: { '/api': 'http://localhost:8000' } }
-})
+  server: { port: 5173, proxy: { '/api': { target: proxyTarget, changeOrigin: true } } },
+  preview: { port: 4173 },
+});

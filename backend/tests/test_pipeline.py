@@ -67,3 +67,23 @@ def test_report_pdf():
     from app.modules.reporting.generator import build_report_pdf
     pdf = build_report_pdf({"subject": "t", "sender_address": "a@b.c"}, {"fraud_score": 95, "threat_classification": "Critical", "nlp_cues_detected": [], "authentication_results": {}, "action_taken": "Quarantine"}, {"origin_ip": "1.1.1.1", "geolocation": {}, "relay_chain": [], "isp_asn": "", "is_vpn_tor": False}, {"campaign": "unknown", "confidence": 0, "signals": []})
     assert pdf[:4] == b"%PDF"
+
+
+def test_graph_related_no_crash():
+    from app.modules.graph.store import upsert_email_graph, related_entities
+    upsert_email_graph("ceo@xn--paypa1-secure.top", "45.148.10.88", ["xn--paypa1-secure.top"])
+    rel = related_entities("ceo@xn--paypa1-secure.top")
+    assert len(rel["nodes"]) >= 2
+    # full display-name header must also resolve (API extracts bare email)
+    import re
+    m = re.search(r"[\w.\-+]+@[\w.\-]+\.\w+", '"CEO" <ceo@xn--paypa1-secure.top>')
+    assert m and related_entities(m.group(0))["nodes"]
+
+
+def test_api_validation():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        assert c.post("/api/v1/emails/ingest", json={"raw": ""}).status_code == 422
+        assert c.get("/api/v1/emails/does-not-exist").status_code == 404
+        assert c.post("/api/v1/cases", json={"title": ""}).status_code == 400
