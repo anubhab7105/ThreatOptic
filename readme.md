@@ -18,7 +18,29 @@ Please refer to the following markdown files in this repository to understand th
 8. [System Rules (Rules)](Rules.md) - Detection thresholds, privacy safeguards, and compliance policies.
 
 ## Getting Started (Developer Setup)
-*(Instructions for local deployment will be populated here as microservices are developed.)*
+
+### Option A — local (SQLite, no infra)
+```bash
+python3 backend/scripts/train_nlp.py
+PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
+# in another shell:
+cd frontend && npm install && npm run dev
+# API: http://localhost:8000/docs  UI: http://localhost:5173
+```
+
+### Option B — full stack (Postgres, Neo4j, Elastic, Kafka)
+```bash
+docker compose up --build
+# backend http://localhost:8000/docs  frontend http://localhost:5173
+```
+
+### Key API
+- POST /api/v1/emails/ingest {"raw": "<rfc822>"} | POST /api/v1/emails/upload (.eml)
+- GET /api/v1/emails/{id} | GET /api/v1/dashboard
+- GET /api/v1/reports/{id}.pdf / .json | GET /api/v1/graph/related?value=...
+- POST /api/v1/cases | PATCH /api/v1/cases/{id}
+
+Default SQLite file: `email_forensics.db`. Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 
 ## Contributing
 Please adhere to the coding standards defined in the repository wiki. Ensure all commits referencing feature additions are tied to tasks in `Tracker.md`.

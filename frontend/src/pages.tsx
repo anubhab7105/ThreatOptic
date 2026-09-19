@@ -62,6 +62,32 @@ function Upload({ onDone }: { onDone: () => void }) {
   return <div style={{ marginTop: 8 }}><input type="file" onChange={e => up(e.target.files?.[0])} /> upload .eml</div>;
 }
 
+function GraphSvg({ graph }: { graph: any }) {
+  const nodes: any[] = graph?.nodes ?? [];
+  const edges: any[] = graph?.edges ?? [];
+  if (!nodes.length) return <p>No related entities yet.</p>;
+  const w = 600, h = 300;
+  const pos = nodes.map((_, i) => ({
+    x: 60 + (i * (w - 120)) / Math.max(1, nodes.length - 1),
+    y: h / 2 + (i % 2 === 0 ? -60 : 60),
+  }));
+  const idx = new Map(nodes.map((n, i) => [n.id, i]));
+  return (
+    <svg width={w} height={h} style={{ background: '#111827', borderRadius: 8 }}>
+      {edges.map((e, i) => {
+        const a = pos[idx.get(e.source) ?? 0], b = pos[idx.get(e.target) ?? 0];
+        return a && b ? <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#60a5fa" /> : null;
+      })}
+      {nodes.map((n, i) => (
+        <g key={n.id}>
+          <circle cx={pos[i].x} cy={pos[i].y} r={18} fill={n.kind === 'Domain' ? '#f97316' : n.kind === 'IP_Address' ? '#ef4444' : '#22c55e'} />
+          <text x={pos[i].x} y={pos[i].y + 32} fill="#e5e7eb" fontSize={10} textAnchor="middle">{String(n.id).slice(0, 24)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 export function EmailView({ id }: { id: string }) {
   const [d, setD] = useState<any>(null);
   const [tab, setTab] = useState(0);
@@ -107,11 +133,25 @@ export function EmailView({ id }: { id: string }) {
           <p>WHOIS: <code>{JSON.stringify(d.trace?.whois)}</code></p>
           <p>DNS: <code>{JSON.stringify(d.trace?.dns)}</code></p>
           {d.trace?.geolocation?.lat ? (
-            <a target="_blank" href={`https://www.openstreetmap.org/?mlat=${d.trace.geolocation.lat}&mlon=${d.trace.geolocation.lon}#map=5/${d.trace.geolocation.lat}/${d.trace.geolocation.lon}`}>Open map (OSM)</a>
-          ) : null}
+            <>
+              <a target="_blank" href={`https://www.openstreetmap.org/?mlat=${d.trace.geolocation.lat}&mlon=${d.trace.geolocation.lon}#map=5/${d.trace.geolocation.lat}/${d.trace.geolocation.lon}`}>Open map (OSM)</a>
+              <br />
+              <iframe
+                title="geo"
+                width="100%"
+                height="350"
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${d.trace.geolocation.lon - 10}%2C${d.trace.geolocation.lat - 10}%2C${d.trace.geolocation.lon + 10}%2C${d.trace.geolocation.lat + 10}&layer=mapnik&marker=${d.trace.geolocation.lat}%2C${d.trace.geolocation.lon}`}
+              />
+            </>
+          ) : <p>No coordinates (private/unknown IP).</p>}
         </div>
       )}
-      {tab === 3 && <pre style={{ background: '#111827', padding: 12 }}>{JSON.stringify(graph, null, 2)}</pre>}
+      {tab === 3 && (
+        <div>
+          <GraphSvg graph={graph} />
+          <pre style={{ background: '#111827', padding: 12 }}>{JSON.stringify(graph, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }
