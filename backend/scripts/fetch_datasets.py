@@ -83,7 +83,7 @@ def fetch(force: bool = False) -> str:
                 if not f:
                     continue
                 try:
-                    msg = email.message_from_binary(f)
+                    msg = email.message_from_bytes(f.read())
                     subject = str(msg.get("Subject", "") or "")
                     body = _body_text(msg)
                     text = f"{subject}\n{body}".strip()

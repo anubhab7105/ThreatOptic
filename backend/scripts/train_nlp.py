@@ -79,8 +79,9 @@ CLEAN = [
     "The quarterly all-hands recording is posted for those who missed it",
 ]
 
-TEST_SIZE = 0.25
+TEST_SIZE = 0.2
 RANDOM_STATE = 42
+LABELS = ("phishing", "bec", "clean")
 
 
 def get_data() -> tuple[list[str], list[str]]:
@@ -89,10 +90,32 @@ def get_data() -> tuple[list[str], list[str]]:
     return X, y
 
 
+def dataset_csv_path() -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ml_models", "dataset.csv")
+
+
+def load_training_data() -> tuple[list[str], list[str], str]:
+    """Real corpus (fetch_datasets.py) when present, else curated fallback."""
+    path = dataset_csv_path()
+    if os.path.exists(path):
+        import csv
+        X, y = [], []
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                text, label = (row.get("text") or "").strip(), (row.get("label") or "").strip()
+                if text and label in LABELS:
+                    X.append(text)
+                    y.append(label)
+        if X:
+            return X, y, f"dataset.csv ({len(X)} rows)"
+    X, y = get_data()
+    return X, y, f"curated fallback ({len(X)} rows)"
+
+
 def build_pipeline() -> Pipeline:
     return Pipeline([
         ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=5000)),
-        ("clf", LogisticRegression(max_iter=1000)),
+        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced")),
     ])
 
 
@@ -103,7 +126,7 @@ def out_paths() -> tuple[str, str]:
 
 
 def main() -> dict:
-    X, y = get_data()
+    X, y, source = load_training_data()
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
     )
@@ -132,6 +155,7 @@ def main() -> dict:
         "confusion_labels": labels,
         "n_train": len(X_train),
         "n_test": len(X_test),
+        "dataset": source,
         "test_size": TEST_SIZE,
         "random_state": RANDOM_STATE,
         "classes": [str(c) for c in pipe.classes_],
