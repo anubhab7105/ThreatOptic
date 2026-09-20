@@ -72,6 +72,7 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
         "auth": round(WEIGHTS["auth"] * auth_score, 2),
         "intel": round(WEIGHTS["intel"] * intel_score, 2),
         "routing": round(WEIGHTS["routing"] * routing_score, 2),
+        "attachment": round(WEIGHTS["attachment"] * attachment_score, 2),
     }
     signals: list[dict[str, Any]] = [
         {
@@ -101,6 +102,13 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
             "value": round(routing_score, 2),
             "contribution_to_score": contrib["routing"],
             "detail": f"routing={routing_flags or []} header={header_flags or []}",
+        },
+        {
+            "signal_name": "attachment_risk",
+            "weight": WEIGHTS["attachment"],
+            "value": round(attachment_score, 2),
+            "contribution_to_score": contrib["attachment"],
+            "detail": f"suspicious_attachments={len((attachment or {}).get('findings', []))}",
         },
         {
             "signal_name": "new_domain_payment_rule",
