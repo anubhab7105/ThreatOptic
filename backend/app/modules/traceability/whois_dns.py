@@ -69,10 +69,10 @@ def dns_lookup(domain: str) -> dict[str, Any]:
 def domain_age_days(whois_data: dict) -> int | None:
     """Best-effort parse of creation_date to days. None if unknown."""
     from datetime import datetime, timezone
-    raw = str(whois_data.get("creation_date", ""))[:100]
-    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+    raw = str(whois_data.get("creation_date", "")).strip()[:25]
+    for fmt, width in (("%Y-%m-%d", 10), ("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19)):
         try:
-            dt = datetime.strptime(raw[: len(fmt)], fmt).replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(raw[:width], fmt).replace(tzinfo=timezone.utc)
             return (datetime.now(timezone.utc) - dt).days
         except Exception:
             continue
