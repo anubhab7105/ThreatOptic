@@ -1,6 +1,63 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ApiError, jdel, jget, jpatch, jpost, reportJsonUrl, reportPdfUrl, uploadEmFile } from './api';
+import { ApiError, downloadReport, jdel, jget, jpatch, jpost, uploadEmFile } from './api';
+import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
+
+/* ---------------- Login ---------------- */
+
+export function LoginPage() {
+  const { login, register } = useAuth();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!username.trim() || !password) return;
+    setBusy(true);
+    setErr('');
+    try {
+      if (mode === 'login') await login(username.trim(), password);
+      else await register(username.trim(), password);
+    } catch (e) {
+      setErr(e instanceof ApiError ? `Authentication failed (${e.status}): ${e.message}` : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="page" style={{ maxWidth: 440 }}>
+      <h1>SOC Sign in</h1>
+      <p className="sub">JWT-secured access to the forensic intelligence platform.</p>
+      <div className="card">
+        <div className="tabs">
+          {(['login', 'register'] as const).map((m) => (
+            <button key={m} className={mode === m ? 'active' : ''} onClick={() => { setMode(m); setErr(''); }}>
+              {m === 'login' ? 'Sign in' : 'Register'}
+            </button>
+          ))}
+        </div>
+        <Toast msg={err} />
+        <div className="grid" style={{ gap: 10 }}>
+          <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} autoComplete="username" />
+          <input type="password" placeholder={mode === 'register' ? 'Password (min 8 chars)' : 'Password'} value={password}
+            onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+          <button onClick={submit} disabled={busy || !username.trim() || !password}>
+            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create analyst account'}
+          </button>
+        </div>
+        <p className="sub" style={{ marginTop: 12, marginBottom: 0 }}>
+          {mode === 'register'
+            ? 'New accounts join as Analyst (first-ever account becomes Admin).'
+            : 'Demo seed: admin / admin123, analyst / analyst123.'}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 const PHISH_SAMPLE = `From: "CEO" <ceo@xn--paypa1-secure.top>
 To: finance@company.com
