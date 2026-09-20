@@ -1,7 +1,7 @@
 """Weighted fraud-score ensemble (0-100) + Rules.md thresholds & behavioral rules."""
 from typing import Any
 
-WEIGHTS = {"nlp": 0.35, "auth": 0.25, "intel": 0.25, "routing": 0.15}
+WEIGHTS = {"nlp": 0.30, "auth": 0.25, "intel": 0.20, "routing": 0.15, "attachment": 0.10}
 
 
 def _clamp(x: float) -> float:
@@ -9,7 +9,8 @@ def _clamp(x: float) -> float:
 
 
 def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str], header_flags: list[str],
-                    domain_age_days: int | None, contains_payment: bool) -> dict[str, Any]:
+                    domain_age_days: int | None, contains_payment: bool,
+                    attachment: dict | None = None) -> dict[str, Any]:
     nlp_score = float(nlp.get("ml_score", 0.0)) * 100.0
     # auth: pass=0 risk, fail/none partial
     spf = auth.get("spf", {}).get("status", "")
@@ -19,9 +20,12 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
     auth_score = min(100.0, fails * 45.0 + (0 if auth.get("aligned") else 15.0))
     intel_score = min(100.0, 40.0 * intel.get("count", 0) + 35.0 * intel.get("malicious_count", 0))
     routing_score = min(100.0, 30.0 * len(routing_flags) + 20.0 * len(header_flags))
+    attachment = attachment or {}
+    attachment_score = min(100.0, max(0.0, float(attachment.get("risk", 0.0))))
 
     base = (WEIGHTS["nlp"] * nlp_score + WEIGHTS["auth"] * auth_score
-            + WEIGHTS["intel"] * intel_score + WEIGHTS["routing"] * routing_score)
+            + WEIGHTS["intel"] * intel_score + WEIGHTS["routing"] * routing_score
+            + WEIGHTS["attachment"] * attachment_score)
 
     extras: list[str] = []
     # Behavioral rule: new domain (<30d) + payment instructions => +30
