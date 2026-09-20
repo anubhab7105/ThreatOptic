@@ -11,6 +11,7 @@ bcrypt==4.0.1
 PyJWT>=2.8
 aiosmtpd>=1.4.5
 aiosmtplib>=2.0.2
+apscheduler>=3.10
 dnspython>=2.7.0
 dkimpy>=1.1.8
 pyspf>=2.0.14

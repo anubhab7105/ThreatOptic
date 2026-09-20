@@ -57,14 +57,22 @@ async def lifespan(app: FastAPI):
     require_custody_key()
     controller = None
     consumer = None
+    scheduler = None
     if settings.smtp_on:
         from .modules.ingestion.smtp_server import start_smtp
         controller = start_smtp(settings.smtp_host, settings.smtp_port)
         consumer = asyncio.create_task(_smtp_consumer())
         log.info("SMTP ingestion listening on %s:%s", settings.smtp_host, settings.smtp_port)
     try:
+        from .services.scheduler import start_scheduler
+        scheduler = start_scheduler()
+    except Exception:
+        log.exception("scheduler failed to start (retention must be run manually)")
+    try:
         yield
     finally:
+        if scheduler:
+            scheduler.shutdown(wait=False)
         if consumer:
             consumer.cancel()
         if controller:
