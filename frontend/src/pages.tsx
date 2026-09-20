@@ -476,6 +476,8 @@ const COLS = [
 ];
 
 export function Cases() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'Admin';
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [title, setTitle] = useState('');
   const [err, setErr] = useState('');
@@ -550,7 +552,7 @@ export function Cases() {
                     {COLS.filter((x) => x.key !== c.key).map((x) => (
                       <button key={x.key} className="ghost small" onClick={() => move(k.id, x.key)}>{x.key}</button>
                     ))}
-                    <button className="danger small" onClick={() => remove(k.id)}>Delete</button>
+                    {isAdmin && <button className="danger small" onClick={() => remove(k.id)}>Delete</button>}
                   </div>
                 </div>
               ))}
