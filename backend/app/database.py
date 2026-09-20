@@ -7,13 +7,20 @@ from .config import get_settings
 def _make_engine():
     settings = get_settings()
     url = settings.resolved_db_url()
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    # SQLite needs generous timeout for concurrent dashboard + ingest; pool tuned for local dev.
+    is_sqlite = url.startswith("sqlite")
+    connect_args = {"check_same_thread": False} if is_sqlite else {}
+    # Supabase via PgBouncer (port 6543, ?pgbouncer=true) uses transaction mode;
+    # keep pool small and pre-ping to avoid stale connections.
+    pool_kwargs = {}
+    if not is_sqlite:
+        if "pgbouncer=true" in url or "supabase" in url or ":6543" in url:
+            pool_kwargs = {"pool_size": 5, "max_overflow": 5, "pool_recycle": 300}
     return create_engine(
         url,
         connect_args=connect_args,
         future=True,
         pool_pre_ping=True,
+        **pool_kwargs,
     )
 
 

@@ -90,7 +90,14 @@ class Settings(BaseSettings):
         return str(self.smtp_enabled).lower() not in ("", "0", "false", "no")
 
     def resolved_db_url(self) -> str:
-        return self.database_url or _default_db_url()
+        url = self.database_url or _default_db_url()
+        # Normalize Supabase / Railway postgres URLs: Heroku-style `postgres://` and
+        # bare `postgresql://` need the psycopg2 driver for SQLAlchemy.
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif url.startswith("postgresql://") and not url.startswith("postgresql+psycopg2://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        return url
 
     @property
     def live_lookups(self) -> bool:
