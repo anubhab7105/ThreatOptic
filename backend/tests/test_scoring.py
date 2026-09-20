@@ -24,7 +24,7 @@ def _base_auth(spf="fail", dkim="fail"):
 def test_signals_sum_to_score():
     intel = {"count": 2, "malicious_count": 1}
     res = compute_scores(_base_nlp(), _base_auth(), intel, ["single-hop-suspicious"], ["reply-to-mismatch"], 10, True)
-    assert "signals" in res and len(res["signals"]) == 7
+    assert "signals" in res and len(res["signals"]) == 8
     for s in res["signals"]:
         assert REQUIRED_KEYS <= set(s), s
     total = round(sum(s["contribution_to_score"] for s in res["signals"]), 2)
@@ -65,8 +65,8 @@ def test_pipeline_persists_breakdown():
     db = sessionmaker(bind=eng)()
     raw = b"From: x@y.top\nTo: z@w.com\nSubject: Urgent wire\n\nKindly wire money now http://malicious-example.com/p"
     res = asyncio.run(process_raw_email(db, raw))
-    assert res["signals"] and len(res["signals"]) == 7
+    assert res["signals"] and len(res["signals"]) == 8
     row = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == res["email_id"]).first()
-    assert row is not None and len(row.score_breakdown) == 7
+    assert row is not None and len(row.score_breakdown) == 8
     total = round(sum(s["contribution_to_score"] for s in row.score_breakdown), 2)
     assert abs(total - row.fraud_score) < 0.1
