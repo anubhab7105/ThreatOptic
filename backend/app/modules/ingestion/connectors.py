@@ -51,6 +51,54 @@ async def get_gmail_profile_email(access_token: str) -> str:
         return r.json().get("emailAddress", "")
 
 
+MS_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+MS_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+MS_SCOPES = "Mail.Read User.Read offline_access"
+
+
+def build_microsoft_auth_url(client_id: str, redirect_uri: str) -> str:
+    from urllib.parse import urlencode
+    return MS_AUTH_URL + "?" + urlencode({
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": MS_SCOPES,
+        "response_mode": "query",
+    })
+
+
+async def exchange_microsoft_code(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict:
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(MS_TOKEN_URL, data={
+            "client_id": client_id, "client_secret": client_secret,
+            "code": code, "redirect_uri": redirect_uri, "grant_type": "authorization_code",
+        })
+        r.raise_for_status()
+        return r.json()
+
+
+async def refresh_microsoft_token(refresh_token: str, client_id: str, client_secret: str) -> dict:
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(MS_TOKEN_URL, data={
+            "client_id": client_id, "client_secret": client_secret,
+            "refresh_token": refresh_token, "grant_type": "refresh_token",
+            "scope": MS_SCOPES,
+        })
+        r.raise_for_status()
+        return r.json()
+
+
+async def get_microsoft_profile_email(access_token: str) -> str:
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.get(
+            "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        r.raise_for_status()
+        j = r.json()
+        return j.get("mail") or j.get("userPrincipalName") or ""
+
+
 async def fetch_o365_messages(access_token: str, folder: str = "inbox", top: int = 25) -> list[dict]:
     """Fetch messages via Microsoft Graph. Returns list of {id, raw_mime} dicts."""
     url = f"https://graph.microsoft.com/v1.0/me/mailFolders/{folder}/messages?$top={top}"

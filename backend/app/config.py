@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = ""
 
+    # Organization mailbox polling (F7): Microsoft Graph credentials,
+    # frontend base URL for OAuth callbacks, poll interval (0 = disabled).
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+    frontend_url: str = "http://localhost:5173"
+    mail_poll_minutes: int = 0
+
     # When "0" (default) all live network enrichment is skipped for speed/
     # offline reliability; set to "1" to enable ip-api/whois/dns/urlhaus/dnsbl.
     enable_live_lookups: str = "0"
