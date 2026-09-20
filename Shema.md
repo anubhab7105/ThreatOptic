@@ -46,6 +46,14 @@ This document outlines the high-level schema for the primary data stores.
 - `threat_classification`: String (e.g., "BEC", "Phishing")
 - `nlp_cues_detected`: Array of Strings
 - `authentication_results`: Object (SPF, DKIM, DMARC status)
+- `score_breakdown`: Array of `{signal_name, weight, value, contribution_to_score}` (explainability; sums to fraud_score)
+
+### `GmailAccount`
+- `id`: UUID (Primary Key)
+- `user_id`: UUID (Foreign Key -> User, unique — one mailbox per user)
+- `gmail_address`: String
+- `refresh_token`: Text (OAuth2 vault for live-demo sync)
+- `last_sync_at`: Timestamp
 
 ### `TraceabilityData`
 - `_id`: UUID

@@ -42,3 +42,10 @@
 - [x] Security penetration testing. → CORS locked down in prod, HMAC custody signatures, masked PII by default; run `pip audit` / OWASP ZAP before prod
 - [x] Deploy to production environment. → `backend/Dockerfile`, `frontend/Dockerfile`, `docker-compose.yml`, `k8s/`
 - [x] User training and documentation release. → `readme.md` Getting Started + `/docs` OpenAPI
+
+## Phase 7: Auth, Explainability, Campaigns, Gmail Demo, Model Transparency
+- [x] JWT auth + RBAC. → `modules/auth/security.py` (passlib/bcrypt + PyJWT access/refresh), `routers/auth.py` (register/login/refresh/me, Admin-only user provisioning), `routers/deps.py` (`get_current_user`, `require_roles`); all `/api/v1/*` protected, case delete + retention Admin-only; frontend `auth.tsx` + LoginPage + guards + authed report downloads. Tests: `tests/test_auth.py` (4 tests).
+- [x] Explainable scoring. → `modules/correlation/scoring.py` returns `signals[]` (`signal_name/weight/value/contribution_to_score`, sums to fraud_score); stored in new `AnalysisResult.score_breakdown` JSON column (additive `init_db` migration); surfaced in EmailView "Why this score?" tab with sorted bar chart. Tests: `tests/test_scoring.py` (4 tests).
+- [x] Campaign / attribution view. → `services/campaigns.py` (cards: id/name/IP/domains/ASN/confidence/email count/first-last seen; detail with filtered graph + email table); `GET /campaigns`, `GET /campaigns/{id}`; frontend Campaigns + CampaignDetail pages reusing GraphSvg. Tests: `tests/test_campaigns.py`.
+- [x] Gmail OAuth2 live demo. → `modules/ingestion/connectors.py` (auth URL, code exchange, refresh, profile); `routers/gmail.py` (status/auth-url/callback/sync/disconnect, per-user `GmailAccount` refresh-token vault); Dashboard "Gmail live import" panel with Connect + Sync now. Tests: `tests/test_gmail.py` (mocked Google HTTP).
+- [x] Model transparency. → `scripts/train_nlp.py` caches `ml_models/metrics.json` (accuracy, macro precision/recall/F1, per-class P/R/F1, confusion matrix, 60-sample curated set); `GET /model/metrics`; frontend Model Info page. Tests: `tests/test_model.py`.

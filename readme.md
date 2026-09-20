@@ -34,11 +34,23 @@ docker compose up --build
 # backend http://localhost:8000/docs  frontend http://localhost:5173
 ```
 
-### Key API
+### Key API (all `/api/v1/*` except `/auth/*` require a JWT bearer token)
+- Auth: POST `/auth/register` | POST `/auth/login` | POST `/auth/refresh` | GET `/auth/me` | POST `/auth/users` (Admin)
 - POST /api/v1/emails/ingest {"raw": "<rfc822>"} | POST /api/v1/emails/upload (.eml)
-- GET /api/v1/emails/{id} | GET /api/v1/dashboard
+- GET /api/v1/emails/{id} (includes `score_breakdown`) | GET /api/v1/dashboard
+- GET /api/v1/campaigns | GET /api/v1/campaigns/{id}
+- GET /api/v1/model/metrics
+- Gmail demo: GET /api/v1/gmail/status | GET /api/v1/gmail/auth-url | POST /api/v1/gmail/callback | POST /api/v1/gmail/sync | DELETE /api/v1/gmail/disconnect
 - GET /api/v1/reports/{id}.pdf / .json | GET /api/v1/graph/related?value=...
-- POST /api/v1/cases | PATCH /api/v1/cases/{id}
+- POST /api/v1/cases | PATCH /api/v1/cases/{id} | DELETE /api/v1/cases/{id} (Admin)
+
+Demo accounts (seeded): `admin / admin123` (Admin), `analyst / analyst123` (Analyst).
+Public self-registration creates Analyst accounts (first-ever account becomes Admin).
+
+### Gmail live demo
+1. Google Cloud console → enable Gmail API → OAuth client (Web), redirect URI = your frontend origin (e.g. `http://localhost:5173/`).
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env (or paste per-request in the UI).
+3. Dashboard → "Gmail live import" → Connect Gmail → approve → paste code → Finish → **Sync now** pulls unread mail through the pipeline.
 
 Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 
