@@ -79,6 +79,13 @@ Organization connectors live under "Mailboxes" in the UI (Google/Microsoft OAuth
 ### Code quality gates
 Backend: `ruff check backend --select E9,F`, `pip-audit -r backend/requirements.txt`, `pytest backend/tests`. Frontend: `npm run lint`, `npm audit --omit=dev --audit-level=high`, `npm test` (Vitest), `npm run build`. All run in `.github/workflows/ci.yml`.
 
+### Live-demo rehearsal
+```bash
+PYTHONPATH=backend uvicorn app.main:app --port 8000   # terminal 1
+python3 backend/scripts/live_demo_check.py            # terminal 2 (uses admin/admin123)
+```
+The script checks env/keys, API health, login, an ingest roundtrip whose Why-breakdown must sum to the score, plus campaigns/model/oauth/gmail endpoints, and exits non-zero with FAIL lines for anything needing attention. For a fully live demo set `ENABLE_LIVE_LOOKUPS=1` with real keys (`VIRUSTOTAL_API_KEY`, MaxMind DB at `GeoLite2-City.mmdb`, `MISP_URL/KEY`) and `SECRET_KEY`/`CUSTODY_KEY` from your secrets manager — rehearse the script once with those set.
+
 ### Configuration
 - `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
