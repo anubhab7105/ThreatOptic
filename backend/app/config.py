@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     slack_webhook_url: str = ""
     pagerduty_routing_key: str = ""
 
+    # Gmail OAuth2 demo connector (optional; per-request overrides also accepted).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+
     # When "0" (default) all live network enrichment is skipped for speed/
     # offline reliability; set to "1" to enable ip-api/whois/dns/urlhaus/dnsbl.
     enable_live_lookups: str = "0"

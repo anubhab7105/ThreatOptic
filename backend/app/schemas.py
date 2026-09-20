@@ -142,3 +142,33 @@ class CampaignDetail(BaseModel):
     card: CampaignCard
     graph: dict = {}
     emails: list[CampaignEmail] = []
+
+
+class GmailStatus(BaseModel):
+    connected: bool = False
+    gmail_address: str = ""
+    last_sync_at: str | None = None
+    client_configured: bool = False
+
+
+class GmailAuthUrlOut(BaseModel):
+    auth_url: str
+
+
+class GmailCallbackIn(BaseModel):
+    code: str = Field(min_length=1)
+    redirect_uri: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+
+
+class GmailSyncIn(BaseModel):
+    max_results: int = Field(default=10, ge=1, le=50)
+    query: str = Field(default="is:unread", max_length=200)
+    client_secret: str | None = None
+
+
+class GmailSyncResult(BaseModel):
+    synced: int = 0
+    email_ids: list[str] = []
+    errors: list[str] = []
