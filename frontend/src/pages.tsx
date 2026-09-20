@@ -258,7 +258,8 @@ export function Dashboard() {
                   <td>{s?.cls ?? '—'}</td>
                   <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
                   <td>
-                    <a href={reportPdfUrl(e.id)}>PDF</a>{' · '}<a href={reportJsonUrl(e.id)}>JSON</a>
+                    <button className="ghost small" onClick={() => downloadReport(e.id, 'pdf')}>PDF</button>{' '}
+                    <button className="ghost small" onClick={() => downloadReport(e.id, 'json')}>JSON</button>
                   </td>
                 </tr>
               );
@@ -340,7 +341,8 @@ export function EmailView({ id }: { id: string }) {
       <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
-        <a href={reportPdfUrl(id)}>forensic PDF</a> · <a href={reportJsonUrl(id)}>JSON</a>
+        <button className="ghost small" onClick={() => downloadReport(id, 'pdf')}>forensic PDF</button>{' '}
+        <button className="ghost small" onClick={() => downloadReport(id, 'json')}>JSON</button>
       </p>
 
       <div className="tabs">
