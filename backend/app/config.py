@@ -60,6 +60,7 @@ class Settings(BaseSettings):
 
     retention_clean_days: int = 7
     retention_malicious_days: int = 90
+    retention_hour: int = 3  # local hour of the daily APScheduler retention run
 
     # Inline SMTP ingestion (F3). Off by default; enable with SMTP_ENABLED=1.
     smtp_enabled: str = "0"
