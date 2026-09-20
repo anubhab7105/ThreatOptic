@@ -118,8 +118,7 @@ def dashboard(db: Session = Depends(get_db)):
 
 
 @router.get("/graph/related")
-def graph_related(value: str = Query(..., min_length=1, max_length=320)):
-    import re
+def graph_related(value: str = Query(..., min_length=1, max_length=320)):    import re
     # Accept full "Name <addr>" headers — extract bare email for lookup.
     m = re.search(r"[\w.\-+]+@[\w.\-]+\.\w+", value or "")
     key = m.group(0) if m else value
