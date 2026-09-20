@@ -1,11 +1,12 @@
 """Auth + RBAC tests: register/login/refresh/me, route protection, Admin-only delete."""
+import hashlib
 import uuid
 
 from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
 from app import models
-from app.modules.auth.security import create_access_token, hash_password
+from app.modules.auth.security import create_access_token, hash_password, verify_password
 from app.config import get_settings
 
 
@@ -46,6 +47,15 @@ def _cleanup(*usernames: str) -> None:
         db.commit()
     finally:
         db.close()
+
+
+def test_password_hashing_bcrypt_and_legacy():
+    assert verify_password("s3cret!!", hash_password("s3cret!!"))
+    assert not verify_password("wrong", hash_password("s3cret!!"))
+    # pre-auth-module seed format must keep verifying (existing local DBs)
+    legacy = "pbkdf2$" + hashlib.pbkdf2_hmac("sha256", b"analyst123", b"soc-demo-salt", 100_000).hex()
+    assert verify_password("analyst123", legacy)
+    assert not verify_password("nope", legacy)
 
 
 def test_register_login_refresh_me():
