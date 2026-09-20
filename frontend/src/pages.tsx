@@ -459,7 +459,7 @@ export function EmailView({ id }: { id: string }) {
         </div>
       )}
 
-      {tab === 2 && (
+      {tab === 3 && (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
           <div className="card">
             <h3>Origin</h3>
@@ -492,7 +492,7 @@ export function EmailView({ id }: { id: string }) {
         </div>
       )}
 
-      {tab === 3 && (
+      {tab === 4 && (
         <div className="card">
           <h3>Identity correlation</h3>
           <GraphSvg graph={graph} />
