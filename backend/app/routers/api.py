@@ -193,7 +193,7 @@ def report_json(email_id: str, db: Session = Depends(get_db)):
                "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash, "body_text": e.body_text}
     analysis_d = {"fraud_score": a.fraud_score, "threat_classification": a.threat_classification,
                   "nlp_cues_detected": a.nlp_cues_detected, "authentication_results": a.authentication_results,
-                  "action_taken": a.action_taken} if a else {}
+                  "action_taken": a.action_taken, "score_breakdown": a.score_breakdown or []} if a else {}
     trace_d = {"origin_ip": t.origin_ip, "geolocation": t.geolocation, "relay_chain": t.relay_chain} if t else {}
     return build_report_json(email_d, analysis_d, trace_d,
                              attribute(e.sender_address, t.origin_ip if t else "", []))
