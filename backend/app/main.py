@@ -11,6 +11,7 @@ from .database import SessionLocal, init_db
 from .routers.api import router
 from .routers.auth import router as auth_router
 from .routers.gmail import router as gmail_router
+from .routers.oauth import router as oauth_router
 from .routers.deps import get_current_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
@@ -95,6 +96,7 @@ app.include_router(auth_router, prefix=settings.api_prefix)
 # All threat-intel routes require a valid JWT; the auth router above stays public.
 app.include_router(router, prefix=settings.api_prefix, dependencies=[Depends(get_current_user)])
 app.include_router(gmail_router, prefix=settings.api_prefix, dependencies=[Depends(get_current_user)])
+app.include_router(oauth_router, prefix=settings.api_prefix)
 
 
 @app.exception_handler(Exception)
