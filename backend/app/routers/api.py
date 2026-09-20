@@ -117,6 +117,14 @@ def dashboard(db: Session = Depends(get_db)):
             "recent": recent, "score_distribution": dist}
 
 
+@router.get("/search")
+def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query(50, ge=1, le=100),
+           db: Session = Depends(get_db)):
+    """Full-text forensic search: Elasticsearch when configured, SQLite fallback (F10)."""
+    from ..modules.search.elastic_sync import search_emails
+    return search_emails(q, limit=limit, db=db)
+
+
 @router.get("/graph/related")
 def graph_related(value: str = Query(..., min_length=1, max_length=320)):    import re
     # Accept full "Name <addr>" headers — extract bare email for lookup.
