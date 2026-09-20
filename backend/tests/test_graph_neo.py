@@ -72,7 +72,6 @@ def test_neo_error_falls_back_to_memory(monkeypatch):
 
 
 def test_consistency_note(monkeypatch):
-    import os
     from app.config import get_settings
     settings = get_settings()
     monkeypatch.setattr(settings, "expected_replicas", 3)

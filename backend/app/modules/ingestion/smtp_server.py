@@ -1,5 +1,4 @@
 """Inline SMTP relay (aiosmtpd) -> enqueue raw bytes for pipeline."""
-import asyncio
 from aiosmtpd.controller import Controller
 from .queue import enqueue_email
 

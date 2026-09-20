@@ -1,6 +1,5 @@
 """Retention scheduler tests (F9): job runs, returns counts, appends audit log."""
 import json
-import os
 
 
 def test_retention_job_logs_audit(tmp_path, monkeypatch):

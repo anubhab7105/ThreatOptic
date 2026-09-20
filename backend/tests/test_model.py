@@ -10,7 +10,6 @@ def _metrics_path() -> str:
 
 
 def test_metrics_file_schema():
-    import json
     # ensure fresh metrics from the current training script
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))

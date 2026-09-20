@@ -1,7 +1,6 @@
 """Forensic report generator: PDF (reportlab) + JSON, with PII masking + custody manifest."""
 import io
 import json
-from typing import Any
 from ..privacy.masking import mask_text
 from ..privacy.chain_of_custody import custody_manifest
 

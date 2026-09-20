@@ -7,7 +7,7 @@ Graph entities are in Neo4j / networkx, not here.
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON, Enum as SAEnum
+from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 

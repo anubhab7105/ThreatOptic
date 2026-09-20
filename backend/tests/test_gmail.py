@@ -1,7 +1,6 @@
 """Gmail OAuth2 connector tests (Google HTTP calls mocked — fully offline)."""
 import uuid
 
-import pytest
 from fastapi.testclient import TestClient
 
 RAW = b"""From: "CFO" <cfo@xn--companny.top>
