@@ -308,7 +308,39 @@ function GraphSvg({ graph }: { graph: any }) {
 
 /* ---------------- Email detail ---------------- */
 
-const TABS = ['Summary', 'Header Forensics', 'GeoLocation', 'Graph View'] as const;
+const TABS = ['Summary', 'Why this score?', 'Header Forensics', 'GeoLocation', 'Graph View'] as const;
+
+function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
+  const rows = [...(breakdown || [])].sort(
+    (x, y) => (y.contribution_to_score ?? 0) - (x.contribution_to_score ?? 0),
+  );
+  if (!rows.length) return <Empty msg="No score breakdown stored for this email (analyzed before explainability was added)." />;
+  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.contribution_to_score ?? 0)));
+  return (
+    <div>
+      <p className="sub">
+        Each bar is a signal's point contribution to the final fraud score of <b>{score}</b> (weights × values ± rules).
+      </p>
+      {rows.map((s) => {
+        const c = s.contribution_to_score ?? 0;
+        const w = (100 * Math.abs(c)) / maxAbs;
+        const bar = c > 0 ? '#ef4444' : c < 0 ? '#22c55e' : '#3b4a6b';
+        return (
+          <div key={s.signal_name} style={{ marginBottom: 12 }}>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <span><code>{s.signal_name}</code> <span style={{ color: 'var(--muted)', fontSize: 12 }}>×{s.weight} · value {String(s.value)}</span></span>
+              <b style={{ color: bar }}>{c > 0 ? `+${c}` : c}</b>
+            </div>
+            <div className="distbar" style={{ marginTop: 4 }}>
+              <div style={{ width: `${w}%`, background: bar }} />
+            </div>
+            {s.detail && <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{s.detail}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function EmailView({ id }: { id: string }) {
   const [d, setD] = useState<any>(null);
@@ -396,6 +428,13 @@ export function EmailView({ id }: { id: string }) {
       )}
 
       {tab === 1 && (
+        <div className="card">
+          <h3>Why this score?</h3>
+          <ScoreWhy breakdown={a.score_breakdown} score={a.fraud_score ?? 0} />
+        </div>
+      )}
+
+      {tab === 2 && (
         <div className="card">
           <h3>Chain of custody</h3>
           <dl className="kv">
