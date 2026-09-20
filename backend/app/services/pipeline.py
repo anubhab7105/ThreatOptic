@@ -131,11 +131,20 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         intel = {"hits": [], "count": 0}
     intel["malicious_count"] = url_res.get("malicious_count", 0)
     intel_hits = intel.get("hits", []) + [{"type": "url", **h} for h in url_res.get("hits", [])]
+    try:
+        import os
+        attach_res = analyze_attachments(parsed.get("attachments_metadata", []),
+                                         vt_key=os.environ.get("VIRUSTOTAL_API_KEY", ""))
+    except Exception as e:
+        log.warning("attachment analysis failed: %s", e)
+        attach_res = {"findings": [], "risk": 0.0, "malicious_count": 0}
+    intel_hits += [{"type": "attachment", **f} for f in attach_res.get("findings", [])]
 
     body = parsed.get("body_text", "") or ""
     contains_payment = bool(re.search(r"pay|wire|transfer|invoice|bank|payment", body, re.I))
     try:
-        scoring = compute_scores(nlp, auth, intel, routing_flags, hinfo.get("flags", []), age, contains_payment)
+        scoring = compute_scores(nlp, auth, intel, routing_flags, hinfo.get("flags", []), age, contains_payment,
+                                 attachment=attach_res)
     except Exception as e:
         log.warning("scoring failed: %s", e)
         scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
