@@ -80,7 +80,7 @@ async def callback(
 ):
     """Provider redirects here (no auth header possible): exchange, store, bounce to UI."""
     p = _provider_or_400(provider)
-    cid, sec = _client_pair(p, None, None)
+    cid, sec = _client_id(p, None), _client_secret(p, None)
     try:
         if p == "google":
             tokens = await connectors.exchange_gmail_code(code, cid, sec, redirect_uri)
@@ -134,11 +134,11 @@ async def poll_connection(conn: models.MailboxConnection, db: Session, max_resul
     s = get_settings()
     provider = conn.provider
     if provider == "google":
-        cid, sec = _client_pair("google", None, None)
+        cid, sec = _client_id("google", None), _client_secret("google", None)
         fresh = await connectors.refresh_gmail_token(decrypt_secret(conn.encrypted_refresh_token), cid, sec)
         messages = await connectors.fetch_gmail_messages(fresh["access_token"], max_results=max_results)
     else:
-        cid, sec = _client_pair("microsoft", None, None)
+        cid, sec = _client_id("microsoft", None), _client_secret("microsoft", None)
         fresh = await connectors.refresh_microsoft_token(decrypt_secret(conn.encrypted_refresh_token), cid, sec)
         messages = await connectors.fetch_o365_messages(fresh["access_token"], top=max_results)
     out = {"synced": 0, "email_ids": [], "errors": []}
