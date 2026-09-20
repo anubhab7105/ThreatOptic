@@ -80,6 +80,113 @@ Content-Type: text/plain
 
 Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
+/* ---------------- Gmail live import ---------------- */
+
+function GmailPanel({ onSynced }: { onSynced: () => void }) {
+  const [status, setStatus] = useState<any>(null);
+  const [clientId, setClientId] = useState('');
+  const [redirectUri, setRedirectUri] = useState(
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
+  );
+  const [code, setCode] = useState('');
+  const [secret, setSecret] = useState('');
+  const [query, setQuery] = useState('is:unread');
+  const [maxN, setMaxN] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const refresh = async () => {
+    try {
+      setStatus(await jget('/gmail/status'));
+    } catch (e) {
+      setErr(e instanceof ApiError ? `Gmail status failed (${e.status}): ${e.message}` : String(e));
+    }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const fail = (e: unknown, what: string) =>
+    setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
+
+  const getUrl = async () => {
+    setBusy(true); setErr(''); setNotice('');
+    try {
+      const r = await jget(`/gmail/auth-url?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+      window.open(r.auth_url, '_blank', 'noopener');
+      setNotice('Consent page opened — approve read-only access, then paste the ?code= value below.');
+    } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
+  };
+
+  const finish = async () => {
+    setBusy(true); setErr(''); setNotice('');
+    try {
+      const r = await jpost('/gmail/callback', { code: code.trim(), redirect_uri: redirectUri, client_id: clientId || undefined, client_secret: secret || undefined });
+      setStatus(r);
+      setCode('');
+      setNotice(`Connected as ${r.gmail_address}.`);
+    } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
+  };
+
+  const sync = async () => {
+    setBusy(true); setErr(''); setNotice('');
+    try {
+      const r = await jpost('/gmail/sync', { max_results: maxN, query, client_secret: secret || undefined });
+      setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      refresh();
+      onSynced();
+    } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
+  };
+
+  const disconnect = async () => {
+    if (!confirm('Disconnect this Gmail mailbox?')) return;
+    try {
+      await jdel('/gmail/disconnect');
+      refresh();
+    } catch (e) { fail(e, 'Disconnect'); }
+  };
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <h3>Gmail live import (OAuth2, read-only)</h3>
+      <Toast msg={err} />
+      {notice && <Toast msg={notice} kind="info" />}
+      {status?.connected ? (
+        <div>
+          <p>Connected as <b>{status.gmail_address}</b>
+            {status.last_sync_at ? <span style={{ color: 'var(--muted)' }}> · last sync {new Date(status.last_sync_at).toLocaleString()}</span> : null}
+          </p>
+          <div className="row">
+            <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
+            <input type="text" style={{ maxWidth: 90 }} value={String(maxN)} onChange={(e) => setMaxN(Math.max(1, Math.min(50, Number(e.target.value) || 10)))} title="Max emails" />
+            <input type="password" style={{ maxWidth: 220 }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret (if not in env)" autoComplete="off" />
+            <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
+            <button className="ghost" onClick={disconnect}>Disconnect</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <p className="sub" style={{ marginTop: 0 }}>
+            1. Create a Google Cloud OAuth client (Desktop or Web, redirect URI below) with the Gmail API enabled. 2. Open the consent URL.
+            3. Paste the returned code to finish. Tokens stay server-side, per user.
+          </p>
+          <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
+            <input type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Google OAuth client ID (*.apps.googleusercontent.com)" />
+            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" />
+            <div className="row">
+              <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !redirectUri.trim()}>Connect Gmail</button>
+            </div>
+            <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste ?code= from the redirect URL" />
+            <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
+            <div className="row">
+              <button onClick={finish} disabled={busy || !code.trim() || !secret}>Finish connection</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Dashboard ---------------- */
 
 type EmailRow = {
