@@ -37,6 +37,9 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     "content_type": ctype,
                     "size": len(payload),
                     "sha256": hashlib.sha256(payload).hexdigest(),
+                    # first bytes only: enough for magic-byte checks without
+                    # retaining the (possibly malicious) full payload.
+                    "magic": payload[:8].hex(),
                 })
             elif ctype == "text/plain" and not body_text:
                 try:
