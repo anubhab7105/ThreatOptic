@@ -39,6 +39,9 @@ graph TD;
    - Tab 3: GeoLocation Map (Interactive world map showing IP origin).
    - Tab 4: Graph View (Node-link diagram of related domains/IPs).
 3. **Case Management:** Kanban or list view of ongoing investigations.
+4. **Mailboxes (present stage):** Organization-level Google/Microsoft OAuth connectors with background polling and manual Sync now.
+5. **Model Info (present stage):** Live classifier metrics, per-class precision/recall/F1, and confusion matrix.
+6. **Gmail live import (present stage):** No visible auth-code field \u2014 the app auto-captures `?code=` from Google's redirect tab and finishes the connection itself.
 
 ## Component Design
 

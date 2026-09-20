@@ -1,5 +1,6 @@
 """REST API: ingest, analysis, cases, dashboard, reports (per Design.md + AppFlow.md)."""
 import logging
+from datetime import timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -66,7 +67,20 @@ def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_len
             models.EmailRecord.recipient_address.ilike(like),
             models.EmailRecord.body_text_masked.ilike(like),
         ))
-    return query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
+    records = query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
+    if not records:
+        return []
+    email_ids = [r.id for r in records]
+    analyses = {a.email_id: a for a in db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id.in_(email_ids)).all()}
+    out = []
+    for r in records:
+        item = schemas.EmailOut.model_validate(r)
+        a = analyses.get(r.id)
+        if a:
+            item.fraud_score = a.fraud_score
+            item.threat_classification = a.threat_classification
+        out.append(item)
+    return out
 
 
 @router.get("/emails/{email_id}", response_model=schemas.EmailDetail)
@@ -76,6 +90,66 @@ def email_detail(email_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
+    if t:
+        modified = False
+        geo = t.geolocation or {}
+        if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0) or geo.get("source") in ("offline-stub", "fallback", "none"):
+            from ..modules.traceability.geoip import geolocate
+            new_geo = geolocate(t.origin_ip) if t.origin_ip else None
+            if not new_geo or (new_geo.get("lat") == 0.0 and new_geo.get("lon") == 0.0):
+                for hop in (t.relay_chain or []):
+                    for hop_ip in hop.get("ips", []):
+                        g = geolocate(hop_ip)
+                        if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                            new_geo = g
+                            break
+                    if new_geo and (new_geo.get("lat") != 0.0 or new_geo.get("lon") != 0.0):
+                        break
+            if (not new_geo or (new_geo.get("lat") == 0.0 and new_geo.get("lon") == 0.0)) and e.sender_address:
+                try:
+                    import socket
+                    domain = e.sender_address.split("@")[-1].strip(" <>")
+                    if domain:
+                        dip = socket.gethostbyname(domain)
+                        g = geolocate(dip)
+                        if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                            new_geo = {**g, "source": "approx-domain-ip"}
+                except Exception:
+                    pass
+
+            if new_geo and (new_geo.get("lat") != 0.0 or new_geo.get("lon") != 0.0 or new_geo.get("country") not in ("", "UNKNOWN")):
+                t.geolocation = new_geo
+                if new_geo.get("isp") or new_geo.get("asn"):
+                    t.isp_asn = f"{new_geo.get('isp', '')} {new_geo.get('asn', '')}".strip()
+                modified = True
+
+        whois = t.whois_data or {}
+        if (not whois or whois.get("note") == "live-lookups-disabled") and e.sender_address:
+            from ..modules.traceability.whois_dns import whois_lookup
+            domain = e.sender_address.split("@")[-1].strip(" <>")
+            if domain:
+                new_w = whois_lookup(domain)
+                if new_w and new_w.get("note") != "live-lookups-disabled":
+                    t.whois_data = new_w
+                    modified = True
+
+        dnsd = t.dns_data or {}
+        if (not dnsd or (not dnsd.get("mx") and not dnsd.get("a"))) and e.sender_address:
+            from ..modules.traceability.whois_dns import dns_lookup
+            domain = e.sender_address.split("@")[-1].strip(" <>")
+            if domain:
+                new_d = dns_lookup(domain)
+                if new_d and (new_d.get("mx") or new_d.get("a")):
+                    t.dns_data = new_d
+                    modified = True
+
+        if modified:
+            try:
+                db.commit()
+                db.refresh(t)
+            except Exception:
+                db.rollback()
+
     return {
         "email": e,
         "analysis": a,
@@ -87,15 +161,28 @@ def email_detail(email_id: str, db: Session = Depends(get_db)):
 
 @router.get("/dashboard", response_model=schemas.DashboardStats)
 def dashboard(db: Session = Depends(get_db)):
+    from ..services.campaigns import _ensure_graph
+    _ensure_graph(db)
     total = db.query(models.EmailRecord).count()
     blocked = db.query(models.AnalysisResult).filter(models.AnalysisResult.fraud_score >= 75).count()
     by: dict[str, int] = {}
     for (c,) in db.query(models.AnalysisResult.threat_classification).all():
         by[c or "Unknown"] = by.get(c or "Unknown", 0) + 1
+    recent_rows = (
+        db.query(
+            models.EmailRecord.id,
+            models.EmailRecord.subject,
+            models.EmailRecord.sender_address,
+            models.EmailRecord.timestamp,
+        )
+        .order_by(desc(models.EmailRecord.timestamp))
+        .limit(10)
+        .all()
+    )
     recent = [
-        {"id": e.id, "subject": (e.subject or "")[:80], "sender": (e.sender_address or "")[:80],
-         "ts": e.timestamp.isoformat() if e.timestamp else ""}
-        for e in db.query(models.EmailRecord).order_by(desc(models.EmailRecord.timestamp)).limit(10).all()
+        {"id": rid, "subject": (subj or "")[:80], "sender": (sender or "")[:80],
+         "ts": (ts.replace(tzinfo=timezone.utc) if ts and ts.tzinfo is None else ts).isoformat() if ts else ""}
+        for rid, subj, sender, ts in recent_rows
     ]
     # score histogram for the UI distribution chart
     dist = {"critical": 0, "high": 0, "medium": 0, "low": 0}
@@ -171,14 +258,27 @@ def list_cases(db: Session = Depends(get_db)):
     return db.query(models.InvestigationCase).order_by(desc(models.InvestigationCase.created_at)).all()
 
 
+VALID_CASE_STATUSES = {"Open", "InProgress", "Closed"}
+
+
 @router.patch("/cases/{case_id}", response_model=schemas.CaseOut)
 def update_case(case_id: str, payload: dict, db: Session = Depends(get_db)):
     c = db.query(models.InvestigationCase).filter(models.InvestigationCase.id == case_id).first()
     if not c:
         raise HTTPException(404, "case not found")
-    for k in ("title", "status", "assignee_id", "notes", "email_ids"):
-        if k in payload:
-            setattr(c, k, payload[k])
+    if "status" in payload:
+        st = str(payload["status"]).strip()
+        if st not in VALID_CASE_STATUSES:
+            raise HTTPException(400, f"invalid status '{st}', must be one of {sorted(VALID_CASE_STATUSES)}")
+        c.status = st
+    if "title" in payload and payload["title"]:
+        c.title = str(payload["title"]).strip()
+    if "notes" in payload:
+        c.notes = str(payload["notes"])
+    if "assignee_id" in payload:
+        c.assignee_id = payload["assignee_id"]
+    if "email_ids" in payload and isinstance(payload["email_ids"], list):
+        c.email_ids = payload["email_ids"]
     db.commit()
     db.refresh(c)
     return c

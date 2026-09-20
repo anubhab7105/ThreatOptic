@@ -54,3 +54,6 @@ Develop an AI-Powered Email Threat Detection, GeoLocation and Forensic Intellige
 - Enhanced fraud investigation capability through geolocation and domain intelligence.
 - Reduced financial loss, reputational damage, and unauthorized data disclosure.
 - Better institutional readiness for cyber incident response.
+
+## Present-Stage Scope Note (September 2026)
+All six components above are implemented and demoable. Honest scoping for the "AI" label: the running ML is a scikit-learn TF-IDF + LogisticRegression text classifier (phishing / bec / clean) contributing 30% of the fraud score, backed by ~35 hand-written linguistic cue families; transformer/LLM reranking exists only as a dormant `TRANSFORMERS_MODEL` hook (libraries not installed). Detection strength in v1 therefore comes from ML fused with deterministic forensics (headers, auth, geo, feeds, graph), all of it explainable per-signal in the UI.

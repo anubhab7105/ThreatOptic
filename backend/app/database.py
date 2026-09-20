@@ -44,5 +44,6 @@ def init_db():
                 for col in missing:
                     coltype = col.type.compile(dialect=engine.dialect)
                     conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {coltype}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_records_timestamp ON email_records (timestamp)"))
     except Exception:
         pass  # fresh DBs / non-sqlite backends need nothing

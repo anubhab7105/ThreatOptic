@@ -149,7 +149,12 @@ def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: s
                 if ip:
                     s.run("MERGE (i:IP_Address {ip:$ip}) MERGE (e:Email_Address {address:$a}) MERGE (e)-[:SENT_FROM]->(i)", a=email_addr, ip=ip)
                 for d in domains[:20]:
-                    s.run("MERGE (d:Domain {name:$d})", d=d.lower())
+                    d_clean = d.lower()
+                    s.run("MERGE (d:Domain {name:$d})", d=d_clean)
+                    if ip:
+                        s.run("MERGE (i:IP_Address {ip:$ip}) MERGE (d:Domain {name:$d}) MERGE (i)-[:HOSTS]->(d)", ip=ip, d=d_clean)
+                    if campaign:
+                        s.run("MERGE (d:Domain {name:$d}) MERGE (c:Threat_Campaign {name:$c}) MERGE (d)-[:PART_OF]->(c)", d=d_clean, c=campaign)
         except Exception:
             pass
     return {"nodes": G.number_of_nodes(), "edges": G.number_of_edges()}

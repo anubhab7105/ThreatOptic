@@ -18,10 +18,14 @@ def build_report_json(email: dict, analysis: dict, trace: dict, attribution: dic
 
 
 def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict) -> bytes:
+    import html
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib import colors
+
+    def _esc(val) -> str:
+        return html.escape(str(val or ""))
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4)
@@ -29,17 +33,17 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story = [
         Paragraph("Email Forensic Report — Chain of Custody Compliant", styles["Title"]),
         Spacer(1, 12),
-        Paragraph(f"Subject: {email.get('subject','')[:300]}", styles["Normal"]),
-        Paragraph(f"From: {mask_text(email.get('sender_address',''))} | To: {mask_text(email.get('recipient_address',''))}", styles["Normal"]),
-        Paragraph(f"Message-ID: {email.get('message_id','')} | SHA256: {email.get('raw_eml_hash','')}", styles["Normal"]),
+        Paragraph(f"Subject: {_esc(email.get('subject',''))[:300]}", styles["Normal"]),
+        Paragraph(f"From: {_esc(mask_text(email.get('sender_address','')))} | To: {_esc(mask_text(email.get('recipient_address','')))}", styles["Normal"]),
+        Paragraph(f"Message-ID: {_esc(email.get('message_id',''))} | SHA256: {_esc(email.get('raw_eml_hash',''))}", styles["Normal"]),
         Spacer(1, 12),
-        Paragraph(f"Fraud Score: {analysis.get('fraud_score')} ({analysis.get('threat_classification')}) — Action: {analysis.get('action_taken')}", styles["Heading2"]),
-        Paragraph(f"Cues: {', '.join(analysis.get('nlp_cues_detected', []))}", styles["Normal"]),
-        Paragraph(f"Auth: {json.dumps(analysis.get('authentication_results', {}))[:1000]}", styles["Normal"]),
+        Paragraph(f"Fraud Score: {_esc(analysis.get('fraud_score'))} ({_esc(analysis.get('threat_classification'))}) — Action: {_esc(analysis.get('action_taken'))}", styles["Heading2"]),
+        Paragraph(f"Cues: {_esc(', '.join(analysis.get('nlp_cues_detected', [])))}", styles["Normal"]),
+        Paragraph(f"Auth: {_esc(json.dumps(analysis.get('authentication_results', {})))[:1000]}", styles["Normal"]),
         Spacer(1, 12),
         Paragraph("Traceability", styles["Heading2"]),
-        Paragraph(f"Origin IP: {trace.get('origin_ip')} | Geo: {json.dumps(trace.get('geolocation', {}))[:500]}", styles["Normal"]),
-        Paragraph(f"VPN/TOR: {trace.get('is_vpn_tor')} | ISP/ASN: {trace.get('isp_asn','')}", styles["Normal"]),
+        Paragraph(f"Origin IP: {_esc(trace.get('origin_ip'))} | Geo: {_esc(json.dumps(trace.get('geolocation', {})))[:500]}", styles["Normal"]),
+        Paragraph(f"VPN/TOR: {_esc(trace.get('is_vpn_tor'))} | ISP/ASN: {_esc(trace.get('isp_asn',''))}", styles["Normal"]),
         Spacer(1, 6),
         Paragraph("Relay chain:", styles["Heading3"]),
     ]
@@ -48,7 +52,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
         rows.append([i, str(h.get("from_host",""))[:40], str(h.get("by_host",""))[:40], ",".join(h.get("ips", []))[:40]])
     story.append(Table(rows, colWidths=[20, 150, 150, 150], style=TableStyle([("BACKGROUND", (0,0), (-1,0), colors.grey), ("GRID", (0,0), (-1,-1), 0.5, colors.black)])))
     story.append(Spacer(1, 12))
-    story.append(Paragraph(f"Attribution: {attribution.get('campaign')} (conf={attribution.get('confidence')}) signals={attribution.get('signals')}", styles["Normal"]))
+    story.append(Paragraph(f"Attribution: {_esc(attribution.get('campaign'))} (conf={_esc(attribution.get('confidence'))}) signals={_esc(attribution.get('signals'))}", styles["Normal"]))
     doc.build(story)
     return buf.getvalue()
 

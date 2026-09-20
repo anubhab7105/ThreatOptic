@@ -55,6 +55,17 @@ This document outlines the high-level schema for the primary data stores.
 - `refresh_token`: Text (OAuth2 vault for live-demo sync)
 - `last_sync_at`: Timestamp
 
+### `MailboxConnection` (present stage, missing from earlier revision)
+- `id`: UUID (Primary Key)
+- `user_id`: UUID (Foreign Key -> User)
+- `organization_id`: UUID (nullable, Foreign Key -> Organization)
+- `provider`: String (`google` | `microsoft`)
+- `account_email`: String
+- `encrypted_refresh_token`: Text (Fernet-encrypted at rest)
+- `last_poll_at`: Timestamp (nullable)
+
+> Present-stage note: locally all tables live in SQLite (`backend/email_forensics.db`, with additive `init_db` migration); Postgres/Neo4j/Elastic mirror them in compose/k8s.
+
 ### `TraceabilityData`
 - `_id`: UUID
 - `email_id`: UUID

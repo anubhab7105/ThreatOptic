@@ -23,6 +23,36 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
     recipient = str(msg.get("To", ""))
     message_id = str(msg.get("Message-ID", ""))
 
+    from email.utils import parsedate_to_datetime
+    from datetime import datetime, timezone
+    email_dt = None
+    date_hdr = str(msg.get("Date", "") or "").strip()
+    if date_hdr:
+        try:
+            email_dt = parsedate_to_datetime(date_hdr)
+            if email_dt.tzinfo is None:
+                email_dt = email_dt.replace(tzinfo=timezone.utc)
+            else:
+                email_dt = email_dt.astimezone(timezone.utc)
+        except Exception:
+            email_dt = None
+
+    if email_dt is None:
+        recv_hdr = str(msg.get("Received", "") or "")
+        if ";" in recv_hdr:
+            try:
+                date_part = recv_hdr.split(";")[-1].strip()
+                email_dt = parsedate_to_datetime(date_part)
+                if email_dt.tzinfo is None:
+                    email_dt = email_dt.replace(tzinfo=timezone.utc)
+                else:
+                    email_dt = email_dt.astimezone(timezone.utc)
+            except Exception:
+                email_dt = None
+
+    if email_dt is None:
+        email_dt = datetime.now(timezone.utc)
+
     body_text = ""
     body_html = ""
     attachments: list[dict] = []
@@ -73,4 +103,5 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
         "body_html": body_html or "",
         "attachments_metadata": attachments,
         "raw_eml_hash": sha,
+        "timestamp": email_dt,
     }

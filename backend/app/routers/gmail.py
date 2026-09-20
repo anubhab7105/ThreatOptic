@@ -1,4 +1,4 @@
-"""Gmail OAuth2 live-demo connector: connect a mailbox, sync unread mail into the pipeline."""
+import asyncio
 import logging
 from datetime import datetime
 
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import get_settings
 from ..database import get_db
+from ..modules.auth import vault
 from ..modules.ingestion import connectors
 from ..services.pipeline import process_raw_email
 from .deps import get_current_user
@@ -79,11 +80,12 @@ async def callback(
     except httpx.HTTPError as e:
         raise HTTPException(400, f"could not read Gmail profile: {e}")
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+    encrypted_refresh = vault.encrypt_secret(tokens["refresh_token"])
     if acct:
-        acct.gmail_address, acct.refresh_token = address, tokens["refresh_token"]
+        acct.gmail_address, acct.refresh_token = address, encrypted_refresh
         db.commit()
     else:
-        db.add(models.GmailAccount(user_id=user.id, gmail_address=address, refresh_token=tokens["refresh_token"]))
+        db.add(models.GmailAccount(user_id=user.id, gmail_address=address, refresh_token=encrypted_refresh))
         db.commit()
     return _status_payload(user, db)
 
@@ -99,8 +101,12 @@ async def sync(
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
     settings = get_settings()
     try:
+        raw_token = vault.decrypt_secret(acct.refresh_token)
+    except Exception:
+        raw_token = acct.refresh_token
+    try:
         fresh = await connectors.refresh_gmail_token(
-            acct.refresh_token, settings.google_client_id or "", _client_secret(payload.client_secret)
+            raw_token, settings.google_client_id or "", _client_secret(payload.client_secret)
         )
     except httpx.HTTPError as e:
         raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {e}")
@@ -118,6 +124,7 @@ async def sync(
         except Exception as e:
             log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)
             out.errors.append(f"{m.get('id')}: {e}"[:200])
+        await asyncio.sleep(0)
     out.synced = len(out.email_ids)
     acct.last_sync_at = datetime.utcnow()
     db.commit()

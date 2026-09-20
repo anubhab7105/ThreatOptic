@@ -53,9 +53,12 @@ def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
     frm_dom = (_re.search(r"@([\w\.\-]+)", frm) or [None, ""])[1]
     if rp_dom and frm_dom and rp_dom.strip("<> ") != frm_dom.strip("<> "):
         flags.append("return-path-mismatch")
-    # Message-ID domain vs From domain
+    # Message-ID domain vs From domain (allow legitimate organizational subdomains)
     mid = str(raw_headers.get("Message-ID", "")).lower()
     mid_dom = (_re.search(r"@([\w\.\-]+)", mid) or [None, ""])[1]
-    if mid_dom and frm_dom and mid_dom.strip("> ") not in frm_dom:
-        flags.append("message-id-mismatch")
+    if mid_dom and frm_dom:
+        m_clean = mid_dom.strip("> ")
+        f_clean = frm_dom.strip("<> ")
+        if m_clean != f_clean and not m_clean.endswith("." + f_clean) and not f_clean.endswith("." + m_clean):
+            flags.append("message-id-mismatch")
     return flags

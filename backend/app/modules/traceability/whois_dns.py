@@ -6,19 +6,23 @@ from typing import Any
 
 
 def _live() -> bool:
+    if os.environ.get("ENABLE_LIVE_LOOKUPS", "").lower() in ("0", "false", "no"):
+        return False
+    try:
+        from ...config import get_settings
+        if get_settings().live_lookups:
+            return True
+    except Exception:
+        pass
     return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
 
 
-def whois_lookup(domain: str) -> dict[str, Any]:
-    domain = (domain or "").strip().lower().lstrip("<>").split("@")[-1].strip(" <>")
-    if not domain or "." not in domain:
-        return {}
-    if not _live():
-        return {"domain": domain, "note": "live-lookups-disabled"}
+@lru_cache(maxsize=1024)
+def _whois_cached(domain: str) -> dict[str, Any]:
     try:
         import whois
         # python-whois has no timeout; run with a socket-level guard.
-        socket.setdefaulttimeout(4)
+        socket.setdefaulttimeout(2.5)
         try:
             w = whois.whois(domain)
         finally:
@@ -33,6 +37,15 @@ def whois_lookup(domain: str) -> dict[str, Any]:
         }
     except Exception as e:
         return {"domain": domain, "error": f"whois-unavailable: {e}"[:300]}
+
+
+def whois_lookup(domain: str) -> dict[str, Any]:
+    domain = (domain or "").strip().lower().lstrip("<>").split("@")[-1].strip(" <>")
+    if not domain or "." not in domain:
+        return {}
+    if not _live():
+        return {"domain": domain, "note": "live-lookups-disabled"}
+    return dict(_whois_cached(domain))
 
 
 @lru_cache(maxsize=1024)

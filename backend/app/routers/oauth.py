@@ -4,6 +4,7 @@ refresh-token storage, background polling into the forensic pipeline.
 This is the persistent org-level connector. The per-user Gmail demo flow in
 routers/gmail.py is intentionally left untouched.
 """
+import asyncio
 import logging
 from datetime import datetime
 
@@ -18,7 +19,7 @@ from ..database import SessionLocal, get_db
 from ..modules.auth.vault import decrypt_secret, encrypt_secret
 from ..modules.ingestion import connectors
 from ..services.pipeline import process_raw_email
-from .deps import get_current_user
+from .deps import get_current_user, require_roles
 
 log = logging.getLogger("oauth")
 router = APIRouter(prefix="/oauth", tags=["oauth"])
@@ -26,10 +27,33 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 PROVIDERS = ("google", "microsoft")
 
 
+def _make_state(user_id: str) -> str:
+    import base64, hashlib, hmac, json, time
+    payload = {"sub": user_id, "t": int(time.time())}
+    msg = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    sig = hmac.new(get_settings().secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+    return f"{msg}.{sig}"
+
+
+def _verify_state(state: str) -> str | None:
+    import base64, hashlib, hmac, json, time
+    try:
+        msg, sig = state.split(".", 1)
+        expected_sig = hmac.new(get_settings().secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(msg.encode()).decode())
+        if int(time.time()) - payload.get("t", 0) > 3600:
+            return None
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 def _provider_or_400(provider: str) -> str:
     p = (provider or "").lower()
     if p not in PROVIDERS:
-        raise HTTPException(400, f"provider must be one of {PROVIDERS}")
+        raise HTTPException(400, f"unsupported provider '{provider}' (expected google | microsoft)")
     return p
 
 
@@ -37,7 +61,7 @@ def _client_id(provider: str, explicit: str | None) -> str:
     s = get_settings()
     cid = explicit or (s.google_client_id if provider == "google" else s.ms_client_id)
     if not cid:
-        raise HTTPException(400, f"{provider} OAuth client_id not configured")
+        raise HTTPException(400, f"{provider} client_id required (configure in .env or pass client_id query)")
     return cid
 
 
@@ -45,13 +69,13 @@ def _client_secret(provider: str, explicit: str | None) -> str:
     s = get_settings()
     sec = explicit or (s.google_client_secret if provider == "google" else s.ms_client_secret)
     if not sec:
-        raise HTTPException(400, f"{provider} OAuth client_secret not configured")
+        raise HTTPException(400, f"{provider} client_secret required (configure in .env or pass client_secret query)")
     return sec
 
 
 class SyncNowIn(BaseModel):
     provider: str | None = None
-    max_results: int = Field(default=10, ge=1, le=50)
+    max_results: int = Field(default=10, ge=1)
 
 
 @router.get("/{provider}/authorize")
@@ -64,10 +88,11 @@ def authorize(
     """Return the provider consent URL; the frontend navigates there."""
     p = _provider_or_400(provider)
     cid = _client_id(p, client_id)
+    state = _make_state(user.id)
     if p == "google":
-        url = connectors.build_gmail_auth_url(cid, redirect_uri)
+        url = connectors.build_gmail_auth_url(cid, redirect_uri, state=state)
     else:
-        url = connectors.build_microsoft_auth_url(cid, redirect_uri)
+        url = connectors.build_microsoft_auth_url(cid, redirect_uri, state=state)
     return {"auth_url": url}
 
 
@@ -75,26 +100,33 @@ def authorize(
 async def callback(
     provider: str,
     code: str = Query(...),
-    redirect_uri: str = Query(...),
+    redirect_uri: str | None = Query(None),
+    state: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Provider redirects here (no auth header possible): exchange, store, bounce to UI."""
     p = _provider_or_400(provider)
     cid, sec = _client_id(p, None), _client_secret(p, None)
+    r_uri = redirect_uri or (get_settings().google_redirect_uri if p == "google" else get_settings().frontend_url)
     try:
         if p == "google":
-            tokens = await connectors.exchange_gmail_code(code, cid, sec, redirect_uri)
+            tokens = await connectors.exchange_gmail_code(code, cid, sec, r_uri)
             address = await connectors.get_gmail_profile_email(tokens["access_token"])
         else:
-            tokens = await connectors.exchange_microsoft_code(code, cid, sec, redirect_uri)
+            tokens = await connectors.exchange_microsoft_code(code, cid, sec, r_uri)
             address = await connectors.get_microsoft_profile_email(tokens["access_token"])
     except httpx.HTTPError as e:
         raise HTTPException(400, f"{p} token exchange failed: {e}")
     if not tokens.get("refresh_token"):
         raise HTTPException(400, "provider did not return a refresh token")
-    # Attribute to an org by matching the mailbox domain is out of scope;
-    # store against the most recently active user as the connector owner.
-    owner = db.query(models.User).order_by(models.User.created_at.desc()).first()
+    # Bind to authenticated state initiator if present, otherwise latest active user
+    owner = None
+    if state:
+        user_id = _verify_state(state)
+        if user_id:
+            owner = db.query(models.User).filter(models.User.id == user_id).first()
+    if not owner:
+        owner = db.query(models.User).order_by(models.User.created_at.desc()).first()
     if not owner:
         raise HTTPException(400, "no local user to own the mailbox connection")
     conn = db.query(models.MailboxConnection).filter(
@@ -122,9 +154,12 @@ def status(user: models.User = Depends(get_current_user), db: Session = Depends(
 
 
 @router.delete("/{provider}")
-def disconnect(provider: str, user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+def disconnect(provider: str, user: models.User = Depends(require_roles("Admin", "Analyst")), db: Session = Depends(get_db)):
     p = _provider_or_400(provider)
-    n = db.query(models.MailboxConnection).filter(models.MailboxConnection.provider == p).delete()
+    query = db.query(models.MailboxConnection).filter(models.MailboxConnection.provider == p)
+    if user.role != "Admin" and user.organization_id:
+        query = query.filter(models.MailboxConnection.organization_id == user.organization_id)
+    n = query.delete()
     db.commit()
     return {"disconnected": p, "removed": n}
 
@@ -148,6 +183,7 @@ async def poll_connection(conn: models.MailboxConnection, db: Session, max_resul
         except Exception as e:
             log.warning("mailbox %s message failed: %s", conn.account_email, e)
             out["errors"].append(str(e)[:200])
+        await asyncio.sleep(0)
     out["synced"] = len(out["email_ids"])
     conn.last_poll_at = datetime.utcnow()
     db.commit()

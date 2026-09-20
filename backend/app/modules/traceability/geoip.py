@@ -13,6 +13,18 @@ _STATIC = {
 }
 
 
+def _live() -> bool:
+    if os.environ.get("ENABLE_LIVE_LOOKUPS", "").lower() in ("0", "false", "no"):
+        return False
+    try:
+        from ...config import get_settings
+        if get_settings().live_lookups:
+            return True
+    except Exception:
+        pass
+    return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
+
+
 @lru_cache(maxsize=2048)
 def geolocate(ip: str) -> dict[str, Any]:
     if not ip:
@@ -27,34 +39,36 @@ def geolocate(ip: str) -> dict[str, Any]:
             with geoip2.database.Reader(db_path) as r:
                 c = r.city(ip)
                 return {
-                    "lat": c.location.latitude or 0.0,
-                    "lon": c.location.longitude or 0.0,
+                    "lat": float(c.location.latitude or 0.0),
+                    "lon": float(c.location.longitude or 0.0),
                     "country": c.country.iso_code or "",
                     "city": c.city.name or "",
                     "source": "maxmind",
                 }
     except Exception:
         pass
-    # 2. free API — only when explicitly enabled (slow + rate-limited otherwise)
-    enabled = os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
-    if enabled:
+    # 2. free API — only when enabled
+    if _live():
         try:
             import requests
             r = requests.get(
                 f"http://ip-api.com/json/{ip}?fields=lat,lon,countryCode,city,isp,org,as",
-                timeout=2,
+                timeout=3,
             )
             if r.status_code == 200:
                 j = r.json()
-                return {
-                    "lat": j.get("lat", 0.0),
-                    "lon": j.get("lon", 0.0),
-                    "country": j.get("countryCode", ""),
-                    "city": j.get("city", ""),
-                    "isp": j.get("isp", ""),
-                    "asn": j.get("as", ""),
-                    "source": "ip-api",
-                }
+                lat = float(j.get("lat") or 0.0)
+                lon = float(j.get("lon") or 0.0)
+                if lat != 0.0 or lon != 0.0 or j.get("countryCode"):
+                    return {
+                        "lat": lat,
+                        "lon": lon,
+                        "country": j.get("countryCode", ""),
+                        "city": j.get("city", ""),
+                        "isp": j.get("isp", ""),
+                        "asn": j.get("as", ""),
+                        "source": "ip-api",
+                    }
         except Exception:
             pass
     return {"lat": 0.0, "lon": 0.0, "country": "UNKNOWN", "city": "", "source": "offline-stub"}

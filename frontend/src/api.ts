@@ -1,5 +1,5 @@
 /** API client — base URL configurable via VITE_API_URL (dev proxy falls back to ''). */
-const BASE: string =
+export const BASE: string =
   (import.meta as any).env?.VITE_API_URL ?? '';
 
 export const API = `${BASE}/api/v1`;

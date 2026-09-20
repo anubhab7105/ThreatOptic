@@ -1,4 +1,5 @@
 """URL extraction, defanging, threat-feed checks (VirusTotal, URLhaus, local blocklists)."""
+from functools import lru_cache
 import os
 import re
 from typing import Any
@@ -47,15 +48,22 @@ def check_virustotal(url: str, api_key: str = "") -> dict[str, Any]:
         return {"source": "virustotal", "error": str(e)[:300]}
 
 
+@lru_cache(maxsize=1024)
+def _check_urlhaus_cached(url: str) -> tuple[int, str]:
+    import requests
+    r = requests.post("https://urlhaus-api.abuse.ch/v1/url/", data={"url": url}, timeout=1.5)
+    return r.status_code, r.text
+
+
 def check_urlhaus(url: str) -> dict[str, Any]:
     if not _live():
         return {"source": "urlhaus", "skipped": True}
     try:
-        import requests
-        r = requests.post("https://urlhaus-api.abuse.ch/v1/url/", data={"url": url}, timeout=4)
-        if r.status_code == 200:
-            return {"source": "urlhaus", **r.json()}
-        return {"source": "urlhaus", "status": r.status_code}
+        status_code, text = _check_urlhaus_cached(url)
+        if status_code == 200:
+            import json
+            return {"source": "urlhaus", **json.loads(text)}
+        return {"source": "urlhaus", "status": status_code}
     except Exception as e:
         return {"source": "urlhaus", "error": str(e)[:300]}
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
+import { BASE } from './api';
 import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage, ModelInfo, Mailboxes } from './pages';
 
 function Shell() {
@@ -14,7 +15,16 @@ function Shell() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
   useEffect(() => {
-    fetch('/health')
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    if (code) {
+      const originPath = window.location.origin + window.location.pathname;
+      window.location.href = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+    }
+  }, []);
+  useEffect(() => {
+    fetch(`${BASE}/health`)
       .then((r) => setHealth(r.ok ? 'ok' : 'down'))
       .catch(() => setHealth('down'));
   }, [hash]);

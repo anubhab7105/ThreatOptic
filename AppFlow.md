@@ -30,3 +30,8 @@
 1. **Dashboard Interaction:** Analyst opens the specific alert case.
 2. **Visualization:** Platform displays a geographical map of origin and a trace node graph.
 3. **Report Generation:** Analyst exports a chain-of-custody compliant forensic report (PDF/JSON) for escalation or legal review.
+
+## Present-Stage Notes (September 2026)
+- Default runs are offline-first: live network enrichment (WHOIS/DNS/URLhaus/DNSBL/ip-api) is skipped unless `ENABLE_LIVE_LOOKUPS=1`, so ingestion stays fast without internet.
+- Gmail OAuth in the Dashboard auto-captures `?code=` from Google's redirect tab \u2014 analysts never handle codes manually.
+- Known limitation: large real-world messages take tens of seconds each through the pipeline (auth DNS + model inference), so multi-mail syncs are slow but complete; per-stage timeouts and background sync jobs are roadmap.

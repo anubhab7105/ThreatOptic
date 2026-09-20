@@ -13,7 +13,9 @@ def test_origin_ip_public_first_then_private_fallback():
     assert extract_origin_ip([{"ips": []}]) == ""
 
 
-def test_geolocate_offline_shapes():
+def test_geolocate_offline_shapes(monkeypatch):
+    monkeypatch.setattr("app.modules.traceability.geoip._live", lambda: False)
+    geolocate.cache_clear()
     assert geolocate("")["source"] == "none"
     static = geolocate("45.148.10.88")
     assert static["source"] == "static-fallback" and static["country"] == "DE"

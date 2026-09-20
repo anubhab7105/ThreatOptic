@@ -48,9 +48,9 @@ Demo accounts (seeded): `admin / admin123` (Admin), `analyst / analyst123` (Anal
 Public self-registration creates Analyst accounts (first-ever account becomes Admin).
 
 ### Gmail live demo
-1. Google Cloud console → enable Gmail API → OAuth client (Web), redirect URI = your frontend origin (e.g. `http://localhost:5173/`).
-2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env (or paste per-request in the UI).
-3. Dashboard → "Gmail live import" → Connect Gmail → approve → paste code → Finish → **Sync now** pulls unread mail through the pipeline.
+1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env (or paste per-request in the UI; both must belong to the same OAuth client).
+3. Dashboard → "Gmail live import" → fill client ID + secret → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline.
 
 Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 
@@ -60,6 +60,7 @@ python3 backend/scripts/fetch_datasets.py  # SpamAssassin ham/spam + curated BEC
 python3 backend/scripts/train_nlp.py       # 80/20 stratified split, metrics -> ml_models/metrics.json
 ```
 Without the download (offline), training falls back to the curated lists. No public BEC corpus is freely available, so BEC rows stay curated — see the Model Info page for per-class metrics.
+> Present stage: no `dataset.csv` ships in this checkout, so the live model is the 120-row curated fallback (accuracy 0.9583, macro F1 0.9582; phishing F1 1.0 / bec 0.9412 / clean 0.9333 on 24 held-out). Run `fetch_datasets.py` first if you want the 3,012-row SpamAssassin+BEC corpus figures.
 
 ### Attachment analysis
 Attachments are hash-checked against VirusTotal (skipped without `VIRUSTOTAL_API_KEY`) plus offline heuristics: macro-enabled Office docs, double extensions, executables, and magic-byte mismatches feed an `attachment_risk` score weight (0.10).
@@ -93,6 +94,14 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 - `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task.
 - `VITE_API_URL` (frontend) — backend base URL for split hosting; same-origin by default. See `frontend/.env.example`.
 - Health: `GET /health` (liveness) and `GET /health/detailed` (DB + NLP status).
+
+### Present-Stage Notes (September 2026)
+- "AI" scope: the running ML is TF-IDF + LogisticRegression (30% of fraud score) plus hand-written linguistic cues; transformer reranking is a dormant hook, not installed. See PRD § Present-Stage Scope Note.
+- Seed demo accounts when missing: `PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`).
+- Quirk: API returns transient 500s while `uvicorn --reload` restarts on file saves — wait ~10s and retry.
+- Sync speed: large real emails take tens of seconds each through the pipeline; multi-mail syncs complete but slowly (background-job fix queued).
+- Split deploy (Vercel + Render): set `VITE_API_URL` to the Render backend; register exactly `https://<app>.vercel.app/` as the Google OAuth redirect URI; mirror it in `GOOGLE_REDIRECT_URI`, `FRONTEND_URL`, `CORS_ORIGINS`.
+- Tests: 64 passing; `test_gmail`/`test_oauth` validation tests fail only with real Google credentials/mailbox rows in dev `.env`/DB (environment-dependent).
 
 ## Contributing
 Please adhere to the coding standards defined in the repository wiki. Ensure all commits referencing feature additions are tied to tasks in `Tracker.md`.

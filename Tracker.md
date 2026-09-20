@@ -72,3 +72,10 @@
 - [x] Campaign / attribution view. → `services/campaigns.py` (cards: id/name/IP/domains/ASN/confidence/email count/first-last seen; detail with filtered graph + email table); `GET /campaigns`, `GET /campaigns/{id}`; frontend Campaigns + CampaignDetail pages reusing GraphSvg. Tests: `tests/test_campaigns.py`.
 - [x] Gmail OAuth2 live demo. → `modules/ingestion/connectors.py` (auth URL, code exchange, refresh, profile); `routers/gmail.py` (status/auth-url/callback/sync/disconnect, per-user `GmailAccount` refresh-token vault); Dashboard "Gmail live import" panel with Connect + Sync now. Tests: `tests/test_gmail.py` (mocked Google HTTP).
 - [x] Model transparency. → `scripts/train_nlp.py` caches `ml_models/metrics.json` (accuracy, macro precision/recall/F1, per-class P/R/F1, confusion matrix, 60-sample curated set); `GET /model/metrics`; frontend Model Info page. Tests: `tests/test_model.py`.
+
+## Present-Stage Corrections (September 2026)
+- Live `ml_models/` holds the **120-row curated fallback** model (accuracy 0.9583, macro F1 0.9582; per-class F1 phishing 1.0 / bec 0.9412 / clean 0.9333). No `dataset.csv` is present in this checkout, so the 3,012-row corpus figures above describe the fetcher script, not the shipped model file.
+- Test suite: 64 passing; `test_gmail.py::test_gmail_unauth_and_auth_url_validation` and `test_oauth.py::test_callback_sync_disconnect` fail only when a real `GOOGLE_CLIENT_ID` / real mailbox rows exist in the dev `.env`/DB (environment-dependent, not code regressions).
+- Gmail Dashboard panel now **auto-captures `?code=`** from Google's redirect tab (`frontend/src/pages.tsx`); the manual code field was removed (Finish connection kept as retry).
+- Earlier timestamp-normalisation/OAuth-error-clarity experiments were reverted at user request; current code is the pre-experiment baseline.
+- Known issue: large real-world messages take ~45s each through the pipeline (auth DNS + cold model load), so multi-mail syncs are slow; fix queued as per-stage timeouts + background sync jobs.

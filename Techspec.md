@@ -4,8 +4,8 @@
 The AI-Powered Email Threat Detection, GeoLocation and Forensic Intelligence Platform leverages advanced AI/ML models, deep header parsing, and graph-based correlation to provide real-time email threat detection and extensive forensic capabilities.
 
 ## Tech Stack
-- **Backend Services:** Python (FastAPI or Django) for core logic and ML serving, Node.js for async event processing.
-- **AI/ML Engine:** PyTorch, HuggingFace Transformers (for NLP classification and urgency detection), scikit-learn.
+- **Backend Services:** Python + FastAPI (as built; no Django/Node service in this checkout) for core logic and ML serving.
+- **AI/ML Engine:** scikit-learn TF-IDF + LogisticRegression (active, 30% of fraud score) plus rule-based urgency/impersonation/BEC cues. PyTorch / HuggingFace Transformers are roadmap-only: a dormant `TRANSFORMERS_MODEL` hook exists in `modules/nlp/engine.py`, but those libraries are not installed and no transformer runs.
 - **Databases:**
   - **Relational:** PostgreSQL (User data, Case management, Configuration).
   - **Document/Search:** Elasticsearch or MongoDB (Raw email logs, fast text search).

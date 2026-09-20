@@ -11,17 +11,25 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
     purged_body = 0
     deleted = 0
     # clean: drop body immediately after 7d -> keep metadata only
-    for e in db.query(EmailRecord).filter(EmailRecord.timestamp < clean_cut).all():
-        a = db.query(AnalysisResult).filter(AnalysisResult.email_id == e.id).first()
+    # clean: drop body immediately after 7d -> keep metadata only
+    records = db.query(EmailRecord).filter(EmailRecord.timestamp < clean_cut).all()
+    if not records:
+        return {"purged_body": 0, "deleted": 0}
+    email_ids = [e.id for e in records]
+    analyses = {a.email_id: a for a in db.query(AnalysisResult).filter(AnalysisResult.email_id.in_(email_ids)).all()}
+    for e in records:
+        a = analyses.get(e.id)
         score = a.fraud_score if a else 0
         if score < 50:
-            if e.body_text:
+            if e.body_text or e.body_text_masked:
                 e.body_text = ""
+                e.body_text_masked = ""
                 purged_body += 1
         else:
             if e.timestamp < mal_cut:
-                if e.body_text:
+                if e.body_text or e.body_text_masked:
                     e.body_text = ""
+                    e.body_text_masked = ""
                     purged_body += 1
     db.commit()
     return {"purged_body": purged_body, "deleted": deleted}

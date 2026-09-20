@@ -1,17 +1,22 @@
 """Central configuration. All secrets via env, sane local defaults."""
 import os
 from functools import lru_cache
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor environment file to backend/.env so cwd doesn't matter
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(_backend_dir, ".env")
+load_dotenv(_env_path, override=True)
 
 
 def _default_db_url() -> str:
     # Anchor sqlite to backend/ dir so cwd doesn't create stray DB files.
-    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return f"sqlite:///{os.path.join(base, 'email_forensics.db')}"
+    return f"sqlite:///{os.path.join(_backend_dir, 'email_forensics.db')}"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_env_path, extra="ignore")
 
     app_name: str = "Email Threat & Forensics Platform"
     api_prefix: str = "/api/v1"

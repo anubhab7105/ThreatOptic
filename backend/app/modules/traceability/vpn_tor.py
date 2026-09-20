@@ -8,17 +8,29 @@ CLOUD_ASN_HINTS = ("amazon", "aws", "google", "microsoft", "azure", "cloudflare"
 TOR_DNS_SUFFIX = "dnsel.torproject.org"
 
 
+def _live() -> bool:
+    if os.environ.get("ENABLE_LIVE_LOOKUPS", "").lower() in ("0", "false", "no"):
+        return False
+    try:
+        from ...config import get_settings
+        if get_settings().live_lookups:
+            return True
+    except Exception:
+        pass
+    return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
+
+
 @lru_cache(maxsize=2048)
 def is_tor_exit(ip: str) -> bool:
     """Reverse-DNS TOR exit check via dnsel.torproject.org (only when live lookups enabled)."""
-    if os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() in ("", "0", "false", "no"):
+    if not _live():
         return False
     if not ip:
         return False
     try:
         import dns.resolver
         rev = ".".join(reversed(ip.split(".")))
-        q = f"{rev}.80.443.{rev}.{TOR_DNS_SUFFIX}"  # common ports heuristic
+        q = f"{rev}.{TOR_DNS_SUFFIX}"
         dns.resolver.resolve(q, "A", lifetime=2)
         return True
     except Exception:

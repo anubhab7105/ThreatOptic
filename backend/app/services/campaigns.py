@@ -14,10 +14,27 @@ def _cid_for_ip(ip: str) -> str:
     return "ip-" + (ip or "unknown").replace(".", "-").replace(":", "-")
 
 
+def _ensure_graph(db: Session) -> None:
+    from ..modules.graph.store import G, upsert_email_graph
+    if G.number_of_nodes() == 0:
+        rows = (
+            db.query(models.EmailRecord.sender_address, models.TraceabilityData.origin_ip)
+            .join(models.TraceabilityData, models.EmailRecord.id == models.TraceabilityData.email_id)
+            .all()
+        )
+        for sender, ip in rows:
+            if sender and ip:
+                domain = sender.split("@")[-1].strip(" <>")
+                upsert_email_graph(sender, ip, [domain] if domain else [])
+
+
 def campaign_cards(db: Session) -> list[dict]:
+    _ensure_graph(db)
     clusters = find_campaigns()
-    emails = db.query(models.EmailRecord).all()
-    traces = {t.email_id: t for t in db.query(models.TraceabilityData).all()}
+    if not clusters:
+        return []
+    emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
+    traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn).all()}
 
     cards: list[dict] = []
     for c in clusters:
@@ -56,9 +73,9 @@ def campaign_detail(db: Session, cid: str) -> dict | None:
     card = next((c for c in campaign_cards(db) if c["id"] == cid), None)
     if not card:
         return None
-    emails = db.query(models.EmailRecord).all()
-    traces = {t.email_id: t for t in db.query(models.TraceabilityData).all()}
-    analyses = {a.email_id: a for a in db.query(models.AnalysisResult).all()}
+    emails = db.query(models.EmailRecord.id, models.EmailRecord.subject, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
+    traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip).all()}
+    analyses = {a.email_id: a for a in db.query(models.AnalysisResult.email_id, models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification).all()}
     rows = []
     for e in emails:
         sender = (e.sender_address or "").lower()

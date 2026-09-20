@@ -14,6 +14,10 @@
 - **Low Risk (0 - 49):**
   - *Action:* Deliver normally.
 
+### Ensemble Weights (as implemented in `modules/correlation/scoring.py`, sum to 1.0)
+- **nlp 0.30** (ML score + linguistic cues) · **auth 0.25** (SPF/DKIM/DMARC) · **intel 0.20** (feeds/blocklists) · **routing 0.15** (chain anomalies, domain age, payment language) · **attachment 0.10** (malware heuristics).
+- Every stored `score_breakdown` signal carries weight/value/contribution and sums exactly to the fraud score (asserted by `scripts/live_demo_check.py`).
+
 ### Behavioral Rules
 - If an email originates from a newly registered domain (under 30 days) AND contains payment instructions, add +30 to Fraud Score.
 - If SPF/DKIM fail BUT the sender claims to be a C-Level Executive, auto-escalate to High Risk.

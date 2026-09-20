@@ -1,7 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, downloadReport, jdel, jget, jpatch, jpost, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
+
+export function formatDateTime(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  const iso = ts.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(ts) ? ts : ts + 'Z';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
+}
 
 /* ---------------- Login ---------------- */
 
@@ -91,7 +98,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [code, setCode] = useState('');
   const [secret, setSecret] = useState('');
   const [query, setQuery] = useState('is:unread');
-  const [maxN, setMaxN] = useState(10);
+  const [maxN, setMaxN] = useState('10');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
@@ -113,24 +120,42 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     try {
       const r = await jget(`/gmail/auth-url?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
       window.open(r.auth_url, '_blank', 'noopener');
-      setNotice('Consent page opened — approve read-only access, then paste the ?code= value below.');
+      setNotice('Consent page opened — approve read-only access; you will return here and connect automatically.');
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
 
-  const finish = async () => {
+  const finish = async (manualCode?: string) => {
+    const c = (manualCode ?? code).trim();
+    if (!c) return;
     setBusy(true); setErr(''); setNotice('');
     try {
-      const r = await jpost('/gmail/callback', { code: code.trim(), redirect_uri: redirectUri, client_id: clientId || undefined, client_secret: secret || undefined });
+      const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined, client_secret: secret || undefined });
       setStatus(r);
       setCode('');
-      setNotice(`Connected as ${r.gmail_address}.`);
+      setNotice(`Connected as ${r.gmail_address}. You can close this tab.`);
     } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
   };
+
+  // Google redirects back to this origin with ?code=... (new tab).
+  // Capture it automatically so no visible code field is needed.
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current) return;
+    autoTried.current = true;
+    const q = new URLSearchParams(window.location.search).get('code');
+    if (q) {
+      setCode(q);
+      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+      void finish(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sync = async () => {
     setBusy(true); setErr(''); setNotice('');
     try {
-      const r = await jpost('/gmail/sync', { max_results: maxN, query, client_secret: secret || undefined });
+      const num = Math.max(1, parseInt(maxN, 10) || 10);
+      const r = await jpost('/gmail/sync', { max_results: num, query, client_secret: secret || undefined });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
       refresh();
       onSynced();
@@ -153,11 +178,11 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       {status?.connected ? (
         <div>
           <p>Connected as <b>{status.gmail_address}</b>
-            {status.last_sync_at ? <span style={{ color: 'var(--muted)' }}> · last sync {new Date(status.last_sync_at).toLocaleString()}</span> : null}
+            {status.last_sync_at ? <span style={{ color: 'var(--muted)' }}> · last sync {formatDateTime(status.last_sync_at)}</span> : null}
           </p>
           <div className="row">
             <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
-            <input type="text" style={{ maxWidth: 90 }} value={String(maxN)} onChange={(e) => setMaxN(Math.max(1, Math.min(50, Number(e.target.value) || 10)))} title="Max emails" />
+            <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
             <input type="password" style={{ maxWidth: 220 }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret (if not in env)" autoComplete="off" />
             <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
             <button className="ghost" onClick={disconnect}>Disconnect</button>
@@ -166,8 +191,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       ) : (
         <div>
           <p className="sub" style={{ marginTop: 0 }}>
-            1. Create a Google Cloud OAuth client (Desktop or Web, redirect URI below) with the Gmail API enabled. 2. Open the consent URL.
-            3. Paste the returned code to finish. Tokens stay server-side, per user.
+            1. Create a Google Cloud OAuth client (Web, redirect URI below) with the Gmail API enabled. 2. Open the consent URL and approve.
+            3. Google redirects back here and the connection finishes automatically. Tokens stay server-side, per user.
           </p>
           <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
             <input type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Google OAuth client ID (*.apps.googleusercontent.com)" />
@@ -175,10 +200,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
             <div className="row">
               <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !redirectUri.trim()}>Connect Gmail</button>
             </div>
-            <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste ?code= from the redirect URL" />
             <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
             <div className="row">
-              <button onClick={finish} disabled={busy || !code.trim() || !secret}>Finish connection</button>
+              <button onClick={() => finish()} disabled={busy || !code.trim() || !secret}>Finish connection</button>
             </div>
           </div>
         </div>
@@ -195,6 +219,8 @@ type EmailRow = {
   sender_address: string;
   recipient_address?: string;
   timestamp: string;
+  fraud_score?: number | null;
+  threat_classification?: string | null;
 };
 
 export function Dashboard() {
@@ -209,25 +235,33 @@ export function Dashboard() {
   const [sevFilter, setSevFilter] = useState('all');
   const [notice, setNotice] = useState('');
 
+  const triggerDownload = async (id: string, kind: 'pdf' | 'json') => {
+    try {
+      await downloadReport(id, kind);
+    } catch (e) {
+      setErr(`Failed to download ${kind.toUpperCase()} report: ${e instanceof ApiError ? e.message : String(e)}`);
+    }
+  };
+
   const load = async (query = q) => {
     setLoading(true);
     setErr('');
     try {
-      const [s, list] = await Promise.all([jget('/dashboard'), jget(`/emails?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`)]);
+      const [s, list] = await Promise.all([
+        jget('/dashboard'),
+        jget(`/emails?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`),
+      ]);
       setStats(s);
       setEmails(list);
-      // fetch scores for the visible rows (detail endpoint carries analysis)
-      const entries = await Promise.all(
-        list.slice(0, 30).map(async (e: EmailRow) => {
-          try {
-            const d = await jget(`/emails/${e.id}`);
-            return [e.id, { score: d.analysis?.fraud_score ?? 0, cls: d.analysis?.threat_classification ?? '—' }] as const;
-          } catch {
-            return [e.id, { score: 0, cls: '—' }] as const;
-          }
-        }),
-      );
-      setScores(Object.fromEntries(entries));
+      // Scores and classification are included directly from the batch endpoint
+      const scoreMap: Record<string, { score: number; cls: string }> = {};
+      for (const e of list) {
+        scoreMap[e.id] = {
+          score: e.fraud_score ?? 0,
+          cls: e.threat_classification ?? '—',
+        };
+      }
+      setScores(scoreMap);
     } catch (e) {
       setErr(e instanceof ApiError ? `Backend error (${e.status}): ${e.message}` : String(e));
     } finally {
@@ -364,10 +398,10 @@ export function Dashboard() {
                   <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
                   <td><span className="mono">{e.sender_address}</span></td>
                   <td>{s?.cls ?? '—'}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
                   <td>
-                    <button className="ghost small" onClick={() => downloadReport(e.id, 'pdf')}>PDF</button>{' '}
-                    <button className="ghost small" onClick={() => downloadReport(e.id, 'json')}>JSON</button>
+                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</button>{' '}
+                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'json')}>JSON</button>
                   </td>
                 </tr>
               );
@@ -455,12 +489,39 @@ export function EmailView({ id }: { id: string }) {
   const [tab, setTab] = useState(0);
   const [graph, setGraph] = useState<any>(null);
   const [err, setErr] = useState('');
+  const [cases, setCases] = useState<any[]>([]);
+  const [caseId, setCaseId] = useState('');
+  const [caseNotice, setCaseNotice] = useState('');
+
+  const triggerDownload = async (kind: 'pdf' | 'json') => {
+    try {
+      await downloadReport(id, kind);
+    } catch (e) {
+      setErr(`Failed to download ${kind.toUpperCase()} report: ${e instanceof ApiError ? e.message : String(e)}`);
+    }
+  };
 
   useEffect(() => {
     setErr('');
     setD(null);
     jget(`/emails/${id}`).then(setD).catch((e) => setErr(e instanceof ApiError ? `Could not load email (${e.status}): ${e.message}` : String(e)));
+    jget('/cases').then(setCases).catch(() => {});
   }, [id]);
+
+  const linkToCase = async () => {
+    if (!caseId) return;
+    try {
+      const targetCase = cases.find((c: any) => c.id === caseId);
+      const existing = targetCase?.email_ids || [];
+      if (!existing.includes(id)) {
+        await jpatch(`/cases/${caseId}`, { email_ids: [...existing, id] });
+      }
+      setCaseNotice(`Linked to case: ${targetCase?.title || caseId}`);
+      setTimeout(() => setCaseNotice(''), 4000);
+    } catch (e) {
+      setErr(`Failed to link case: ${e instanceof ApiError ? e.message : String(e)}`);
+    }
+  };
 
   useEffect(() => {
     if (d?.email?.sender_address) {
@@ -481,9 +542,24 @@ export function EmailView({ id }: { id: string }) {
       <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
-        <button className="ghost small" onClick={() => downloadReport(id, 'pdf')}>forensic PDF</button>{' '}
-        <button className="ghost small" onClick={() => downloadReport(id, 'json')}>JSON</button>
+        received: <b>{formatDateTime(d.email.timestamp)}</b> ·{' '}
+        <button className="ghost small" onClick={() => triggerDownload('pdf')}>forensic PDF</button>{' '}
+        <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
       </p>
+
+      {cases.length > 0 && (
+        <div className="row" style={{ marginTop: 8, marginBottom: 12, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>Investigate:</span>
+          <select value={caseId} onChange={(e) => setCaseId(e.target.value)} style={{ maxWidth: 260, fontSize: 12 }}>
+            <option value="">Select an investigation case…</option>
+            {cases.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
+            ))}
+          </select>
+          <button className="ghost small" onClick={linkToCase} disabled={!caseId}>Link to Case</button>
+          {caseNotice && <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ {caseNotice}</span>}
+        </div>
+      )}
 
       <div className="tabs">
         {TABS.map((name, i) => (
@@ -640,8 +716,8 @@ export function Campaigns() {
                 <dt>Shared IP</dt><dd><span className="mono">{k.ip}</span></dd>
                 <dt>ASN</dt><dd>{k.asn || '—'}</dd>
                 <dt>Domains</dt><dd>{(k.domains || []).map((d: string) => <span key={d} className="mono" style={{ marginRight: 4 }}>{d}</span>)}</dd>
-                <dt>First seen</dt><dd style={{ fontSize: 12 }}>{k.first_seen ? new Date(k.first_seen).toLocaleString() : '—'}</dd>
-                <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{k.last_seen ? new Date(k.last_seen).toLocaleString() : '—'}</dd>
+                <dt>First seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.first_seen)}</dd>
+                <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.last_seen)}</dd>
               </dl>
               <a href={`#/campaign/${k.id}`}>Open campaign →</a>
             </div>
@@ -688,7 +764,7 @@ export function CampaignDetail({ id }: { id: string }) {
                   <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
                   <td><span className="mono">{e.sender}</span></td>
                   <td>{e.classification}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -795,17 +871,20 @@ export function Mailboxes() {
   useEffect(() => { load(); }, []);
 
   const connect = async (provider: 'google' | 'microsoft') => {
-    setBusy(true); setErr(''); setNotice('');
+    setErr(''); setNotice('');
+    setBusy(true);
     try {
-      const r = await jget(`/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}${clientId ? `&client_id=${encodeURIComponent(clientId)}` : ''}`);
+      const r = await jget(`/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}${clientId.trim() ? `&client_id=${encodeURIComponent(clientId.trim())}` : ''}`);
       window.location.href = r.auth_url;
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
 
+  const [maxN, setMaxN] = useState('25');
   const syncNow = async () => {
     setBusy(true); setErr(''); setNotice('');
     try {
-      const r = await jpost('/oauth/sync-now', { max_results: 10 });
+      const num = Math.max(1, parseInt(maxN, 10) || 10);
+      const r = await jpost('/oauth/sync-now', { max_results: num });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
       load();
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
@@ -835,7 +914,7 @@ export function Mailboxes() {
                 <tr key={m.provider + m.account_email}>
                   <td><b>{m.provider}</b></td>
                   <td><span className="mono">{m.account_email}</span></td>
-                  <td style={{ fontSize: 12 }}>{m.last_poll_at ? new Date(m.last_poll_at).toLocaleString() : 'never'}</td>
+                  <td style={{ fontSize: 12 }}>{formatDateTime(m.last_poll_at)}</td>
                   <td><button className="ghost small" onClick={() => disconnect(m.provider)}>Disconnect</button></td>
                 </tr>
               ))}
@@ -843,6 +922,15 @@ export function Mailboxes() {
           </table>
         )}
         <div className="row" style={{ marginTop: 10 }}>
+          <input
+            type="number"
+            min="1"
+            style={{ maxWidth: 110 }}
+            value={maxN}
+            onChange={(e) => setMaxN(e.target.value)}
+            placeholder="Count"
+            title="Max emails to sync (any number)"
+          />
           <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
         </div>
       </div>

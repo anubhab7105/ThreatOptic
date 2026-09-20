@@ -1,6 +1,6 @@
 """Pydantic schemas for API."""
-from datetime import datetime
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from pydantic import BaseModel, Field, field_serializer
 
 
 class OrganizationOut(BaseModel):
@@ -79,7 +79,15 @@ class EmailOut(BaseModel):
     attachments_metadata: list = []
     raw_eml_hash: str = ""
     timestamp: datetime
+    fraud_score: float | None = None
+    threat_classification: str | None = None
     model_config = {"from_attributes": True}
+
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, dt: datetime, _info):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
 
 
 class EmailDetail(BaseModel):
@@ -162,7 +170,7 @@ class GmailCallbackIn(BaseModel):
 
 
 class GmailSyncIn(BaseModel):
-    max_results: int = Field(default=10, ge=1, le=50)
+    max_results: int = Field(default=10, ge=1)
     query: str = Field(default="is:unread", max_length=200)
     client_secret: str | None = None
 

@@ -39,13 +39,16 @@ async def main():
     init_db()
     db = SessionLocal()
     try:
-        if not db.query(Organization).first():
+        org = db.query(Organization).first()
+        if not org:
             org = Organization(name="Demo SOC", compliance_policy={"retention_clean_days": 7, "retention_malicious_days": 90})
             db.add(org)
             db.flush()
+        if not db.query(User).filter_by(username="admin").first():
             db.add(User(username="admin", password_hash=_hash("admin123"), role="Admin", organization_id=org.id))
+        if not db.query(User).filter_by(username="analyst").first():
             db.add(User(username="analyst", password_hash=_hash("analyst123"), role="Analyst", organization_id=org.id))
-            db.commit()
+        db.commit()
         from .services.pipeline import process_raw_email
         for raw in (PHISH_EML, CLEAN_EML):
             try:

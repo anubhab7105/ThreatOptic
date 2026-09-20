@@ -6,6 +6,7 @@ network lookups run in threads with tight timeouts and are disabled by default
 (ENABLE_LIVE_LOOKUPS=1 to opt in).
 """
 import asyncio
+from datetime import datetime, timezone
 import logging
 import re
 from sqlalchemy.orm import Session
@@ -97,47 +98,64 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     infra = infra or {"is_vpn_tor": False, "infra_flags": []}
     auth = auth or {"spf": {}, "dkim": {}, "dmarc": {}, "aligned": False}
 
+    domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
+
+    # If origin_ip gave no coordinates, try relay hops or sender domain IP for approximate geolocation
+    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+        for hop in (path or []):
+            for hop_ip in hop.get("ips", []):
+                g = geolocate(hop_ip)
+                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                    geo = g
+                    break
+            if geo and (geo.get("lat") != 0.0 or geo.get("lon") != 0.0):
+                break
+    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+        try:
+            import socket
+            if domain:
+                dip = socket.gethostbyname(domain)
+                g = geolocate(dip)
+                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                    geo = {**g, "source": "approx-domain-ip"}
+        except Exception:
+            pass
+
     # geo may lack isp/asn when offline — refresh infra flags with what we have
     try:
         infra = flag_infrastructure(origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")))
     except Exception:
         pass
-
-    domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
     try:
         age = domain_age_days(whois)
     except Exception:
         age = None
 
     try:
-        nlp = analyze_text(parsed.get("subject", ""), parsed.get("body_text", ""))
-    except Exception as e:
-        log.warning("nlp failed: %s", e)
-        nlp = {"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []}
-
-    try:
         urls = extract_urls((parsed.get("body_text") or "") + "\n" + (parsed.get("body_html") or ""))
     except Exception:
         urls = []
+
+    import os
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+
+    nlp_res, url_res, attach_res = await asyncio.gather(
+        _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", "")),
+        _to_thread(analyze_urls, urls, vt_key),
+        _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key),
+        return_exceptions=True,
+    )
+    nlp = nlp_res if isinstance(nlp_res, dict) else {"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []}
+    url_res = url_res if isinstance(url_res, dict) else {"urls": urls[:50], "hits": [], "malicious_count": 0}
+    attach_res = attach_res if isinstance(attach_res, dict) else {"findings": [], "risk": 0.0, "malicious_count": 0}
+
     try:
-        url_res = analyze_urls(urls)
-    except Exception as e:
-        log.warning("url analysis failed: %s", e)
-        url_res = {"urls": urls[:50], "hits": [], "malicious_count": 0}
-    try:
-        intel = aggregate_threat_intel([domain] if domain else [], [origin_ip] if origin_ip else [], urls)
+        intel = await _to_thread(aggregate_threat_intel, [domain] if domain else [], [origin_ip] if origin_ip else [], urls)
     except Exception as e:
         log.warning("threat intel failed: %s", e)
         intel = {"hits": [], "count": 0}
     intel["malicious_count"] = url_res.get("malicious_count", 0)
     intel_hits = intel.get("hits", []) + [{"type": "url", **h} for h in url_res.get("hits", [])]
-    try:
-        import os
-        attach_res = analyze_attachments(parsed.get("attachments_metadata", []),
-                                         vt_key=os.environ.get("VIRUSTOTAL_API_KEY", ""))
-    except Exception as e:
-        log.warning("attachment analysis failed: %s", e)
-        attach_res = {"findings": [], "risk": 0.0, "malicious_count": 0}
     intel_hits += [{"type": "attachment", **f} for f in attach_res.get("findings", [])]
 
     body = parsed.get("body_text", "") or ""
@@ -156,6 +174,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
         raw_headers=headers, body_text=body, body_text_masked=masked_body,
         attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
+        timestamp=parsed.get("timestamp") or datetime.now(timezone.utc),
     )
     db.add(email_row)
     db.flush()

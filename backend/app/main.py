@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
     note = graph_consistency_note()
     if note:
         log.warning(note)
+    try:
+        from .services.campaigns import _ensure_graph
+        with SessionLocal() as _db:
+            _ensure_graph(_db)
+    except Exception as ex:
+        log.warning("Initial graph seed deferred: %s", ex)
     controller = None
     consumer = None
     scheduler = None
@@ -102,7 +108,8 @@ app.include_router(oauth_router, prefix=settings.api_prefix)
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception):
     log.exception("unhandled error on %s", request.url.path)
-    return JSONResponse({"detail": f"internal error: {exc}"}, status_code=500)
+    msg = f"internal error: {exc}" if settings.app_env.lower() == "development" else "Internal server error"
+    return JSONResponse({"detail": msg}, status_code=500)
 
 
 @app.get("/health")

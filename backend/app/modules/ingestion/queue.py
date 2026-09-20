@@ -22,7 +22,12 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
             producer = AIOKafkaProducer(bootstrap_servers=settings.kafka_bootstrap)
             await producer.start()
             try:
-                await producer.send_and_wait(settings.kafka_topic, json.dumps(payload).encode())
+                def _json_serial(o):
+                    if isinstance(o, bytes):
+                        import base64
+                        return base64.b64encode(o).decode("ascii")
+                    return str(o)
+                await producer.send_and_wait(settings.kafka_topic, json.dumps(payload, default=_json_serial).encode())
                 return
             finally:
                 await producer.stop()
