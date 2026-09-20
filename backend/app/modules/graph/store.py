@@ -1,6 +1,8 @@
-"""Graph store: networkx local (always) + Neo4j mirror when NEO4J_URI set.
-Nodes: IP_Address, Domain, Email_Address, Threat_Campaign (per Shema.md)
-Edges: SENT_FROM, HOSTS, PART_OF
+"""Graph store: Neo4j-first when NEO4J_URI is set, networkx local fallback.
+
+Writes mirror to both backends (best-effort). Reads use Neo4j as the source
+of truth whenever it is configured so attribution stays consistent across
+replicas; the in-memory graph is a single-replica/local-dev fallback (F8).
 """
 import os
 from typing import Any
