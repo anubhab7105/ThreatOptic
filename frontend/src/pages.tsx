@@ -273,7 +273,7 @@ export function Dashboard() {
 
 /* ---------------- Graph SVG ---------------- */
 
-function GraphSvg({ graph }: { graph: any }) {
+export function GraphSvg({ graph }: { graph: any }) {
   const nodes: any[] = graph?.nodes ?? [];
   const edges: any[] = graph?.edges ?? [];
   if (!nodes.length) return <Empty msg="No related entities yet — graph grows as more mail shares IPs/domains." />;
