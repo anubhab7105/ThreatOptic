@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
-import { jget } from './api';
-import { Dashboard, EmailView, Cases } from './pages';
+import { AuthProvider, useAuth } from './auth';
+import { Dashboard, EmailView, Cases, LoginPage } from './pages';
 
-function Router() {
+function Shell() {
+  const { user, loading, logout } = useAuth();
   const [hash, setHash] = useState(window.location.hash || '#/');
   const [health, setHealth] = useState<'ok' | 'down' | 'unknown'>('unknown');
   useEffect(() => {
@@ -13,7 +14,7 @@ function Router() {
     return () => window.removeEventListener('hashchange', f);
   }, []);
   useEffect(() => {
-    fetch('/api/v1/dashboard')
+    fetch('/health')
       .then((r) => setHealth(r.ok ? 'ok' : 'down'))
       .catch(() => setHealth('down'));
   }, [hash]);
@@ -24,6 +25,19 @@ function Router() {
       ? 'cases'
       : 'dash';
 
+  if (loading) {
+    return (
+      <div>
+        <nav className="nav">
+          <span className="brand"><span>◈</span> Email Forensics SOC</span>
+        </nav>
+        <div className="page"><div className="skel" style={{ height: 120 }} /></div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
   return (
     <div>
       <nav className="nav">
@@ -33,6 +47,10 @@ function Router() {
         <a className={`nl${route === 'dash' ? ' active' : ''}`} href="#/">Dashboard</a>
         <a className={`nl${route === 'cases' ? ' active' : ''}`} href="#/cases">Cases</a>
         <span className="spacer" />
+        <span className="health" title={`${user.username} · ${user.role}`}>
+          {user.username} ({user.role})
+        </span>
+        <a className="nl" href="#/" onClick={(e) => { e.preventDefault(); logout(); window.location.hash = '#/'; }}>Sign out</a>
         <span className="health" title="backend reachability">
           <span
             className="dot"
@@ -53,4 +71,8 @@ function Router() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<Router />);
+createRoot(document.getElementById('root')!).render(
+  <AuthProvider>
+    <Shell />
+  </AuthProvider>,
+);
