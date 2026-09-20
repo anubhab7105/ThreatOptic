@@ -27,7 +27,98 @@ def _neo():
         return None
 
 
-def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: str = "") -> dict[str, Any]:
+def graph_consistency_note() -> str | None:
+    """Warn when the ephemeral graph would diverge (multi-replica, no Neo4j)."""
+    from ...config import get_settings
+
+    settings = get_settings()
+    uri = os.environ.get("NEO4J_URI", "") or settings.neo4j_uri
+    if not uri and getattr(settings, "expected_replicas", 1) > 1:
+        return ("NEO4J_URI is unset with expected_replicas>1: the in-memory graph "
+                "is per-replica and attribution will diverge — configure Neo4j.")
+    return None
+
+
+def _node_id(labels: list, props: dict) -> str | None:
+    label = labels[0] if labels else ""
+    if label == "Email_Address" and props.get("address"):
+        return f"email:{props['address']}"
+    if label == "IP_Address" and props.get("ip"):
+        return f"ip:{props['ip']}"
+    if label == "Domain" and props.get("name"):
+        return f"domain:{props['name']}"
+    if label == "Threat_Campaign" and props.get("name"):
+        return f"campaign:{props['name']}"
+    return None
+
+
+def _node_kind(labels: list) -> str:
+    return labels[0] if labels else "Unknown"
+
+
+def _neo_related(value: str, depth: int) -> dict[str, Any] | None:
+    """Read the neighbourhood from Neo4j. None => fall back to networkx."""
+    drv = _neo()
+    if not drv:
+        return None
+    depth = max(1, min(int(depth), 5))
+    root_filter = "toLower(coalesce(n.address, n.ip, n.name, '')) = toLower($v)"
+    try:
+        with drv.session() as s:
+            roots = list(s.run(
+                f"MATCH (n) WHERE {root_filter} "
+                "RETURN labels(n) AS labels, properties(n) AS props LIMIT 1",
+                {"v": value}))
+            if not roots:
+                return {"nodes": [], "edges": []}
+            node_rows = list(s.run(
+                f"MATCH p=(n)-[*1..{depth}]-(m) WHERE {root_filter} "
+                "UNWIND nodes(p) AS x "
+                "RETURN DISTINCT labels(x) AS labels, properties(x) AS props LIMIT 500",
+                {"v": value}))
+            rel_rows = list(s.run(
+                f"MATCH p=(n)-[*1..{depth}]-(m) WHERE {root_filter} "
+                "UNWIND relationships(p) AS r RETURN DISTINCT type(r) AS t, "
+                "labels(startNode(r)) AS slab, properties(startNode(r)) AS sprops, "
+                "labels(endNode(r)) AS elab, properties(endNode(r)) AS eprops LIMIT 500",
+                {"v": value}))
+    except Exception:
+        return None
+    nodes: dict[str, dict] = {}
+    for r in roots + node_rows:
+        nid = _node_id(list(r["labels"] or []), dict(r["props"] or {}))
+        if nid and nid not in nodes:
+            labels = list(r["labels"] or [])
+            nodes[nid] = {"id": nid, "kind": _node_kind(labels),
+                          **{k: v for k, v in dict(r["props"] or {}).items()
+                             if k in ("address", "ip", "name", "country", "is_malicious")}}
+    edges = []
+    seen = set()
+    for r in rel_rows:
+        a = _node_id(list(r["slab"] or []), dict(r["sprops"] or {}))
+        b = _node_id(list(r["elab"] or []), dict(r["eprops"] or {}))
+        if a and b and (a, b, r["t"]) not in seen and a in nodes and b in nodes:
+            seen.add((a, b, r["t"]))
+            edges.append({"source": a, "target": b, "rel": r["t"]})
+    return {"nodes": list(nodes.values()), "edges": edges}
+
+
+def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
+    drv = _neo()
+    if not drv:
+        return None
+    try:
+        with drv.session() as s:
+            rows = list(s.run(
+                "MATCH (i:IP_Address)-[:HOSTS]->(d:Domain) "
+                "WITH i, collect(DISTINCT d.name) AS domains "
+                "WHERE size(domains) >= $min "
+                "RETURN i.ip AS ip, domains, size(domains) AS size "
+                "ORDER BY size DESC LIMIT 50",
+                {"min": min_shared}))
+            return [{"ip": r["ip"], "domains": list(r["domains"]), "size": r["size"]} for r in rows]
+    except Exception:
+        return None
     email_addr = (email_addr or "").lower()[:320]
     ip = ip or ""
     e_node = f"email:{email_addr}"
