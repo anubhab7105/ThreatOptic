@@ -504,6 +504,93 @@ export function EmailView({ id }: { id: string }) {
   );
 }
 
+/* ---------------- Campaigns ---------------- */
+
+export function Campaigns() {
+  const [cards, setCards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    jget('/campaigns')
+      .then(setCards)
+      .catch((e) => setErr(e instanceof ApiError ? `Could not load campaigns (${e.status}): ${e.message}` : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+  return (
+    <div className="page">
+      <h1>Campaigns</h1>
+      <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
+      <Toast msg={err} />
+      {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet — ingest more mail sharing IPs/domains." /> : (
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+          {cards.map((k) => (
+            <div key={k.id} className="card">
+              <h3><a href={`#/campaign/${k.id}`}>{k.name}</a></h3>
+              <div className="stat-num">{k.email_count} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>emails</span></div>
+              <dl className="kv" style={{ gridTemplateColumns: '110px 1fr' }}>
+                <dt>Confidence</dt><dd><b>{Math.round(k.confidence * 100)}%</b></dd>
+                <dt>Shared IP</dt><dd><span className="mono">{k.ip}</span></dd>
+                <dt>ASN</dt><dd>{k.asn || '—'}</dd>
+                <dt>Domains</dt><dd>{(k.domains || []).map((d: string) => <span key={d} className="mono" style={{ marginRight: 4 }}>{d}</span>)}</dd>
+                <dt>First seen</dt><dd style={{ fontSize: 12 }}>{k.first_seen ? new Date(k.first_seen).toLocaleString() : '—'}</dd>
+                <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{k.last_seen ? new Date(k.last_seen).toLocaleString() : '—'}</dd>
+              </dl>
+              <a href={`#/campaign/${k.id}`}>Open campaign →</a>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CampaignDetail({ id }: { id: string }) {
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    setD(null);
+    setErr('');
+    jget(`/campaigns/${id}`)
+      .then(setD)
+      .catch((e) => setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)));
+  }, [id]);
+  if (err) return <div className="page"><a href="#/campaigns">← campaigns</a><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><a href="#/campaigns">← campaigns</a><SkeletonList /></div>;
+  return (
+    <div className="page">
+      <a href="#/campaigns">← campaigns</a>
+      <h1 style={{ marginTop: 8 }}>{d.card.name}</h1>
+      <p className="sub">
+        {d.card.email_count} emails · confidence {Math.round(d.card.confidence * 100)}% · IP <span className="mono">{d.card.ip}</span>
+        {d.card.asn ? <> · ASN {d.card.asn}</> : null}
+      </p>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Attribution graph (campaign nodes)</h3>
+        <GraphSvg graph={d.graph} />
+      </div>
+      <div className="card">
+        <h3>Emails in this campaign</h3>
+        {d.emails.length === 0 ? <Empty msg="No stored emails match this cluster." /> : (
+          <table className="tbl">
+            <thead><tr><th>Score</th><th>Subject</th><th>Sender</th><th>Classification</th><th>Received</th></tr></thead>
+            <tbody>
+              {d.emails.map((e: any) => (
+                <tr key={e.id}>
+                  <td><ScoreBadge v={e.fraud_score ?? 0} /></td>
+                  <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
+                  <td><span className="mono">{e.sender}</span></td>
+                  <td>{e.classification}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Cases ---------------- */
 
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };

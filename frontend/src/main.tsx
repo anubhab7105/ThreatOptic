@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { Dashboard, EmailView, Cases, LoginPage } from './pages';
+import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage } from './pages';
 
 function Shell() {
   const { user, loading, logout } = useAuth();
@@ -21,9 +21,13 @@ function Shell() {
 
   const route = hash.startsWith('#/email/')
     ? 'email'
-    : hash.startsWith('#/cases')
-      ? 'cases'
-      : 'dash';
+    : hash.startsWith('#/campaign/')
+      ? 'campaign'
+      : hash.startsWith('#/campaigns')
+        ? 'campaigns'
+        : hash.startsWith('#/cases')
+          ? 'cases'
+          : 'dash';
 
   if (loading) {
     return (
