@@ -73,6 +73,8 @@ function Shell() {
         <CampaignDetail id={hash.replace('#/campaign/', '')} />
       ) : route === 'campaigns' ? (
         <Campaigns />
+      ) : route === 'model' ? (
+        <ModelInfo />
       ) : route === 'cases' ? (
         <Cases />
       ) : (
