@@ -1,35 +1,51 @@
+# All secrets come from the environment (copy backend/.env.example to .env
+# and fill in real values). Defaults below are dev-only placeholders.
 services:
   backend:
     build: ./backend
     ports: ["8000:8000"]
+    env_file: [.env]
     environment:
-      DATABASE_URL: postgresql+psycopg2://soc:soc@postgres:5432/soc
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: socsoc123
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://soc:${POSTGRES_PASSWORD:-soc}@postgres:5432/soc}
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      ELASTICSEARCH_USER: ${ELASTICSEARCH_USER:-elastic}
+      ELASTICSEARCH_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      CUSTODY_KEY: ${CUSTODY_KEY:?set CUSTODY_KEY in .env}
+      APP_ENV: ${APP_ENV:-production}
     depends_on: [postgres, neo4j]
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
     ports: ["5173:80"]
     depends_on: [backend]
   postgres:
     image: postgres:16
+    env_file: [.env]
     environment:
-      POSTGRES_USER: soc
-      POSTGRES_PASSWORD: soc
-      POSTGRES_DB: soc
+      POSTGRES_USER: ${POSTGRES_USER:-soc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-soc}
     volumes: [pgdata:/var/lib/postgresql/data]
   neo4j:
     image: neo4j:5
+    env_file: [.env]
     environment:
-      NEO4J_AUTH: neo4j/socsoc123
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}
     ports: ["7474:7474", "7687:7687"]
     volumes: [neodata:/data]
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    env_file: [.env]
     environment:
       discovery.type: single-node
-      xpack.security.enabled: "false"
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?set ELASTIC_PASSWORD in .env}
     ports: ["9200:9200"]
     volumes: [esdata:/usr/share/elasticsearch/data]
   kafka:

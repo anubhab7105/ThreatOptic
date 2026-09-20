@@ -11,6 +11,13 @@
 - [x] F6 attachments — `threat_intel/attachment_analyzer.py` (VT file-hash lookup skipped without key; macro/double-ext/exec/magic-mismatch heuristics); parser stores 8-byte magic; pipeline wires findings into intel hits; `attachment_risk` added to WEIGHTS (0.10, others rescaled to sum 1.0) + breakdown + signals. Tests: `test_attachments.py` (6 tests).
 - [x] F9 retention job — `services/scheduler.py` (APScheduler BackgroundScheduler, daily 03:00 local, JSONL audit log + structured logging), started in lifespan. Tests: `test_retention.py` (job + audit line + schedule).
 
+## Phase 2b: Audit fixes — production hardening (F8, F7, F10–F12) ✅
+- [x] F8 graph consistency — `store.py` reads from Neo4j when `NEO4J_URI` is set (`find_campaigns`/`related_entities`), networkx stays as local fallback; `graph_consistency_note()` warns at startup when replicas>1 without Neo4j (constraint also commented in `k8s/backend.yaml`). Tests: `test_graph_neo.py` (fake-driver reads, error fallback, note).
+- [x] F7 mailbox OAuth — `routers/oauth.py` (Google/Microsoft authorize JSON, callback with code exchange, Fernet-encrypted per-org refresh tokens in `mailbox_connections`, status/disconnect, sync-now) reusing `connectors.py` fetchers; `poll_all_mailboxes()` on an APScheduler interval (`MAIL_POLL_MINUTES`, 0=off); frontend Mailboxes page (Connect Google/Microsoft, status, Sync now). Tests: `test_oauth.py` (mocked providers, encryption-at-rest asserted).
+- [x] F10 Elastic implemented — `modules/search/elastic_sync.py` mirrors each analyzed email (best-effort, skipped without URL) + `GET /api/v1/search` (ES multi_match, SQLite fallback). Tests: `test_search.py` (skip, fallback, mocked-ES paths).
+- [x] F11 CI + tests — ruff (`E9,F` gate, 11 real issues fixed), ESLint (0 errors), pip-audit (fixed: fastapi→≥0.135/starlette→≥1.3.1, now clean), npm audit high/critical gate; new `test_forensics/nlp/privacy/traceability.py` module suites (also fixed a real `domain_age_days` slicing bug); frontend Vitest (`components.test.ts`, `npm test`).
+- [x] F12 secrets externalized — compose uses `env_file` + `${VAR}`/`${VAR:?...}` (no committed values), ES `xpack.security.enabled=true`, frontend `VITE_API_URL` build-arg; k8s uses `secretKeyRef` + `secret.yaml.example` template; `.env.example` documents everything.
+
 ## Phase 1: Foundation & Ingestion
 - [x] Provision cloud infrastructure (VPCs, DB clusters). → `docker-compose.yml` (postgres/neo4j/elastic/kafka), `k8s/backend.yaml`
 - [x] Initialize code repositories and CI/CD pipelines. → `.github/workflows/ci.yml`

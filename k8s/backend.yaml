@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: email-forensics-backend
 spec:
+  # F8 constraint: replicas > 1 share NO in-memory state. The attribution
+  # graph is only consistent across pods when NEO4J_URI points at a shared
+  # Neo4j (see graph_consistency_note()); do not scale past 1 without it.
   replicas: 2
   selector:
     matchLabels: { app: email-forensics-backend }
@@ -15,8 +18,22 @@ spec:
           image: email-forensics-backend:latest
           ports: [{ containerPort: 8000 }]
           env:
-            - { name: DATABASE_URL, value: "postgresql+psycopg2://soc:soc@postgres:5432/soc" }
-            - { name: NEO4J_URI, value: "bolt://neo4j:7687" }
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: database-url } }
+            - name: NEO4J_URI
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-uri } }
+            - name: NEO4J_USER
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-user } }
+            - name: NEO4J_PASSWORD
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-password } }
+            - name: SECRET_KEY
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: secret-key } }
+            - name: CUSTODY_KEY
+              valueFrom: { secretKeyRef: { name: soc-secrets, key: custody-key } }
+            - name: APP_ENV
+              value: "production"
+            - name: EXPECTED_REPLICAS
+              value: "2"
 ---
 apiVersion: v1
 kind: Service

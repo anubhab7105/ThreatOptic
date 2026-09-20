@@ -67,6 +67,18 @@ Attachments are hash-checked against VirusTotal (skipped without `VIRUSTOTAL_API
 ### Retention
 `services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Manual run: `POST /api/v1/admin/retention` (Admin).
 
+### Secrets (compose / k8s)
+No credentials are committed. For compose: `cp backend/.env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
+
+### Mailbox polling
+Organization connectors live under "Mailboxes" in the UI (Google/Microsoft OAuth, encrypted refresh tokens). `MAIL_POLL_MINUTES=0` (default) means manual "Sync now" only; set e.g. `60` for hourly background polling.
+
+### Full-text search
+`GET /api/v1/search?q=...` queries Elasticsearch (`email.subject^3`, sender, body) when configured, else the same SQLite search as the email list — the endpoint always works locally.
+
+### Code quality gates
+Backend: `ruff check backend --select E9,F`, `pip-audit -r backend/requirements.txt`, `pytest backend/tests`. Frontend: `npm run lint`, `npm audit --omit=dev --audit-level=high`, `npm test` (Vitest), `npm run build`. All run in `.github/workflows/ci.yml`.
+
 ### Configuration
 - `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
