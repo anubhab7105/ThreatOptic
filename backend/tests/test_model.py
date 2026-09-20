@@ -29,6 +29,25 @@ def test_metrics_file_schema():
     assert len(metrics["confusion_matrix"]) == n
     assert all(len(row) == n for row in metrics["confusion_matrix"])
     assert sum(sum(row) for row in metrics["confusion_matrix"]) == metrics["n_test"]
+    assert "dataset" in metrics  # records corpus vs curated fallback
+
+
+def test_training_data_loader_csv_and_fallback(tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+    import train_nlp
+
+    csv_path = tmp_path / "dataset.csv"
+    csv_path.write_text("text,label\nWin money now, click here,phishing\nTeam lunch tomorrow,clean\nKindly wire funds discreetly,bec\njunk-row,bogus\n")
+    monkeypatch.setattr(train_nlp, "dataset_csv_path", lambda: str(csv_path))
+    X, y, source = train_nlp.load_training_data()
+    assert (X, y) == (["Win money now, click here", "Team lunch tomorrow", "Kindly wire funds discreetly"],
+                      ["phishing", "clean", "bec"])
+    assert "dataset.csv" in source
+
+    monkeypatch.setattr(train_nlp, "dataset_csv_path", lambda: str(tmp_path / "missing.csv"))
+    X, y, source = train_nlp.load_training_data()
+    assert len(X) == len(y) > 0 and "fallback" in source
 
 
 def test_model_metrics_endpoint():
