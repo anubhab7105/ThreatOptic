@@ -20,6 +20,7 @@ from ..modules.traceability.whois_dns import whois_lookup, dns_lookup, domain_ag
 from ..modules.traceability.vpn_tor import flag_infrastructure
 from ..modules.nlp.engine import analyze_text
 from ..modules.threat_intel.url_analyzer import extract_urls, analyze_urls, domain_of
+from ..modules.threat_intel.attachment_analyzer import analyze_attachments
 from ..modules.threat_intel.feeds import aggregate_threat_intel
 from ..modules.correlation.scoring import compute_scores
 from ..modules.graph.store import upsert_email_graph

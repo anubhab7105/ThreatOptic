@@ -141,6 +141,7 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
         "breakdown": {
             "nlp": round(nlp_score, 2), "auth": round(auth_score, 2),
             "intel": round(intel_score, 2), "routing": round(routing_score, 2),
+            "attachment": round(attachment_score, 2),
         },
         "rules_fired": extras,
         "signals": signals,
