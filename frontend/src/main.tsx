@@ -49,6 +49,7 @@ function Shell() {
           <span>◈</span> Email Forensics SOC
         </span>
         <a className={`nl${route === 'dash' ? ' active' : ''}`} href="#/">Dashboard</a>
+        <a className={`nl${route === 'campaigns' || route === 'campaign' ? ' active' : ''}`} href="#/campaigns">Campaigns</a>
         <a className={`nl${route === 'cases' ? ' active' : ''}`} href="#/cases">Cases</a>
         <span className="spacer" />
         <span className="health" title={`${user.username} · ${user.role}`}>
@@ -65,6 +66,10 @@ function Shell() {
       </nav>
       {route === 'email' ? (
         <EmailView id={hash.replace('#/email/', '')} />
+      ) : route === 'campaign' ? (
+        <CampaignDetail id={hash.replace('#/campaign/', '')} />
+      ) : route === 'campaigns' ? (
+        <Campaigns />
       ) : route === 'cases' ? (
         <Cases />
       ) : (
