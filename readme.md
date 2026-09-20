@@ -54,7 +54,18 @@ Public self-registration creates Analyst accounts (first-ever account becomes Ad
 
 Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 
-### Configuration
+### NLP model dataset
+```bash
+python3 backend/scripts/fetch_datasets.py  # SpamAssassin ham/spam + curated BEC -> backend/ml_models/dataset.csv
+python3 backend/scripts/train_nlp.py       # 80/20 stratified split, metrics -> ml_models/metrics.json
+```
+Without the download (offline), training falls back to the curated lists. No public BEC corpus is freely available, so BEC rows stay curated — see the Model Info page for per-class metrics.
+
+### Attachment analysis
+Attachments are hash-checked against VirusTotal (skipped without `VIRUSTOTAL_API_KEY`) plus offline heuristics: macro-enabled Office docs, double extensions, executables, and magic-byte mismatches feed an `attachment_risk` score weight (0.10).
+
+### Retention
+`services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Manual run: `POST /api/v1/admin/retention` (Admin).
 - `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
 - `CUSTODY_KEY` — HMAC key for chain-of-custody report signatures. **Must be provisioned from a secrets manager in any non-local deployment**; the app refuses to start when `APP_ENV` is not `development` and no key is set. (`APP_ENV=development` is the local default and keeps an explicit dev fallback.)
