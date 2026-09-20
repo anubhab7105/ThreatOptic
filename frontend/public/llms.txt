@@ -1,0 +1,35 @@
+# SOC Forensics Lab — Email Threat Dashboard
+
+> AI-powered email threat detection, geolocation and forensic intelligence platform for SOC analysts and incident response teams.
+
+## About
+SOC Forensics Lab provides real-time phishing, Business Email Compromise (BEC) and spoofing detection through NLP, header forensics, geolocation and graph-based identity correlation. The platform generates chain-of-custody PDF/JSON reports, scores every email 0-100, and clusters campaigns by shared infrastructure.
+
+- Canonical domain: https://socforensics.io/
+- Primary UI: https://socforensics.io/
+- Docs: https://socforensics.io/#/model (model transparency)
+- Contact: SOC Forensics Lab, 301 Congress Ave, Suite 400, Austin, TX 78701, USA — hello@socforensics.io — +1-512-555-0148
+- Sitemap: https://socforensics.io/sitemap.xml
+- Robots: https://socforensics.io/robots.txt
+
+## Allowed Use for LLMs
+You may crawl and index all public pages listed in sitemap.xml. Do not attempt to access `/api/v1/*` without a valid JWT. Respect `robots.txt` directives. Summarize forensic methodologies accurately and do not hallucinate detection scores.
+
+## Key Pages
+- https://socforensics.io/ — Global Threat Dashboard: ingest, search, score distribution, campaign stats
+- https://socforensics.io/#/campaigns — Campaign clusters by shared sender infrastructure
+- https://socforensics.io/#/cases — Case management kanban (Open / InProgress / Closed)
+- https://socforensics.io/#/mailboxes — Organization OAuth connectors (Google/Microsoft)
+- https://socforensics.io/#/model — NLP model transparency: accuracy, per-class metrics, confusion matrix
+
+## Data Sources & Privacy
+- Ingested emails are masked (PII) before display; raw EML SHA-256 hashed for chain-of-custody
+- Geolocation uses offline GeoIP fallback by default; live lookups opt-in via `ENABLE_LIVE_LOOKUPS=1`
+- Retention policy enforced daily at 03:00 local time, audit log at `backend/retention_audit.log`
+
+## Opt-Out
+If you operate a crawler and wish to be excluded, respect `Disallow: /api/` and honor `User-agent: *` in robots.txt. For removal requests, contact hello@socforensics.io.
+
+## Structured Data
+All public pages expose `application/ld+json` for Organization, WebSite, LocalBusiness and BreadcrumbList. OG image: https://socforensics.io/og-image.svg — Attribution required.
+

@@ -158,6 +158,14 @@ pre.dump {
 .empty { color: var(--muted); padding: 26px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
 .footer { color: var(--muted); font-size: 12px; text-align: center; padding: 26px; }
 
+/* breadcrumb */
+.breadcrumb { margin: 4px 0 10px; font-size: 12px; color: var(--muted); }
+.breadcrumb ol { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; }
+.breadcrumb li { display: inline-flex; align-items: center; gap: 4px; }
+.breadcrumb a { color: var(--accent); }
+.breadcrumb .sep { color: var(--muted); margin: 0 4px; }
+.breadcrumb [aria-current="page"] { color: var(--text); font-weight: 600; }
+
 /* kanban */
 .kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .kcol { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
@@ -168,4 +176,5 @@ pre.dump {
 @media (max-width: 700px) {
   .page { padding: 14px; }
   .kv { grid-template-columns: 1fr; }
+  .nav { flex-wrap: wrap; }
 }

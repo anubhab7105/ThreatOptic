@@ -3,9 +3,104 @@ import { ApiError, downloadReport, jdel, jget, jpatch, jpost, uploadEmFile } fro
 import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
 
+/* ---------- SEO helpers (custom domain: socforensics.io) ---------- */
+const CANONICAL_BASE = 'https://socforensics.io';
+function setCanonical(path: string) {
+  const href = `${CANONICAL_BASE}${path.startsWith('/') ? path : `/${path}`}`.replace(/#.*$/, '');
+  // keep hash canonical as query-less path for crawlers: hash routes are client-side, we expose clean path
+  const hashPath = path.includes('#') ? path : path;
+  const full = hashPath.includes('#') ? `${CANONICAL_BASE}/${hashPath}` : href;
+  let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!el) { el = document.createElement('link'); el.rel = 'canonical'; document.head.appendChild(el); }
+  el.href = full;
+}
+function setMeta(name: string, content: string) {
+  let el = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  if (!el) { el = document.createElement('meta'); el.name = name; document.head.appendChild(el); }
+  el.content = content;
+}
+function setOG(prop: string, content: string) {
+  let el = document.querySelector<HTMLMetaElement>(`meta[property="${prop}"]`);
+  if (!el) { el = document.createElement('meta'); el.setAttribute('property', prop); document.head.appendChild(el); }
+  el.content = content;
+}
+function usePageMeta(opts: { title: string; description: string; canonical: string; image?: string }) {
+  useEffect(() => {
+    document.title = opts.title;
+    setMeta('description', opts.description);
+    setCanonical(opts.canonical);
+    setOG('og:title', opts.title);
+    setOG('og:description', opts.description);
+    setOG('og:url', `${CANONICAL_BASE}${opts.canonical}`);
+    if (opts.image) setOG('og:image', opts.image);
+    // twitter
+    setMeta('twitter:title', opts.title);
+    setMeta('twitter:description', opts.description);
+  }, [opts.title, opts.description, opts.canonical, opts.image]);
+}
+
+function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((it, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: it.label,
+      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^#\/?/, '')}` : undefined,
+    })),
+  };
+  return (
+    <>
+      <nav aria-label="Breadcrumb" className="breadcrumb">
+        <ol>
+          {items.map((it, i) => (
+            <li key={i}>
+              {it.href ? <a href={it.href}>{it.label}</a> : <span aria-current="page">{it.label}</span>}
+              {i < items.length - 1 ? <span className="sep" aria-hidden="true"> › </span> : null}
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+    </>
+  );
+}
+
+function InternalLinks({ current }: { current: string }) {
+  const links = [
+    { href: '#/', label: 'Dashboard', desc: 'Threat overview' },
+    { href: '#/campaigns', label: 'Campaigns', desc: 'Infrastructure clusters' },
+    { href: '#/cases', label: 'Cases', desc: 'Kanban investigation' },
+    { href: '#/mailboxes', label: 'Mailboxes', desc: 'OAuth connectors' },
+    { href: '#/model', label: 'Model Info', desc: 'Transparency & metrics' },
+  ].filter(l => l.href !== current);
+  return (
+    <div className="card" style={{ marginTop: 18 }}>
+      <h3>Explore the platform</h3>
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+        {links.slice(0, 4).map(l => (
+          <a key={l.href} href={l.href} className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>
+            <b>{l.label}</b> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— {l.desc}</span>
+          </a>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
+        Also: <a href="/sitemap.xml">Sitemap</a> · <a href="/robots.txt">Robots</a> · <a href="/llms.txt">LLMs</a> · <a href="https://socforensics.io/">socforensics.io</a>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Login ---------------- */
 
 export function LoginPage() {
+  usePageMeta({
+    title: 'Sign In — SOC Forensics Lab | Secure Analyst Access',
+    description: 'JWT-secured sign in for SOC analysts. Access the AI-powered email threat dashboard with forensic intelligence, geolocation and chain-of-custody reporting.',
+    canonical: '/#/login',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
@@ -29,8 +124,12 @@ export function LoginPage() {
 
   return (
     <div className="page" style={{ maxWidth: 440 }}>
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Sign In' }]} />
       <h1>SOC Sign in</h1>
       <p className="sub">JWT-secured access to the forensic intelligence platform.</p>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+        <img src="/favicon.svg" alt="SOC Forensics Lab shield logo — secure access" width={72} height={72} loading="eager" />
+      </div>
       <div className="card">
         <div className="tabs">
           {(['login', 'register'] as const).map((m) => (
@@ -55,6 +154,12 @@ export function LoginPage() {
             : 'Demo seed: admin / admin123, analyst / analyst123.'}
         </p>
       </div>
+      <InternalLinks current="#/" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In — SOC Forensics Lab',
+        description: 'Secure analyst sign-in for the forensic intelligence platform',
+        url: `${CANONICAL_BASE}/#/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
     </div>
   );
 }
@@ -86,7 +191,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
   const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState(
-    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const [code, setCode] = useState('');
   const [secret, setSecret] = useState('');
@@ -103,7 +208,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       setErr(e instanceof ApiError ? `Gmail status failed (${e.status}): ${e.message}` : String(e));
     }
   };
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => { void refresh(); }, []);
 
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
@@ -132,7 +237,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     try {
       const r = await jpost('/gmail/sync', { max_results: maxN, query, client_secret: secret || undefined });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      refresh();
+      void refresh();
       onSynced();
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
   };
@@ -141,7 +246,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     if (!confirm('Disconnect this Gmail mailbox?')) return;
     try {
       await jdel('/gmail/disconnect');
-      refresh();
+      void refresh();
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
@@ -198,6 +303,12 @@ type EmailRow = {
 };
 
 export function Dashboard() {
+  usePageMeta({
+    title: 'Global Threat Dashboard — SOC Forensics Lab | Real-Time Email Threats',
+    description: 'Real-time phishing, BEC and spoofing detection across ingested mail. Analyze emails, view fraud scores, track campaigns and export chain-of-custody reports.',
+    canonical: '/',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const [stats, setStats] = useState<any>(null);
   const [emails, setEmails] = useState<EmailRow[]>([]);
   const [scores, setScores] = useState<Record<string, { score: number; cls: string }>>({});
@@ -216,18 +327,22 @@ export function Dashboard() {
       const [s, list] = await Promise.all([jget('/dashboard'), jget(`/emails?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`)]);
       setStats(s);
       setEmails(list);
-      // fetch scores for the visible rows (detail endpoint carries analysis)
-      const entries = await Promise.all(
-        list.slice(0, 30).map(async (e: EmailRow) => {
+      // throttled score fetch to avoid console flood and rate limits — sequential batches of 5
+      const slice = list.slice(0, 20);
+      const acc: Record<string, { score: number; cls: string }> = {};
+      for (let i = 0; i < slice.length; i += 5) {
+        const batch = slice.slice(i, i + 5);
+        const entries = await Promise.all(batch.map(async (e: EmailRow) => {
           try {
             const d = await jget(`/emails/${e.id}`);
             return [e.id, { score: d.analysis?.fraud_score ?? 0, cls: d.analysis?.threat_classification ?? '—' }] as const;
           } catch {
             return [e.id, { score: 0, cls: '—' }] as const;
           }
-        }),
-      );
-      setScores(Object.fromEntries(entries));
+        }));
+        Object.assign(acc, Object.fromEntries(entries));
+      }
+      setScores(acc);
     } catch (e) {
       setErr(e instanceof ApiError ? `Backend error (${e.status}): ${e.message}` : String(e));
     } finally {
@@ -236,7 +351,7 @@ export function Dashboard() {
   };
 
   useEffect(() => {
-    load('');
+    void load('');
   }, []);
 
   const submit = async () => {
@@ -287,8 +402,25 @@ export function Dashboard() {
 
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Threat Dashboard' }]} />
       <h1>Global Threat Dashboard</h1>
       <p className="sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
+
+      <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <img src="/og-image.svg" alt="SOC Forensics Lab dashboard hero — AI-powered email threat detection map and shield emblem" width={320} height={168} style={{ borderRadius: 8, border: '1px solid var(--border)', maxWidth: '100%', height: 'auto' }} loading="lazy" />
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <h3 style={{ marginTop: 0 }}>Forensic intelligence at a glance</h3>
+          <p className="sub" style={{ marginBottom: 8 }}>Ingest raw RFC822, upload .eml, or sync Gmail live. Every email is scored 0–100, checked against SPF/DKIM/DMARC, VirusTotal, URLhaus and DNSBL, then geolocated via chain-of-custody forensics.</p>
+          <div className="row">
+            <a href="#/campaigns">View Campaigns →</a>
+            <span style={{ color: 'var(--muted)' }}>·</span>
+            <a href="#/cases">Open Cases →</a>
+            <span style={{ color: 'var(--muted)' }}>·</span>
+            <a href="#/model">Model Transparency →</a>
+          </div>
+        </div>
+      </div>
+
       <Toast msg={err} />
       {notice && <Toast msg={notice} kind="info" />}
 
@@ -305,7 +437,7 @@ export function Dashboard() {
             </div>
             <div className="card" style={{ marginBottom: 18 }}>
               <h3>Score distribution</h3>
-              <div className="distbar">
+              <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
                 <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: '#ef4444' }} />
                 <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: '#f97316' }} />
                 <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: '#eab308' }} />
@@ -340,7 +472,7 @@ export function Dashboard() {
 
       <div className="toolbar">
         <input type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') load(); }} />
+          onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} />
         <button className="ghost" onClick={() => load()}>Search</button>
         <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
           <option value="all">All severities</option>
@@ -375,6 +507,13 @@ export function Dashboard() {
           </tbody>
         </table>
       )}
+
+      <InternalLinks current="#/" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard — SOC Forensics Lab',
+        description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
     </div>
   );
 }
@@ -393,7 +532,9 @@ export function GraphSvg({ graph }: { graph: any }) {
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
   const color = (k: string) => (k === 'Domain' ? '#f97316' : k === 'IP_Address' ? '#ef4444' : k === 'Threat_Campaign' ? '#a78bfa' : '#22c55e');
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ background: '#0a0f1f', borderRadius: 8, border: '1px solid var(--border)' }}>
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Identity correlation graph showing sender infrastructure relationships" style={{ background: '#0a0f1f', borderRadius: 8, border: '1px solid var(--border)' }}>
+      <title>Attribution graph</title>
+      <desc>Nodes represent domains, IPs and campaigns linked by shared infrastructure</desc>
       {edges.map((e, i) => {
         const a = pos[idx.get(e.source) ?? -1], b = pos[idx.get(e.target) ?? -1];
         return a && b ? (
@@ -456,20 +597,31 @@ export function EmailView({ id }: { id: string }) {
   const [graph, setGraph] = useState<any>(null);
   const [err, setErr] = useState('');
 
+  const subject = d?.email?.subject || '(no subject)';
+  const fraudScore = d?.analysis?.fraud_score ?? 0;
+  usePageMeta({
+    title: d ? `${subject} — Score ${fraudScore} — SOC Forensics Lab` : `Email Forensics — SOC Forensics Lab`,
+    description: d ? `Forensic analysis for "${subject}" — classification ${d.analysis?.threat_classification || 'unknown'}, action ${d.analysis?.action_taken || '—'}, authentication and geolocation trace.` : 'Email forensic detail with header chain, geolocation and identity graph.',
+    canonical: `#/email/${id}`,
+    image: 'https://socforensics.io/og-image.svg',
+  });
+
   useEffect(() => {
     setErr('');
     setD(null);
-    jget(`/emails/${id}`).then(setD).catch((e) => setErr(e instanceof ApiError ? `Could not load email (${e.status}): ${e.message}` : String(e)));
+    let cancelled = false;
+    jget(`/emails/${id}`).then((v) => { if (!cancelled) setD(v); }).catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load email (${e.status}): ${e.message}` : String(e)); });
+    return () => { cancelled = true; };
   }, [id]);
 
   useEffect(() => {
     if (d?.email?.sender_address) {
-      jget(`/graph/related?value=${encodeURIComponent(d.email.sender_address)}`).then(setGraph).catch(() => {});
+      jget(`/graph/related?value=${encodeURIComponent(d.email.sender_address)}`).then(setGraph).catch(() => { /* non-fatal */ });
     }
   }, [d]);
 
-  if (err) return <div className="page"><a href="#/">← back</a><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><a href="#/">← back</a><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Email', href: '#/' }, { label: 'Error' }]} /><a href="#/">← back</a><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Email' }]} /><a href="#/">← back</a><SkeletonList /></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
   const auth = a.authentication_results || {};
@@ -477,17 +629,19 @@ export function EmailView({ id }: { id: string }) {
 
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Dashboard', href: '#/' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
       <a href="#/">← back to dashboard</a>
       <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
         <button className="ghost small" onClick={() => downloadReport(id, 'pdf')}>forensic PDF</button>{' '}
         <button className="ghost small" onClick={() => downloadReport(id, 'json')}>JSON</button>
+        {' · '}<a href="#/campaigns">View Campaigns</a> · <a href="#/cases">Cases</a>
       </p>
 
-      <div className="tabs">
+      <div className="tabs" role="tablist">
         {TABS.map((name, i) => (
-          <button key={name} className={tab === i ? 'active' : ''} onClick={() => setTab(i)}>{name}</button>
+          <button key={name} role="tab" aria-selected={tab === i} className={tab === i ? 'active' : ''} onClick={() => setTab(i)}>{name}</button>
         ))}
       </div>
 
@@ -504,6 +658,7 @@ export function EmailView({ id }: { id: string }) {
             {(a.nlp_cues_detected || []).length === 0 ? <p className="sub">None</p> : (
               <div>{(a.nlp_cues_detected || []).map((c: string) => <span key={c} className="auth-pill auth-none">{c}</span>)}</div>
             )}
+            <img src="/favicon.svg" alt="Forensic shield watermark — verdict authenticity indicator" width={48} height={48} style={{ marginTop: 12, opacity: 0.9 }} loading="lazy" />
           </div>
           <div className="card">
             <h3>Authentication</h3>
@@ -587,10 +742,11 @@ export function EmailView({ id }: { id: string }) {
             {t.geolocation?.lat ? (
               <>
                 <iframe
-                  title="geo"
+                  title="Geolocation map of email origin"
                   width="100%"
                   height="380"
                   style={{ border: 0, borderRadius: 8 }}
+                  loading="lazy"
                   src={`https://www.openstreetmap.org/export/embed.html?bbox=${t.geolocation.lon - 10}%2C${t.geolocation.lat - 10}%2C${t.geolocation.lon + 10}%2C${t.geolocation.lat + 10}&layer=mapnik&marker=${t.geolocation.lat}%2C${t.geolocation.lon}`}
                 />
                 <p><a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=5/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map</a></p>
@@ -608,6 +764,12 @@ export function EmailView({ id }: { id: string }) {
           <pre className="dump">{JSON.stringify(graph, null, 2)}</pre>
         </div>
       )}
+      <InternalLinks current="#/email" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
+        description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/#/email/${id}`,
+        author: { '@id': `${CANONICAL_BASE}/#organization` }
+      })}} />
     </div>
   );
 }
@@ -615,19 +777,29 @@ export function EmailView({ id }: { id: string }) {
 /* ---------------- Campaigns ---------------- */
 
 export function Campaigns() {
+  usePageMeta({
+    title: 'Campaigns — Shared Infrastructure Clusters — SOC Forensics Lab',
+    description: 'Graph-detected campaign clusters sharing sender infrastructure, domains and IPs. Analyze confidence, attribution and forensic timelines.',
+    canonical: '#/campaigns',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   useEffect(() => {
+    let cancelled = false;
     jget('/campaigns')
-      .then(setCards)
-      .catch((e) => setErr(e instanceof ApiError ? `Could not load campaigns (${e.status}): ${e.message}` : String(e)))
-      .finally(() => setLoading(false));
+      .then((v) => { if (!cancelled) setCards(v); })
+      .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaigns (${e.status}): ${e.message}` : String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns' }]} />
       <h1>Campaigns</h1>
       <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
+      <img src="/og-image.svg" alt="Campaign clustering visualization — threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
       <Toast msg={err} />
       {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet — ingest more mail sharing IPs/domains." /> : (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
@@ -648,6 +820,12 @@ export function Campaigns() {
           ))}
         </div>
       )}
+      <InternalLinks current="#/campaigns" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns — SOC Forensics Lab',
+        description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/#/campaigns`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
     </div>
   );
 }
@@ -655,22 +833,33 @@ export function Campaigns() {
 export function CampaignDetail({ id }: { id: string }) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState('');
+  const cardName = d?.card?.name || `Campaign ${id.slice(0, 8)}`;
+  usePageMeta({
+    title: `${cardName} — Campaign Detail — SOC Forensics Lab`,
+    description: d ? `Campaign ${cardName} with ${d.card.email_count} emails, confidence ${Math.round(d.card.confidence * 100)}%, shared IP ${d.card.ip}. Attribution graph and email list.` : 'Campaign attribution detail with graph and forensic emails.',
+    canonical: `#/campaign/${id}`,
+    image: 'https://socforensics.io/og-image.svg',
+  });
   useEffect(() => {
     setD(null);
     setErr('');
+    let cancelled = false;
     jget(`/campaigns/${id}`)
-      .then(setD)
-      .catch((e) => setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)));
+      .then((v) => { if (!cancelled) setD(v); })
+      .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)); });
+    return () => { cancelled = true; };
   }, [id]);
-  if (err) return <div className="page"><a href="#/campaigns">← campaigns</a><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><a href="#/campaigns">← campaigns</a><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: 'Error' }]} /><a href="#/campaigns">← campaigns</a><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: 'Loading' }]} /><a href="#/campaigns">← campaigns</a><SkeletonList /></div>;
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: cardName }]} />
       <a href="#/campaigns">← campaigns</a>
       <h1 style={{ marginTop: 8 }}>{d.card.name}</h1>
       <p className="sub">
         {d.card.email_count} emails · confidence {Math.round(d.card.confidence * 100)}% · IP <span className="mono">{d.card.ip}</span>
         {d.card.asn ? <> · ASN {d.card.asn}</> : null}
+        {' · '}<a href="#/">Dashboard</a> · <a href="#/cases">Cases</a>
       </p>
       <div className="card" style={{ marginBottom: 14 }}>
         <h3>Attribution graph (campaign nodes)</h3>
@@ -695,6 +884,7 @@ export function CampaignDetail({ id }: { id: string }) {
           </table>
         )}
       </div>
+      <InternalLinks current="#/campaigns" />
     </div>
   );
 }
@@ -702,26 +892,36 @@ export function CampaignDetail({ id }: { id: string }) {
 /* ---------------- Model transparency ---------------- */
 
 export function ModelInfo() {
+  usePageMeta({
+    title: 'Model Transparency & Metrics — SOC Forensics Lab',
+    description: 'Phishing/BEC/clean classifier transparency: accuracy, macro F1, per-class precision/recall and confusion matrix from held-out evaluation.',
+    canonical: '#/model',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const [m, setM] = useState<any>(null);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    let cancelled = false;
     jget('/model/metrics')
-      .then(setM)
-      .catch((e) => setErr(e instanceof ApiError ? `Could not load model metrics (${e.status}): ${e.message}` : String(e)))
-      .finally(() => setLoading(false));
+      .then((v) => { if (!cancelled) setM(v); })
+      .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load model metrics (${e.status}): ${e.message}` : String(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
-  if (loading) return <div className="page"><h1>Model Info</h1><SkeletonList /></div>;
-  if (err) return <div className="page"><h1>Model Info</h1><Toast msg={err} /></div>;
+  if (loading) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><Toast msg={err} /></div>;
   const labels: string[] = m.confusion_labels || [];
   const per = m.per_class || {};
   return (
     <div className="page">
-      <h1>Model Info</h1>
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Transparency' }]} />
+      <h1>Model Transparency</h1>
       <p className="sub">
         Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
         ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
       </p>
+      <img src="/og-image.svg" alt="Model metrics preview — accuracy and F1 visualization for SOC Forensics classifier" width={640} height={200} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
       <div className="grid stats">
         <StatCard label="Accuracy" value={`${Math.round((m.accuracy ?? 0) * 100)}%`} />
         <StatCard label="Macro F1" value={(m.macro_f1 ?? 0).toFixed(3)} />
@@ -769,6 +969,12 @@ export function ModelInfo() {
           <p className="sub" style={{ marginBottom: 0 }}>Diagonal cells are correct predictions; off-diagonal cells are confusions.</p>
         </div>
       </div>
+      <InternalLinks current="#/model" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency — SOC Forensics Lab',
+        description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/#/model`,
+        author: { '@id': `${CANONICAL_BASE}/#organization` }
+      })}} />
     </div>
   );
 }
@@ -776,13 +982,19 @@ export function ModelInfo() {
 /* ---------------- Mailboxes (OAuth org connectors) ---------------- */
 
 export function Mailboxes() {
+  usePageMeta({
+    title: 'Mailboxes — OAuth Connectors — SOC Forensics Lab',
+    description: 'Organization-level OAuth connectors for Google and Microsoft mailboxes with encrypted refresh tokens, polling and manual sync.',
+    canonical: '#/mailboxes',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const [conns, setConns] = useState<any[]>([]);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState(
-    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
@@ -792,7 +1004,7 @@ export function Mailboxes() {
       setConns(await jget('/oauth/status'));
     } catch (e) { fail(e, 'Status'); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   const connect = async (provider: 'google' | 'microsoft') => {
     setBusy(true); setErr(''); setNotice('');
@@ -807,7 +1019,7 @@ export function Mailboxes() {
     try {
       const r = await jpost('/oauth/sync-now', { max_results: 10 });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      load();
+      void load();
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
   };
 
@@ -815,14 +1027,16 @@ export function Mailboxes() {
     if (!confirm(`Disconnect ${provider} mailbox?`)) return;
     try {
       await jdel(`/oauth/${provider}`);
-      load();
+      void load();
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Mailboxes' }]} />
       <h1>Mailboxes</h1>
       <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. Refresh tokens are encrypted server-side.</p>
+      <img src="/favicon.svg" alt="Mailbox connectors — secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
       <Toast msg={err} />
       {notice && <Toast msg={notice} kind="info" />}
       <div className="card" style={{ marginBottom: 14 }}>
@@ -844,6 +1058,7 @@ export function Mailboxes() {
         )}
         <div className="row" style={{ marginTop: 10 }}>
           <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
+          <a href="#/">Back to Dashboard</a>
         </div>
       </div>
       <div className="card">
@@ -858,6 +1073,12 @@ export function Mailboxes() {
           <p className="sub" style={{ marginBottom: 0 }}>After consent you return here automatically. Polling interval: server `MAIL_POLL_MINUTES` (0 = manual sync only).</p>
         </div>
       </div>
+      <InternalLinks current="#/mailboxes" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes — SOC Forensics Lab',
+        description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/#/mailboxes`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
     </div>
   );
 }
@@ -873,6 +1094,12 @@ const COLS = [
 ];
 
 export function Cases() {
+  usePageMeta({
+    title: 'Case Management — Kanban Board — SOC Forensics Lab',
+    description: 'Track forensic investigations from triage to closure. Kanban board for Open, In Progress and Closed cases with email linkage.',
+    canonical: '#/cases',
+    image: 'https://socforensics.io/og-image.svg',
+  });
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
   const [cases, setCases] = useState<CaseRow[]>([]);
@@ -891,7 +1118,7 @@ export function Cases() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   const create = async () => {
     if (!title.trim()) return;
@@ -926,13 +1153,16 @@ export function Cases() {
 
   return (
     <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Case Management' }]} />
       <h1>Case Management</h1>
       <p className="sub">Track investigations from triage to closure.</p>
+      <img src="/favicon.svg" alt="Case management kanban board — investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
       <Toast msg={err} />
       <div className="row" style={{ marginBottom: 16 }}>
         <input type="text" style={{ maxWidth: 360 }} value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="New case title…" onKeyDown={(e) => { if (e.key === 'Enter') create(); }} />
+          placeholder="New case title…" onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} />
         <button onClick={create}>Create case</button>
+        <a href="#/campaigns" className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>View Campaigns →</a>
       </div>
       {loading ? <SkeletonList /> : (
         <div className="kanban">
@@ -957,6 +1187,12 @@ export function Cases() {
           ))}
         </div>
       )}
+      <InternalLinks current="#/cases" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management — SOC Forensics Lab',
+        description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/#/cases`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
     </div>
   );
 }
