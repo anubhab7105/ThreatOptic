@@ -230,6 +230,8 @@ export function Dashboard() {
         </div>
       </div>
 
+      <GmailPanel onSynced={() => load()} />
+
       <div className="toolbar">
         <input type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') load(); }} />
