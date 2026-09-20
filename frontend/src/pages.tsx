@@ -774,6 +774,95 @@ export function ModelInfo() {
   );
 }
 
+/* ---------------- Mailboxes (OAuth org connectors) ---------------- */
+
+export function Mailboxes() {
+  const [conns, setConns] = useState<any[]>([]);
+  const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [redirectUri, setRedirectUri] = useState(
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
+  );
+  const fail = (e: unknown, what: string) =>
+    setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
+
+  const load = async () => {
+    try {
+      setConns(await jget('/oauth/status'));
+    } catch (e) { fail(e, 'Status'); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const connect = async (provider: 'google' | 'microsoft') => {
+    setBusy(true); setErr(''); setNotice('');
+    try {
+      const r = await jget(`/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}${clientId ? `&client_id=${encodeURIComponent(clientId)}` : ''}`);
+      window.location.href = r.auth_url;
+    } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
+  };
+
+  const syncNow = async () => {
+    setBusy(true); setErr(''); setNotice('');
+    try {
+      const r = await jpost('/oauth/sync-now', { max_results: 10 });
+      setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      load();
+    } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
+  };
+
+  const disconnect = async (provider: string) => {
+    if (!confirm(`Disconnect ${provider} mailbox?`)) return;
+    try {
+      await jdel(`/oauth/${provider}`);
+      load();
+    } catch (e) { fail(e, 'Disconnect'); }
+  };
+
+  return (
+    <div className="page">
+      <h1>Mailboxes</h1>
+      <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. Refresh tokens are encrypted server-side.</p>
+      <Toast msg={err} />
+      {notice && <Toast msg={notice} kind="info" />}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Connected</h3>
+        {conns.length === 0 ? <Empty msg="No mailbox connected yet." /> : (
+          <table className="tbl">
+            <thead><tr><th>Provider</th><th>Account</th><th>Last poll</th><th></th></tr></thead>
+            <tbody>
+              {conns.map((m) => (
+                <tr key={m.provider + m.account_email}>
+                  <td><b>{m.provider}</b></td>
+                  <td><span className="mono">{m.account_email}</span></td>
+                  <td style={{ fontSize: 12 }}>{m.last_poll_at ? new Date(m.last_poll_at).toLocaleString() : 'never'}</td>
+                  <td><button className="ghost small" onClick={() => disconnect(m.provider)}>Disconnect</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="row" style={{ marginTop: 10 }}>
+          <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
+        </div>
+      </div>
+      <div className="card">
+        <h3>Connect Mailbox</h3>
+        <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
+          <input type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="OAuth client ID (or set server-side)" />
+          <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" />
+          <div className="row">
+            <button className="ghost" onClick={() => connect('google')} disabled={busy}>Connect Google</button>
+            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy}>Connect Microsoft</button>
+          </div>
+          <p className="sub" style={{ marginBottom: 0 }}>After consent you return here automatically. Polling interval: server `MAIL_POLL_MINUTES` (0 = manual sync only).</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Cases ---------------- */
 
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };
