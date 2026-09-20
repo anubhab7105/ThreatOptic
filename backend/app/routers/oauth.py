@@ -33,17 +33,20 @@ def _provider_or_400(provider: str) -> str:
     return p
 
 
-def _client_pair(provider: str, explicit_id: str | None, explicit_secret: str | None) -> tuple[str, str]:
+def _client_id(provider: str, explicit: str | None) -> str:
     s = get_settings()
-    if provider == "google":
-        cid, sec = explicit_id or s.google_client_id, explicit_secret or s.google_client_secret
-    else:
-        cid, sec = explicit_id or s.ms_client_id, explicit_secret or s.ms_client_secret
+    cid = explicit or (s.google_client_id if provider == "google" else s.ms_client_id)
     if not cid:
         raise HTTPException(400, f"{provider} OAuth client_id not configured")
+    return cid
+
+
+def _client_secret(provider: str, explicit: str | None) -> str:
+    s = get_settings()
+    sec = explicit or (s.google_client_secret if provider == "google" else s.ms_client_secret)
     if not sec:
         raise HTTPException(400, f"{provider} OAuth client_secret not configured")
-    return cid, sec
+    return sec
 
 
 class SyncNowIn(BaseModel):
@@ -60,7 +63,7 @@ def authorize(
 ):
     """Return the provider consent URL; the frontend navigates there."""
     p = _provider_or_400(provider)
-    cid, _ = _client_pair(p, client_id, "placeholder-allows-url-preview")
+    cid = _client_id(p, client_id)
     if p == "google":
         url = connectors.build_gmail_auth_url(cid, redirect_uri)
     else:
