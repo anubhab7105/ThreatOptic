@@ -5,6 +5,7 @@ Seeded users created before this module used a stdlib PBKDF2 format
 DBs keep working, but all new hashes are bcrypt.
 """
 import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -26,7 +27,7 @@ def _verify_legacy_pbkdf2(password: str, stored: str) -> bool:
         if scheme != "pbkdf2":
             return False
         calc = hashlib.pbkdf2_hmac("sha256", password.encode(), b"soc-demo-salt", 100_000).hex()
-        return hashlib.compare_digest(calc, hex_digest)
+        return hmac.compare_digest(calc, hex_digest)
     except Exception:
         return False
 
