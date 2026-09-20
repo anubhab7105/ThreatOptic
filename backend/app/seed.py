@@ -1,11 +1,11 @@
 """Seed demo org + users + 2 sample emails through the pipeline."""
 import asyncio
-import hashlib
-import os
 
 
 def _hash(pw: str) -> str:
-    return "pbkdf2$" + hashlib.pbkdf2_hmac("sha256", pw.encode(), b"soc-demo-salt", 100_000).hex()
+    from .modules.auth.security import hash_password
+
+    return hash_password(pw)
 
 
 PHISH_EML = b"""From: "CEO" <ceo@xn--paypa1-secure.top>

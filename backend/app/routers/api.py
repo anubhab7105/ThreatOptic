@@ -10,6 +10,7 @@ from .. import models, schemas
 from ..services.pipeline import process_raw_email
 from ..modules.graph.store import related_entities, find_campaigns
 from ..modules.privacy.retention import apply_retention
+from .deps import require_roles
 
 log = logging.getLogger("api")
 router = APIRouter()
@@ -161,7 +162,11 @@ def update_case(case_id: str, payload: dict, db: Session = Depends(get_db)):
 
 
 @router.delete("/cases/{case_id}")
-def delete_case(case_id: str, db: Session = Depends(get_db)):
+def delete_case(
+    case_id: str,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_roles("Admin")),
+):
     c = db.query(models.InvestigationCase).filter(models.InvestigationCase.id == case_id).first()
     if not c:
         raise HTTPException(404, "case not found")
@@ -215,5 +220,8 @@ def report_pdf(email_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/admin/retention")
-def run_retention(db: Session = Depends(get_db)):
+def run_retention(
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_roles("Admin")),
+):
     return apply_retention(db)

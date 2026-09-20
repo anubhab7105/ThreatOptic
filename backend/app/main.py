@@ -1,12 +1,14 @@
 """FastAPI entrypoint."""
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import get_settings
 from .database import init_db
 from .routers.api import router
+from .routers.auth import router as auth_router
+from .routers.deps import get_current_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s")
 log = logging.getLogger("main")
@@ -28,7 +30,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(router, prefix=settings.api_prefix)
+app.include_router(auth_router, prefix=settings.api_prefix)
+# All threat-intel routes require a valid JWT; the auth router above stays public.
+app.include_router(router, prefix=settings.api_prefix, dependencies=[Depends(get_current_user)])
 
 
 @app.exception_handler(Exception)
