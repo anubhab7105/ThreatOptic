@@ -115,3 +115,30 @@ class DashboardStats(BaseModel):
     by_classification: dict = {}
     recent: list[dict] = []
     score_distribution: dict = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+
+
+class CampaignCard(BaseModel):
+    id: str
+    name: str
+    ip: str
+    domains: list = []
+    asn: str = ""
+    confidence: float = 0.0
+    email_count: int = 0
+    first_seen: str | None = None
+    last_seen: str | None = None
+
+
+class CampaignEmail(BaseModel):
+    id: str
+    subject: str = ""
+    sender: str = ""
+    timestamp: str | None = None
+    fraud_score: float = 0.0
+    classification: str = "—"
+
+
+class CampaignDetail(BaseModel):
+    card: CampaignCard
+    graph: dict = {}
+    emails: list[CampaignEmail] = []

@@ -131,6 +131,21 @@ def graph_campaigns():
     return find_campaigns()
 
 
+@router.get("/campaigns", response_model=list[schemas.CampaignCard])
+def list_campaigns(db: Session = Depends(get_db)):
+    from ..services.campaigns import campaign_cards
+    return campaign_cards(db)
+
+
+@router.get("/campaigns/{cid}", response_model=schemas.CampaignDetail)
+def get_campaign(cid: str, db: Session = Depends(get_db)):
+    from ..services.campaigns import campaign_detail
+    detail = campaign_detail(db, cid)
+    if not detail:
+        raise HTTPException(404, "campaign not found")
+    return detail
+
+
 @router.post("/cases", response_model=schemas.CaseOut)
 def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db)):
     if not payload.title or not payload.title.strip():
