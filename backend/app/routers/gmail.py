@@ -81,9 +81,10 @@ async def callback(
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     if acct:
         acct.gmail_address, acct.refresh_token = address, tokens["refresh_token"]
+        db.commit()
     else:
         db.add(models.GmailAccount(user_id=user.id, gmail_address=address, refresh_token=tokens["refresh_token"]))
-    db.commit()
+        db.commit()
     return _status_payload(user, db)
 
 
