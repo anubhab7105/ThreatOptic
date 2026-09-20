@@ -45,7 +45,8 @@ git push -u origin main
 ### 2.1 Create project
 1. Railway → **New Project** → **Deploy from GitHub repo** → select `Email_Scanner`
 2. When prompted for service, choose **backend** (Railway auto-detects `backend/Dockerfile` via `railway.json:4` and `backend/railway.toml:1`)
-3. If Railway asks for Root Directory, set it to `backend` or keep root (both work because `railway.json` points to `backend/Dockerfile`)
+3. **Root Directory:** leave **empty** (repo root `.`) — **do NOT set to `backend`**. `backend/Dockerfile:6` expects repo-root context (`COPY backend/requirements.txt`). If you set Root Directory to `backend`, the build will fail with `"/scripts": not found`.
+   - If you already set it to `backend`, go to Service → Settings → Source → Root Directory → clear it → Redeploy.
 
 ### 2.2 Add Postgres (and optionally Redis/Neo4j)
 1. In Railway project → **New** → **Database** → **PostgreSQL** → Add
@@ -93,8 +94,9 @@ curl https://<railway-domain>/health/detailed
 If `/health/detailed` shows `db: true`, Postgres is wired.
 
 ### 2.5 Railway notes
-- `backend/Dockerfile:12` uses `CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}` so it respects Railway’s injected `$PORT`.
+- `backend/Dockerfile:12` uses JSON form `CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]` so it respects Railway’s injected `$PORT` and handles OS signals correctly (fixes `JSONArgsRecommended` warning).
 - `railway.json:8` sets `healthcheckPath` to `/health` — Railway will restart on failure.
+- `docker-compose.yml:5` now uses `context: .` + `dockerfile: ./backend/Dockerfile` so local `docker compose up` and Railway (root context) use the **same** Dockerfile. Do not build with `docker build ./backend` — use `docker build -f backend/Dockerfile .` from repo root.
 - No `DATABASE_URL`? Backend falls back to SQLite (`sqlite:///./email_forensics.db`) — data will be ephemeral. Use Postgres for persistence.
 
 ---
@@ -244,6 +246,8 @@ railway up
 
 ## 8. Troubleshooting
 
+- **Railway build: `"/scripts": not found`** → you set Root Directory to `backend`. Clear it: Service → Settings → Source → Root Directory = (empty) → Redeploy. `backend/Dockerfile:6` uses `COPY backend/requirements.txt` which needs repo-root context (`docker-compose.yml:5` shows `context: .`). Logs also show `uploading snapshot 137.4 KB` before the error — that confirms wrong context.
+- **Dockerfile warning `JSONArgsRecommended`:** fixed by `backend/Dockerfile:13` using `["sh","-c","uvicorn ... ${PORT}"]` (JSON form with shell for env expansion and signal handling).
 - **CORS error in browser:** `CORS_ORIGINS` on Railway does not include Vercel URL → add it, redeploy backend.
 - **Vite build fails `tsc -b`:** check `frontend/tsconfig.json:11` has `noEmit:true`; run `npm run build` locally first.
 - **Railway healthcheck fails:** check Logs → `require_custody_key()` fails if `CUSTODY_KEY` empty and `APP_ENV!=development`.
