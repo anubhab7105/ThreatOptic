@@ -89,3 +89,15 @@ class TraceabilityData(Base):
     is_vpn_tor: Mapped[bool] = mapped_column(Boolean, default=False)
     whois_data: Mapped[dict] = mapped_column(JSON, default=dict)
     dns_data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class GmailAccount(Base):
+    """One connected Gmail mailbox per user (OAuth2 refresh token vault)."""
+    __tablename__ = "gmail_accounts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    gmail_address: Mapped[str] = mapped_column(String(320), default="")
+    refresh_token: Mapped[str] = mapped_column(Text, default="")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
