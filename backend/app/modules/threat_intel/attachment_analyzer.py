@@ -49,8 +49,9 @@ def static_heuristics(filename: str, content_type: str = "", magic: str = "") ->
         flags.append("macro-enabled-document")
     if ext in EXEC_EXTS:
         flags.append("executable-attachment")
-    # double extension: report.pdf.exe / invoice.doc.scr
-    if "." in base and _ext(base) in EXEC_EXTS | MACRO_EXTS:
+    # double extension trick: innocent inner name, dangerous outer suffix
+    # (e.g. report.pdf.exe, invoice.doc.scr)
+    if ext in EXEC_EXTS | MACRO_EXTS and "." in base:
         flags.append("double-extension")
     # executable magic regardless of declared name/type
     kind = _magic_desc(magic)
