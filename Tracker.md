@@ -1,6 +1,9 @@
 # Project Task Tracker — IMPLEMENTED ✅
 
-## Phase 0: Demo-safe audit fixes (F1–F4) ✅
+## Phase 1b: Audit fixes — credible core (F5, F6, F9) ✅
+- [x] F5 NLP retrain — `scripts/fetch_datasets.py` pulls SpamAssassin easy_ham/spam + curated BEC into `ml_models/dataset.csv` (3012 rows); `train_nlp.py` uses it (curated fallback offline) with 80/20 stratified split + balanced weights; metrics.json regenerated (phishing F1 0.97 / clean 0.996 on 603 held-out). Endpoint + Model Info page pre-existing, verified. Tests: `test_model.py` (+CSV loader test).
+- [x] F6 attachments — `threat_intel/attachment_analyzer.py` (VT file-hash lookup skipped without key; macro/double-ext/exec/magic-mismatch heuristics); parser stores 8-byte magic; pipeline wires findings into intel hits; `attachment_risk` added to WEIGHTS (0.10, others rescaled to sum 1.0) + breakdown + signals. Tests: `test_attachments.py` (6 tests).
+- [x] F9 retention job — `services/scheduler.py` (APScheduler BackgroundScheduler, daily 03:00 local, JSONL audit log + structured logging), started in lifespan. Tests: `test_retention.py` (job + audit line + schedule).
 - [x] F1 auth & RBAC — `routers/auth.py` (register/login/refresh/me), passlib/bcrypt hashing, JWT from `secret_key`/`access_token_expire_minutes`, `get_current_user` on all `/api/v1/*`, Admin-only DELETE cases + retention; frontend in-memory token, login page, 401 redirect, admin UI hidden. Tests: `test_auth.py` (401 + 403 proven).
 - [x] F2 CORS — explicit `CORS_ORIGINS` env (default `http://localhost:5173`), `allow_credentials=True`. Test: `test_security.py::test_cors_allows_configured_origin_only`.
 - [x] F3 SMTP ingestion — `start_smtp()` + consumer task wired in lifespan behind `SMTP_ENABLED=1`; thread-safe queue; integration test sends via aiosmtplib and asserts the `EmailRecord` row (`test_smtp.py`).
