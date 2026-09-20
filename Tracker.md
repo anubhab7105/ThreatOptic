@@ -18,6 +18,11 @@
 - [x] F11 CI + tests — ruff (`E9,F` gate, 11 real issues fixed), ESLint (0 errors), pip-audit (fixed: fastapi→≥0.135/starlette→≥1.3.1, now clean), npm audit high/critical gate; new `test_forensics/nlp/privacy/traceability.py` module suites (also fixed a real `domain_age_days` slicing bug); frontend Vitest (`components.test.ts`, `npm test`).
 - [x] F12 secrets externalized — compose uses `env_file` + `${VAR}`/`${VAR:?...}` (no committed values), ES `xpack.security.enabled=true`, frontend `VITE_API_URL` build-arg; k8s uses `secretKeyRef` + `secret.yaml.example` template; `.env.example` documents everything.
 
+## Phase 3: Judge-facing polish ✅
+- [x] "Why this score?" panel — pre-existing `ScoreWhy` tab verified data-driven (renders all 8 signals incl. new `attachment_risk`); live rehearsal asserts contributions sum to the score.
+- [x] Campaign page — pre-existing Campaigns/CampaignDetail verified; now backed by the F8-consistent store.
+- [x] Live-demo rehearsal — `scripts/live_demo_check.py` (env audit + live API + authed end-to-end) with `test_demo_check.py`; rehearsal run passes except the expected dev-SECRET_KEY flag; `readme.md` documents the `ENABLE_LIVE_LOOKUPS=1` + real-keys rehearsal.
+
 ## Phase 1: Foundation & Ingestion
 - [x] Provision cloud infrastructure (VPCs, DB clusters). → `docker-compose.yml` (postgres/neo4j/elastic/kafka), `k8s/backend.yaml`
 - [x] Initialize code repositories and CI/CD pipelines. → `.github/workflows/ci.yml`
