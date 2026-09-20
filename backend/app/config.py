@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # graph diverges per pod, so NEO4J_URI must be set for consistency.
     expected_replicas: int = 1
     elasticsearch_url: str = ""
+    elasticsearch_user: str = ""
+    elasticsearch_password: str = ""
+    elastic_index: str = "emails"
     kafka_bootstrap: str = ""
     kafka_topic: str = "emails-ingest"
 

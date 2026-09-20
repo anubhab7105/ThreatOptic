@@ -184,6 +184,15 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         log.warning("attribution failed: %s", e)
         attribution = {"campaign": "unknown", "confidence": 0.0, "signals": []}
     try:
+        from ..modules.search.elastic_sync import index_email
+        index_email(email_row.id,
+                    {"subject": email_row.subject, "sender_address": email_row.sender_address,
+                     "recipient_address": email_row.recipient_address, "body_text_masked": masked_body},
+                    {"fraud_score": scoring["fraud_score"],
+                     "threat_classification": scoring["threat_classification"]})
+    except Exception as e:
+        log.warning("elastic mirror failed: %s", e)
+    try:
         upsert_email_graph(hinfo.get("from_addr", ""), origin_ip, [domain] if domain else [],
                            campaign=str(attribution.get("campaign", "")))
     except Exception as e:
