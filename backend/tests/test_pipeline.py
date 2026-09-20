@@ -49,7 +49,6 @@ def test_clean_scores_low():
 def test_received_chain_and_geo():
     from app.modules.forensics.received_chain import reconstruct_path
     from app.modules.traceability.ip_extractor import extract_origin_ip
-    raw = {b"Received": b"from a ([45.1.1.1]) by b; from internal ([10.0.0.1]) by a"}
     # minimal dict form
     h = {"Received": "from evil.test (evil.test [45.148.10.88]) by mx.company.com with ESMTPS\nfrom internal ([10.0.0.5]) by evil.test"}
     path = reconstruct_path(h)

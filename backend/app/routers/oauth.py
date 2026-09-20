@@ -131,7 +131,6 @@ def disconnect(provider: str, user: models.User = Depends(get_current_user), db:
 
 async def poll_connection(conn: models.MailboxConnection, db: Session, max_results: int = 25) -> dict:
     """Refresh tokens, fetch, and pipeline one mailbox. Shared by sync-now + poller."""
-    s = get_settings()
     provider = conn.provider
     if provider == "google":
         cid, sec = _client_id("google", None), _client_secret("google", None)

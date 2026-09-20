@@ -18,7 +18,6 @@ def campaign_cards(db: Session) -> list[dict]:
     clusters = find_campaigns()
     emails = db.query(models.EmailRecord).all()
     traces = {t.email_id: t for t in db.query(models.TraceabilityData).all()}
-    analyses = {a.email_id: a for a in db.query(models.AnalysisResult).all()}
 
     cards: list[dict] = []
     for c in clusters:
