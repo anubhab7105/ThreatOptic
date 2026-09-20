@@ -56,6 +56,9 @@ Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/
 
 ### Configuration
 - `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
+- `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
+- `CUSTODY_KEY` — HMAC key for chain-of-custody report signatures. **Must be provisioned from a secrets manager in any non-local deployment**; the app refuses to start when `APP_ENV` is not `development` and no key is set. (`APP_ENV=development` is the local default and keeps an explicit dev fallback.)
+- `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task.
 - `VITE_API_URL` (frontend) — backend base URL for split hosting; same-origin by default. See `frontend/.env.example`.
 - Health: `GET /health` (liveness) and `GET /health/detailed` (DB + NLP status).
 
