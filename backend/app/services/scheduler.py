@@ -57,6 +57,17 @@ def start_scheduler():
         id="daily-retention",
         replace_existing=True,
     )
+    minutes = getattr(settings, "mail_poll_minutes", 0) or 0
+    if minutes > 0:
+        from ..routers.oauth import poll_all_mailboxes
+        scheduler.add_job(
+            poll_all_mailboxes,
+            "interval",
+            minutes=minutes,
+            id="mailbox-poll",
+            replace_existing=True,
+        )
+        log.info("scheduler: mailbox poll every %s min", minutes)
     scheduler.start()
     log.info("scheduler started: daily retention at %02d:00", getattr(settings, "retention_hour", 3))
     return scheduler
