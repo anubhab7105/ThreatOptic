@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     neo4j_uri: str = ""
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
+    # Expected backend replica count (F8). With >1 replicas the in-memory
+    # graph diverges per pod, so NEO4J_URI must be set for consistency.
+    expected_replicas: int = 1
     elasticsearch_url: str = ""
     kafka_bootstrap: str = ""
     kafka_topic: str = "emails-ingest"

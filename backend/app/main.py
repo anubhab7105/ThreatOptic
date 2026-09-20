@@ -55,6 +55,10 @@ async def lifespan(app: FastAPI):
     init_db()
     log.info("DB ready at %s", settings.resolved_db_url())
     require_custody_key()
+    from .modules.graph.store import graph_consistency_note
+    note = graph_consistency_note()
+    if note:
+        log.warning(note)
     controller = None
     consumer = None
     scheduler = None
