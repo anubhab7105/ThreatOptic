@@ -1,4 +1,4 @@
-fastapi>=0.115,<0.120
+fastapi>=0.135,<0.200
 uvicorn[standard]>=0.34
 sqlalchemy>=2.0,<2.1
 alembic>=1.14
