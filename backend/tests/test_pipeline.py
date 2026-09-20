@@ -81,9 +81,18 @@ def test_graph_related_no_crash():
 
 
 def test_api_validation():
+    import uuid
     from fastapi.testclient import TestClient
     from app.main import app
     with TestClient(app) as c:
-        assert c.post("/api/v1/emails/ingest", json={"raw": ""}).status_code == 422
-        assert c.get("/api/v1/emails/does-not-exist").status_code == 404
-        assert c.post("/api/v1/cases", json={"title": ""}).status_code == 400
+        # unauthenticated requests are rejected before validation
+        assert c.post("/api/v1/emails/ingest", json={"raw": ""}).status_code == 401
+        assert c.get("/api/v1/emails/does-not-exist").status_code == 401
+        assert c.post("/api/v1/cases", json={"title": ""}).status_code == 401
+
+        uname = f"validator-{uuid.uuid4().hex[:8]}"
+        tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
+        h = {"Authorization": f"Bearer {tok}"}
+        assert c.post("/api/v1/emails/ingest", headers=h, json={"raw": ""}).status_code == 422
+        assert c.get("/api/v1/emails/does-not-exist", headers=h).status_code == 404
+        assert c.post("/api/v1/cases", headers=h, json={"title": ""}).status_code == 400
