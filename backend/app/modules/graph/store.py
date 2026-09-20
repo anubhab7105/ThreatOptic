@@ -119,6 +119,9 @@ def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
             return [{"ip": r["ip"], "domains": list(r["domains"]), "size": r["size"]} for r in rows]
     except Exception:
         return None
+
+
+def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: str = "") -> dict[str, Any]:
     email_addr = (email_addr or "").lower()[:320]
     ip = ip or ""
     e_node = f"email:{email_addr}"
@@ -153,7 +156,10 @@ def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
 
 
 def related_entities(value: str, depth: int = 2) -> dict[str, Any]:
-    """BFS neighbourhood for graph view."""
+    """BFS neighbourhood for graph view. Neo4j-first when configured (F8)."""
+    neo = _neo_related(value, depth)
+    if neo is not None:
+        return neo
     key = None
     for prefix in ("email:", "ip:", "domain:", "campaign:"):
         cand = prefix + value.lower()
@@ -180,7 +186,10 @@ def related_entities(value: str, depth: int = 2) -> dict[str, Any]:
 
 
 def find_campaigns(min_shared: int = 2) -> list[dict[str, Any]]:
-    """Cluster domains sharing IPs -> candidate campaigns."""
+    """Cluster domains sharing IPs -> candidate campaigns. Neo4j-first (F8)."""
+    neo = _neo_find_campaigns(min_shared)
+    if neo is not None:
+        return neo
     campaigns = []
     for n in list(G.nodes):
         if G.nodes[n].get("kind") == "IP_Address":
