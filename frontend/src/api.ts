@@ -4,25 +4,23 @@ const BASE: string =
 
 export const API = `${BASE}/api/v1`;
 
-const TOKEN_KEY = 'soc.auth.v1';
-
 export type TokenPair = { access_token: string; refresh_token: string; token_type: string };
 
+// In-memory only (deliberately NOT localStorage): a stored XSS payload must
+// not be able to exfiltrate a long-lived token from disk. The tradeoff is
+// that a full page reload drops the session and returns to the login page.
+let _tokens: TokenPair | null = null;
+
 export function getTokens(): TokenPair | null {
-  try {
-    const raw = localStorage.getItem(TOKEN_KEY);
-    return raw ? (JSON.parse(raw) as TokenPair) : null;
-  } catch {
-    return null;
-  }
+  return _tokens;
 }
 
 export function setTokens(pair: TokenPair) {
-  localStorage.setItem(TOKEN_KEY, JSON.stringify(pair));
+  _tokens = pair;
 }
 
 export function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
+  _tokens = null;
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
