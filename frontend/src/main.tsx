@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage, ModelInfo } from './pages';
+import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage, ModelInfo, Mailboxes } from './pages';
 
 function Shell() {
   const { user, loading, logout } = useAuth();
