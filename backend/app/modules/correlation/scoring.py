@@ -25,8 +25,9 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
 
     extras: list[str] = []
     # Behavioral rule: new domain (<30d) + payment instructions => +30
+    bonus = 0.0
     if domain_age_days is not None and domain_age_days < 30 and contains_payment:
-        base += 30
+        bonus = 30.0
         extras.append("new-domain+payment:+30")
     # SPF/DKIM fail + C-level claim => auto-escalate High
     c_level = any(k in str(nlp.get("impersonation_cues", [])).lower() for k in ["ceo", "cfo", "chief", "president"])
@@ -35,9 +36,13 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
         force_high = True
         extras.append("exec-spoof-auth-fail:force-high")
 
-    score = _clamp(base)
+    pre_clamp = base + bonus
+    score = _clamp(pre_clamp)
+    floor_bump = 0.0
     if force_high and score < 75:
+        floor_bump = round(75.0 - score, 2)
         score = 75.0
+    clamp_adj = round(score - (base + bonus + floor_bump), 2)
 
     if score >= 90:
         classification, action = ("Critical", "Quarantine")
@@ -57,6 +62,65 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
     elif nlp.get("ml_label", "") not in ("", "clean"):
         threat_label = f"{nlp.get('ml_label')}-{classification}"
 
+    # --- Explainable breakdown: per-signal contributions sum to fraud_score ---
+    contrib = {
+        "nlp": round(WEIGHTS["nlp"] * nlp_score, 2),
+        "auth": round(WEIGHTS["auth"] * auth_score, 2),
+        "intel": round(WEIGHTS["intel"] * intel_score, 2),
+        "routing": round(WEIGHTS["routing"] * routing_score, 2),
+    }
+    signals: list[dict[str, Any]] = [
+        {
+            "signal_name": "nlp_text_classifier",
+            "weight": WEIGHTS["nlp"],
+            "value": round(nlp_score, 2),
+            "contribution_to_score": contrib["nlp"],
+            "detail": f"ML={nlp.get('ml_label')} ({nlp.get('ml_score')}); cues={nlp.get('nlp_cues_detected', [])}",
+        },
+        {
+            "signal_name": "auth_spf_dkim_dmarc",
+            "weight": WEIGHTS["auth"],
+            "value": round(auth_score, 2),
+            "contribution_to_score": contrib["auth"],
+            "detail": f"SPF={spf or 'n/a'} DKIM={dkim or 'n/a'} DMARC={dmarc or 'n/a'} aligned={auth.get('aligned')}",
+        },
+        {
+            "signal_name": "threat_intel",
+            "weight": WEIGHTS["intel"],
+            "value": round(intel_score, 2),
+            "contribution_to_score": contrib["intel"],
+            "detail": f"intel_hits={intel.get('count', 0)} malicious_urls={intel.get('malicious_count', 0)}",
+        },
+        {
+            "signal_name": "routing_anomalies",
+            "weight": WEIGHTS["routing"],
+            "value": round(routing_score, 2),
+            "contribution_to_score": contrib["routing"],
+            "detail": f"routing={routing_flags or []} header={header_flags or []}",
+        },
+        {
+            "signal_name": "new_domain_payment_rule",
+            "weight": 1.0,
+            "value": "+30" if bonus else "not fired",
+            "contribution_to_score": bonus,
+            "detail": f"domain_age_days={domain_age_days} contains_payment={contains_payment}",
+        },
+        {
+            "signal_name": "exec_spoof_escalation",
+            "weight": 1.0,
+            "value": f"floor→75 (+{floor_bump})" if floor_bump else "not fired",
+            "contribution_to_score": floor_bump,
+            "detail": "SPF/DKIM fail + executive impersonation forces High risk",
+        },
+        {
+            "signal_name": "score_clamp",
+            "weight": 1.0,
+            "value": "clamped 0–100",
+            "contribution_to_score": clamp_adj,
+            "detail": "final clamp into the 0–100 range",
+        },
+    ]
+
     return {
         "fraud_score": round(score, 2),
         "classification": classification,
@@ -67,4 +131,5 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
             "intel": round(intel_score, 2), "routing": round(routing_score, 2),
         },
         "rules_fired": extras,
+        "signals": signals,
     }

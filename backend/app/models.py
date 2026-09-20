@@ -74,6 +74,7 @@ class AnalysisResult(Base):
     trace_summary: Mapped[dict] = mapped_column(JSON, default=dict)
     threat_intel_hits: Mapped[list] = mapped_column(JSON, default=list)
     action_taken: Mapped[str] = mapped_column(String(64), default="Deliver")
+    score_breakdown: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

@@ -138,7 +138,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("scoring failed: %s", e)
         scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
-                   "action": "Deliver", "breakdown": {}}
+                   "action": "Deliver", "breakdown": {}, "signals": []}
 
     masked_body = mask_text(body, unmask=unmask)
     email_row = EmailRecord(
@@ -163,6 +163,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         authentication_results=auth,
         trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path)},
         threat_intel_hits=intel_hits, action_taken=scoring["action"],
+        score_breakdown=scoring.get("signals", []),
     )
     db.add(analysis_row)
     db.commit()
@@ -186,6 +187,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     return {
         "email_id": email_row.id, "fraud_score": scoring["fraud_score"],
         "classification": scoring["threat_classification"], "action": scoring["action"],
-        "breakdown": scoring.get("breakdown", {}), "origin_ip": origin_ip, "geo": geo,
+        "breakdown": scoring.get("breakdown", {}), "signals": scoring.get("signals", []),
+        "origin_ip": origin_ip, "geo": geo,
         "alert": alert, "attribution": attribution,
     }

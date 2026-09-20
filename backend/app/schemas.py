@@ -65,6 +65,7 @@ class AnalysisOut(BaseModel):
     trace_summary: dict = {}
     threat_intel_hits: list = []
     action_taken: str
+    score_breakdown: list = []
     created_at: datetime
     model_config = {"from_attributes": True}
 
