@@ -101,3 +101,20 @@ class GmailAccount(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MailboxConnection(Base):
+    """Organization-level mailbox connection for background polling (F7).
+
+    Refresh tokens are Fernet-encrypted (modules/auth/vault.py).
+    """
+    __tablename__ = "mailbox_connections"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), default="google")  # google | microsoft
+    account_email: Mapped[str] = mapped_column(String(320), default="")
+    encrypted_refresh_token: Mapped[str] = mapped_column(Text, default="")
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
