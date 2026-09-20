@@ -32,4 +32,17 @@ def get_db():
 
 def init_db():
     from . import models  # noqa: F401
+    from sqlalchemy import inspect, text
     Base.metadata.create_all(bind=engine)
+    # Additive migration for pre-existing SQLite files: create_all never adds
+    # columns to tables that already exist, so backfill any missing ones.
+    try:
+        with engine.begin() as conn:
+            existing = {t: {c["name"] for c in inspect(conn).get_columns(t)} for t in inspect(conn).get_table_names()}
+            for table in Base.metadata.sorted_tables:
+                missing = [c for c in table.columns if c.name not in existing.get(table.name, set())]
+                for col in missing:
+                    coltype = col.type.compile(dialect=engine.dialect)
+                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {coltype}"))
+    except Exception:
+        pass  # fresh DBs / non-sqlite backends need nothing
