@@ -81,7 +81,7 @@ function InternalLinks({ current }: { current: string }) {
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
         {links.slice(0, 4).map(l => (
           <a key={l.href} href={l.href} className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>
-            <b>{l.label}</b> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— {l.desc}</span>
+            <b>{l.label}</b> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>- {l.desc}</span>
           </a>
         ))}
       </div>
@@ -96,8 +96,8 @@ function InternalLinks({ current }: { current: string }) {
 
 export function LoginPage() {
   usePageMeta({
-    title: 'Sign In — SOC Forensics Lab | Secure Analyst Access',
-    description: 'JWT-secured sign in for SOC analysts. Access the AI-powered email threat dashboard with forensic intelligence, geolocation and chain-of-custody reporting.',
+    title: 'Sign In - SOC Forensics Lab | Secure Analyst Access',
+    description: 'JWT-secured sign in for SOC analysts. Access the email threat dashboard with forensic intelligence, geolocation and chain-of-custody reporting.',
     canonical: '/#/login',
     image: 'https://socforensics.io/og-image.svg',
   });
@@ -128,7 +128,7 @@ export function LoginPage() {
       <h1>SOC Sign in</h1>
       <p className="sub">JWT-secured access to the forensic intelligence platform.</p>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-        <img src="/favicon.svg" alt="SOC Forensics Lab shield logo — secure access" width={72} height={72} loading="eager" />
+        <img src="/favicon.svg" alt="SOC Forensics Lab shield logo - secure access" width={72} height={72} loading="eager" />
       </div>
       <div className="card">
         <div className="tabs">
@@ -156,7 +156,7 @@ export function LoginPage() {
       </div>
       <InternalLinks current="#/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
         url: `${CANONICAL_BASE}/#/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -218,7 +218,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     try {
       const r = await jget(`/gmail/auth-url?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
       window.open(r.auth_url, '_blank', 'noopener');
-      setNotice('Consent page opened — approve read-only access, then paste the ?code= value below.');
+      setNotice('Consent page opened - approve read-only access, then paste the ?code= value below.');
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
 
@@ -304,7 +304,7 @@ type EmailRow = {
 
 export function Dashboard() {
   usePageMeta({
-    title: 'Global Threat Dashboard — SOC Forensics Lab | Real-Time Email Threats',
+    title: 'Global Threat Dashboard - SOC Forensics Lab | Real-Time Email Threats',
     description: 'Real-time phishing, BEC and spoofing detection across ingested mail. Analyze emails, view fraud scores, track campaigns and export chain-of-custody reports.',
     canonical: '/',
     image: 'https://socforensics.io/og-image.svg',
@@ -327,7 +327,7 @@ export function Dashboard() {
       const [s, list] = await Promise.all([jget('/dashboard'), jget(`/emails?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`)]);
       setStats(s);
       setEmails(list);
-      // throttled score fetch to avoid console flood and rate limits — sequential batches of 5
+      // throttled score fetch to avoid console flood and rate limits - sequential batches of 5
       const slice = list.slice(0, 20);
       const acc: Record<string, { score: number; cls: string }> = {};
       for (let i = 0; i < slice.length; i += 5) {
@@ -335,9 +335,9 @@ export function Dashboard() {
         const entries = await Promise.all(batch.map(async (e: EmailRow) => {
           try {
             const d = await jget(`/emails/${e.id}`);
-            return [e.id, { score: d.analysis?.fraud_score ?? 0, cls: d.analysis?.threat_classification ?? '—' }] as const;
+            return [e.id, { score: d.analysis?.fraud_score ?? 0, cls: d.analysis?.threat_classification ?? '-' }] as const;
           } catch {
-            return [e.id, { score: 0, cls: '—' }] as const;
+            return [e.id, { score: 0, cls: '-' }] as const;
           }
         }));
         Object.assign(acc, Object.fromEntries(entries));
@@ -361,7 +361,7 @@ export function Dashboard() {
     setNotice('');
     try {
       const r = await jpost('/emails/ingest', { raw });
-      setNotice(`Analyzed — score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
+      setNotice(`Analyzed - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
       setRaw('');
       await load();
     } catch (e) {
@@ -377,7 +377,7 @@ export function Dashboard() {
     setErr('');
     try {
       const r = await uploadEmFile(f);
-      setNotice(`Uploaded ${f.name} — score ${r.fraud_score} (${r.classification})`);
+      setNotice(`Uploaded ${f.name} - score ${r.fraud_score} (${r.classification})`);
       await load();
     } catch (e) {
       setErr(e instanceof ApiError ? `Upload failed (${e.status}): ${e.message}` : String(e));
@@ -407,10 +407,10 @@ export function Dashboard() {
       <p className="sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
 
       <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <img src="/og-image.svg" alt="SOC Forensics Lab dashboard hero — AI-powered email threat detection map and shield emblem" width={320} height={168} style={{ borderRadius: 8, border: '1px solid var(--border)', maxWidth: '100%', height: 'auto' }} loading="lazy" />
+        <img src="/og-image.svg" alt="SOC Forensics Lab dashboard hero - email threat detection map and shield emblem" width={320} height={168} style={{ borderRadius: 8, border: '1px solid var(--border)', maxWidth: '100%', height: 'auto' }} loading="lazy" />
         <div style={{ flex: 1, minWidth: 240 }}>
-          <h3 style={{ marginTop: 0 }}>Forensic intelligence at a glance</h3>
-          <p className="sub" style={{ marginBottom: 8 }}>Ingest raw RFC822, upload .eml, or sync Gmail live. Every email is scored 0–100, checked against SPF/DKIM/DMARC, VirusTotal, URLhaus and DNSBL, then geolocated via chain-of-custody forensics.</p>
+          <h3 style={{ marginTop: 0 }}>Headers, scores, and locations in one view</h3>
+          <p className="sub" style={{ marginBottom: 8 }}>Paste RFC822, upload .eml, or sync Gmail. Each message gets a 0-100 fraud score, SPF/DKIM/DMARC checks, VirusTotal and blocklist lookups, and an origin map with SHA-256 custody hash.</p>
           <div className="row">
             <a href="#/campaigns">View Campaigns →</a>
             <span style={{ color: 'var(--muted)' }}>·</span>
@@ -433,7 +433,7 @@ export function Dashboard() {
               <StatCard label="Emails processed" value={stats.total_emails} />
               <StatCard label="Blocked threats (≥75)" value={stats.blocked_threats} />
               <StatCard label="Active campaigns" value={stats.active_campaigns} caption="shared infrastructure clusters" />
-              <StatCard label="Classifications" value={Object.keys(stats.by_classification || {}).length} caption={Object.entries(stats.by_classification || {}).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' · ') || '—'} />
+              <StatCard label="Classifications" value={Object.keys(stats.by_classification || {}).length} caption={Object.entries(stats.by_classification || {}).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'} />
             </div>
             <div className="card" style={{ marginBottom: 18 }}>
               <h3>Score distribution</h3>
@@ -495,8 +495,8 @@ export function Dashboard() {
                   <td>{s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}</td>
                   <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
                   <td><span className="mono">{e.sender_address}</span></td>
-                  <td>{s?.cls ?? '—'}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
+                  <td>{s?.cls ?? '-'}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '-'}</td>
                   <td>
                     <button className="ghost small" onClick={() => downloadReport(e.id, 'pdf')}>PDF</button>{' '}
                     <button className="ghost small" onClick={() => downloadReport(e.id, 'json')}>JSON</button>
@@ -510,7 +510,7 @@ export function Dashboard() {
 
       <InternalLinks current="#/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
         description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -523,14 +523,14 @@ export function Dashboard() {
 export function GraphSvg({ graph }: { graph: any }) {
   const nodes: any[] = graph?.nodes ?? [];
   const edges: any[] = graph?.edges ?? [];
-  if (!nodes.length) return <Empty msg="No related entities yet — graph grows as more mail shares IPs/domains." />;
+  if (!nodes.length) return <Empty msg="No related entities yet - graph grows as more mail shares IPs/domains." />;
   const w = 640, h = 300;
   const pos = nodes.map((_, i) => ({
     x: 70 + (i * (w - 140)) / Math.max(1, nodes.length - 1),
     y: h / 2 + (i % 2 === 0 ? -62 : 62),
   }));
   const idx = new Map(nodes.map((n, i) => [n.id, i]));
-  const color = (k: string) => (k === 'Domain' ? '#f97316' : k === 'IP_Address' ? '#ef4444' : k === 'Threat_Campaign' ? '#a78bfa' : '#22c55e');
+  const color = (k: string) => (k === 'Domain' ? '#f97316' : k === 'IP_Address' ? '#ef4444' : k === 'Threat_Campaign' ? '#38bdf8' : '#22c55e');
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Identity correlation graph showing sender infrastructure relationships" style={{ background: '#0a0f1f', borderRadius: 8, border: '1px solid var(--border)' }}>
       <title>Attribution graph</title>
@@ -600,8 +600,8 @@ export function EmailView({ id }: { id: string }) {
   const subject = d?.email?.subject || '(no subject)';
   const fraudScore = d?.analysis?.fraud_score ?? 0;
   usePageMeta({
-    title: d ? `${subject} — Score ${fraudScore} — SOC Forensics Lab` : `Email Forensics — SOC Forensics Lab`,
-    description: d ? `Forensic analysis for "${subject}" — classification ${d.analysis?.threat_classification || 'unknown'}, action ${d.analysis?.action_taken || '—'}, authentication and geolocation trace.` : 'Email forensic detail with header chain, geolocation and identity graph.',
+    title: d ? `${subject} - Score ${fraudScore} - SOC Forensics Lab` : `Email Forensics - SOC Forensics Lab`,
+    description: d ? `Forensic analysis for "${subject}" - classification ${d.analysis?.threat_classification || 'unknown'}, action ${d.analysis?.action_taken || '-'}, authentication and geolocation trace.` : 'Email forensic detail with header chain, geolocation and identity graph.',
     canonical: `#/email/${id}`,
     image: 'https://socforensics.io/og-image.svg',
   });
@@ -633,7 +633,7 @@ export function EmailView({ id }: { id: string }) {
       <a href="#/">← back to dashboard</a>
       <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
       <p className="sub">
-        {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
+        {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '-'}</b> ·{' '}
         <button className="ghost small" onClick={() => downloadReport(id, 'pdf')}>forensic PDF</button>{' '}
         <button className="ghost small" onClick={() => downloadReport(id, 'json')}>JSON</button>
         {' · '}<a href="#/campaigns">View Campaigns</a> · <a href="#/cases">Cases</a>
@@ -658,7 +658,7 @@ export function EmailView({ id }: { id: string }) {
             {(a.nlp_cues_detected || []).length === 0 ? <p className="sub">None</p> : (
               <div>{(a.nlp_cues_detected || []).map((c: string) => <span key={c} className="auth-pill auth-none">{c}</span>)}</div>
             )}
-            <img src="/favicon.svg" alt="Forensic shield watermark — verdict authenticity indicator" width={48} height={48} style={{ marginTop: 12, opacity: 0.9 }} loading="lazy" />
+            <img src="/favicon.svg" alt="Forensic shield watermark - verdict authenticity indicator" width={48} height={48} style={{ marginTop: 12, opacity: 0.9 }} loading="lazy" />
           </div>
           <div className="card">
             <h3>Authentication</h3>
@@ -702,15 +702,15 @@ export function EmailView({ id }: { id: string }) {
           <h3>Chain of custody</h3>
           <dl className="kv">
             <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span></dd>
-            <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '—'}</span></dd>
+            <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span></dd>
             <dt>Relay hops</dt><dd>{relay.length}</dd>
           </dl>
           <h3>Relay path (origin first)</h3>
-          {relay.length === 0 ? <Empty msg="No Received headers — sender path unverifiable." /> : (
+          {relay.length === 0 ? <Empty msg="No Received headers - sender path unverifiable." /> : (
             <ol className="timeline">
               {relay.map((h: any, i: number) => (
                 <li key={i}>
-                  <div><b>Hop {i + 1}</b> — from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
+                  <div><b>Hop {i + 1}</b> - from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
                   <div style={{ fontSize: 12, color: 'var(--muted)' }}>IPs: {(h.ips || []).map((ip: string) => <span key={ip} className="mono" style={{ marginRight: 4 }}>{ip}</span>)}
                     {(h.ips || []).length === 0 && 'none parsed'}</div>
                 </li>
@@ -727,10 +727,10 @@ export function EmailView({ id }: { id: string }) {
           <div className="card">
             <h3>Origin</h3>
             <dl className="kv">
-              <dt>Origin IP</dt><dd><span className="mono">{t.origin_ip || '—'}</span></dd>
+              <dt>Origin IP</dt><dd><span className="mono">{t.origin_ip || '-'}</span></dd>
               <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
-              <dt>ISP / ASN</dt><dd>{t.isp_asn || '—'}</dd>
-              <dt>Country / City</dt><dd>{t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '—'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({t.geolocation?.source})</span></dd>
+              <dt>ISP / ASN</dt><dd>{t.isp_asn || '-'}</dd>
+              <dt>Country / City</dt><dd>{t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({t.geolocation?.source})</span></dd>
             </dl>
             <h3>WHOIS</h3>
             <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
@@ -751,7 +751,7 @@ export function EmailView({ id }: { id: string }) {
                 />
                 <p><a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=5/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map</a></p>
               </>
-            ) : <Empty msg="No coordinates — private, missing or unresolvable origin IP." />}
+            ) : <Empty msg="No coordinates - private, missing or unresolvable origin IP." />}
           </div>
         </div>
       )}
@@ -778,7 +778,7 @@ export function EmailView({ id }: { id: string }) {
 
 export function Campaigns() {
   usePageMeta({
-    title: 'Campaigns — Shared Infrastructure Clusters — SOC Forensics Lab',
+    title: 'Campaigns - Shared Infrastructure Clusters - SOC Forensics Lab',
     description: 'Graph-detected campaign clusters sharing sender infrastructure, domains and IPs. Analyze confidence, attribution and forensic timelines.',
     canonical: '#/campaigns',
     image: 'https://socforensics.io/og-image.svg',
@@ -799,9 +799,9 @@ export function Campaigns() {
       <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns' }]} />
       <h1>Campaigns</h1>
       <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
-      <img src="/og-image.svg" alt="Campaign clustering visualization — threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
+      <img src="/og-image.svg" alt="Campaign clustering visualization - threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
       <Toast msg={err} />
-      {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet — ingest more mail sharing IPs/domains." /> : (
+      {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet - ingest more mail sharing IPs/domains." /> : (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {cards.map((k) => (
             <div key={k.id} className="card">
@@ -810,10 +810,10 @@ export function Campaigns() {
               <dl className="kv" style={{ gridTemplateColumns: '110px 1fr' }}>
                 <dt>Confidence</dt><dd><b>{Math.round(k.confidence * 100)}%</b></dd>
                 <dt>Shared IP</dt><dd><span className="mono">{k.ip}</span></dd>
-                <dt>ASN</dt><dd>{k.asn || '—'}</dd>
+                <dt>ASN</dt><dd>{k.asn || '-'}</dd>
                 <dt>Domains</dt><dd>{(k.domains || []).map((d: string) => <span key={d} className="mono" style={{ marginRight: 4 }}>{d}</span>)}</dd>
-                <dt>First seen</dt><dd style={{ fontSize: 12 }}>{k.first_seen ? new Date(k.first_seen).toLocaleString() : '—'}</dd>
-                <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{k.last_seen ? new Date(k.last_seen).toLocaleString() : '—'}</dd>
+                <dt>First seen</dt><dd style={{ fontSize: 12 }}>{k.first_seen ? new Date(k.first_seen).toLocaleString() : '-'}</dd>
+                <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{k.last_seen ? new Date(k.last_seen).toLocaleString() : '-'}</dd>
               </dl>
               <a href={`#/campaign/${k.id}`}>Open campaign →</a>
             </div>
@@ -822,7 +822,7 @@ export function Campaigns() {
       )}
       <InternalLinks current="#/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
         description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/#/campaigns`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -835,7 +835,7 @@ export function CampaignDetail({ id }: { id: string }) {
   const [err, setErr] = useState('');
   const cardName = d?.card?.name || `Campaign ${id.slice(0, 8)}`;
   usePageMeta({
-    title: `${cardName} — Campaign Detail — SOC Forensics Lab`,
+    title: `${cardName} - Campaign Detail - SOC Forensics Lab`,
     description: d ? `Campaign ${cardName} with ${d.card.email_count} emails, confidence ${Math.round(d.card.confidence * 100)}%, shared IP ${d.card.ip}. Attribution graph and email list.` : 'Campaign attribution detail with graph and forensic emails.',
     canonical: `#/campaign/${id}`,
     image: 'https://socforensics.io/og-image.svg',
@@ -877,7 +877,7 @@ export function CampaignDetail({ id }: { id: string }) {
                   <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
                   <td><span className="mono">{e.sender}</span></td>
                   <td>{e.classification}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{e.timestamp ? new Date(e.timestamp).toLocaleString() : '-'}</td>
                 </tr>
               ))}
             </tbody>
@@ -893,7 +893,7 @@ export function CampaignDetail({ id }: { id: string }) {
 
 export function ModelInfo() {
   usePageMeta({
-    title: 'Model Transparency & Metrics — SOC Forensics Lab',
+    title: 'Model Transparency & Metrics - SOC Forensics Lab',
     description: 'Phishing/BEC/clean classifier transparency: accuracy, macro F1, per-class precision/recall and confusion matrix from held-out evaluation.',
     canonical: '#/model',
     image: 'https://socforensics.io/og-image.svg',
@@ -921,7 +921,7 @@ export function ModelInfo() {
         Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
         ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
       </p>
-      <img src="/og-image.svg" alt="Model metrics preview — accuracy and F1 visualization for SOC Forensics classifier" width={640} height={200} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
+      <img src="/og-image.svg" alt="Model metrics preview - accuracy and F1 visualization for SOC Forensics classifier" width={640} height={200} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
       <div className="grid stats">
         <StatCard label="Accuracy" value={`${Math.round((m.accuracy ?? 0) * 100)}%`} />
         <StatCard label="Macro F1" value={(m.macro_f1 ?? 0).toFixed(3)} />
@@ -971,7 +971,7 @@ export function ModelInfo() {
       </div>
       <InternalLinks current="#/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
         description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/#/model`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
       })}} />
@@ -983,7 +983,7 @@ export function ModelInfo() {
 
 export function Mailboxes() {
   usePageMeta({
-    title: 'Mailboxes — OAuth Connectors — SOC Forensics Lab',
+    title: 'Mailboxes - OAuth Connectors - SOC Forensics Lab',
     description: 'Organization-level OAuth connectors for Google and Microsoft mailboxes with encrypted refresh tokens, polling and manual sync.',
     canonical: '#/mailboxes',
     image: 'https://socforensics.io/og-image.svg',
@@ -1036,7 +1036,7 @@ export function Mailboxes() {
       <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Mailboxes' }]} />
       <h1>Mailboxes</h1>
       <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. Refresh tokens are encrypted server-side.</p>
-      <img src="/favicon.svg" alt="Mailbox connectors — secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
+      <img src="/favicon.svg" alt="Mailbox connectors - secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
       <Toast msg={err} />
       {notice && <Toast msg={notice} kind="info" />}
       <div className="card" style={{ marginBottom: 14 }}>
@@ -1075,7 +1075,7 @@ export function Mailboxes() {
       </div>
       <InternalLinks current="#/mailboxes" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/#/mailboxes`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -1095,7 +1095,7 @@ const COLS = [
 
 export function Cases() {
   usePageMeta({
-    title: 'Case Management — Kanban Board — SOC Forensics Lab',
+    title: 'Case Management - Kanban Board - SOC Forensics Lab',
     description: 'Track forensic investigations from triage to closure. Kanban board for Open, In Progress and Closed cases with email linkage.',
     canonical: '#/cases',
     image: 'https://socforensics.io/og-image.svg',
@@ -1156,7 +1156,7 @@ export function Cases() {
       <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Case Management' }]} />
       <h1>Case Management</h1>
       <p className="sub">Track investigations from triage to closure.</p>
-      <img src="/favicon.svg" alt="Case management kanban board — investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
+      <img src="/favicon.svg" alt="Case management kanban board - investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
       <Toast msg={err} />
       <div className="row" style={{ marginBottom: 16 }}>
         <input type="text" style={{ maxWidth: 360 }} value={title} onChange={(e) => setTitle(e.target.value)}
@@ -1189,8 +1189,80 @@ export function Cases() {
       )}
       <InternalLinks current="#/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management — SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
         description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/#/cases`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
+    </div>
+  );
+}
+
+/* ---------------- Privacy Policy ---------------- */
+
+export function PrivacyPolicy() {
+  usePageMeta({
+    title: 'Privacy Policy - SOC Forensics Lab',
+    description: 'How SOC Forensics Lab handles email data, cookies, and analyst accounts. Retention, masking, and your rights.',
+    canonical: '#/privacy',
+    image: 'https://socforensics.io/og-image.svg',
+  });
+  return (
+    <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Privacy Policy' }]} />
+      <h1>Privacy Policy</h1>
+      <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
+      <div className="card">
+        <h3>What we collect</h3>
+        <p>Analyst credentials (username, hashed password, role), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
+        <h3>How we use email content</h3>
+        <p>Uploaded mail is parsed, scored 0-100, checked for SPF/DKIM/DMARC and threat intel, then stored with PII masked previews and a SHA-256 hash for chain-of-custody. Raw content is retained per your retention setting and purged by the daily scheduler. See retention_audit.log.</p>
+        <h3>Cookies</h3>
+        <p>Essential cookies keep you signed in (in-memory JWT, not localStorage) and remember theme and consent choice. No advertising cookies. Analytics is off by default. Use the banner to accept or decline essential storage.</p>
+        <h3>Your rights</h3>
+        <p>Request access or deletion of your analyst account and ingested data via hello@socforensics.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
+        <h3>Data location</h3>
+        <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
+      </div>
+      <InternalLinks current="#/privacy" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
+        description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/privacy`,
+        isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
+    </div>
+  );
+}
+
+/* ---------------- Terms and Conditions ---------------- */
+
+export function TermsConditions() {
+  usePageMeta({
+    title: 'Terms and Conditions - SOC Forensics Lab',
+    description: 'Terms for using the SOC Forensics email threat platform. Acceptable use, liability, and reporting.',
+    canonical: '#/terms',
+    image: 'https://socforensics.io/og-image.svg',
+  });
+  return (
+    <div className="page">
+      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Terms and Conditions' }]} />
+      <h1>Terms and Conditions</h1>
+      <p className="sub">Effective 20 Sep 2026 - Use of socforensics.io is governed by these terms.</p>
+      <div className="card">
+        <h3>Acceptable use</h3>
+        <p>Upload only mail you are authorized to analyze. Do not ingest illegal content or attempt to bypass authentication, retrain the classifier without approval, or scrape threat intel feeds.</p>
+        <h3>Forensic reports</h3>
+        <p>Scores and classifications are investigative aids, not legal guarantees. Verify with SPF, DKIM, headers, and intel hits before action.</p>
+        <h3>Availability</h3>
+        <p>Service is provided as-is. The team may update scoring weights, retention, and polling intervals. Check Model Transparency for current metrics.</p>
+        <h3>Liability</h3>
+        <p>To the full extent permitted by law, SOC Forensics Lab is not liable for indirect damages from missed or flagged mail.</p>
+        <h3>Contact</h3>
+        <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
+      </div>
+      <InternalLinks current="#/terms" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
+        description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/terms`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
