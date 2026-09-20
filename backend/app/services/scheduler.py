@@ -40,13 +40,17 @@ def run_retention_job() -> dict:
 
 
 def start_scheduler():
-    """Daily 03:00 retention job. Returns the started scheduler."""
+    """Daily 03:00 retention job. Returns the started scheduler.
+
+    BackgroundScheduler (threads) is used instead of AsyncIOScheduler so the
+    job also runs outside an event loop; the job itself is synchronous DB work.
+    """
     from ..config import get_settings
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.cron import CronTrigger
 
     settings = get_settings()
-    scheduler = AsyncIOScheduler()
+    scheduler = BackgroundScheduler()
     scheduler.add_job(
         run_retention_job,
         CronTrigger(hour=getattr(settings, "retention_hour", 3), minute=0),
