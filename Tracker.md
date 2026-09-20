@@ -1,5 +1,11 @@
 # Project Task Tracker — IMPLEMENTED ✅
 
+## Phase 0: Demo-safe audit fixes (F1–F4) ✅
+- [x] F1 auth & RBAC — `routers/auth.py` (register/login/refresh/me), passlib/bcrypt hashing, JWT from `secret_key`/`access_token_expire_minutes`, `get_current_user` on all `/api/v1/*`, Admin-only DELETE cases + retention; frontend in-memory token, login page, 401 redirect, admin UI hidden. Tests: `test_auth.py` (401 + 403 proven).
+- [x] F2 CORS — explicit `CORS_ORIGINS` env (default `http://localhost:5173`), `allow_credentials=True`. Test: `test_security.py::test_cors_allows_configured_origin_only`.
+- [x] F3 SMTP ingestion — `start_smtp()` + consumer task wired in lifespan behind `SMTP_ENABLED=1`; thread-safe queue; integration test sends via aiosmtplib and asserts the `EmailRecord` row (`test_smtp.py`).
+- [x] F4 custody key — no silent dev default outside `APP_ENV=development`; `require_custody_key()` fails startup otherwise. Tests: `test_security.py::test_custody_key_gate`.
+
 ## Phase 1: Foundation & Ingestion
 - [x] Provision cloud infrastructure (VPCs, DB clusters). → `docker-compose.yml` (postgres/neo4j/elastic/kafka), `k8s/backend.yaml`
 - [x] Initialize code repositories and CI/CD pipelines. → `.github/workflows/ci.yml`
