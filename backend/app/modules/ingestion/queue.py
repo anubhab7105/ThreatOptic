@@ -1,9 +1,16 @@
-"""Queue abstraction: in-memory asyncio queue; Kafka when KAFKA_BOOTSTRAP set."""
+"""Queue abstraction: thread-safe in-memory queue; Kafka when KAFKA_BOOTSTRAP set.
+
+A plain (thread-safe) queue is used instead of asyncio.Queue because the
+aiosmtpd handler runs on the SMTP controller's own event loop/thread while
+the consumer runs on the app loop — an asyncio.Queue would bind to one loop
+and break when touched from the other.
+"""
 import asyncio
 import json
+import queue
 from typing import Any
 
-_mem_queue: asyncio.Queue = asyncio.Queue()
+_mem_queue: queue.Queue = queue.Queue()
 
 
 async def enqueue_email(payload: dict[str, Any]) -> None:
@@ -21,11 +28,11 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
                 await producer.stop()
         except Exception:
             pass  # fall back to memory
-    await _mem_queue.put(payload)
+    _mem_queue.put(payload)
 
 
 async def dequeue_email() -> dict[str, Any]:
-    return await _mem_queue.get()
+    return await asyncio.to_thread(_mem_queue.get)
 
 
 def queue_depth() -> int:

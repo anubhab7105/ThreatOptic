@@ -1,11 +1,13 @@
 """FastAPI entrypoint."""
+import asyncio
 import logging
+import queue as std_queue
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import get_settings
-from .database import init_db
+from .database import SessionLocal, init_db
 from .routers.api import router
 from .routers.auth import router as auth_router
 from .routers.gmail import router as gmail_router
@@ -16,18 +18,64 @@ log = logging.getLogger("main")
 settings = get_settings()
 
 
+async def _smtp_consumer() -> None:
+    """Background loop: SMTP queue -> forensic pipeline (F3)."""
+    from .modules.ingestion.queue import _mem_queue
+    from .services.pipeline import process_raw_email
+    log.info("SMTP consumer started")
+    while True:
+        try:
+            try:
+                payload = await asyncio.to_thread(_mem_queue.get, True, 0.5)
+            except std_queue.Empty:
+                continue
+            raw = payload.get("raw", b"")
+            if isinstance(raw, str):
+                raw = raw.encode()
+            db = SessionLocal()
+            try:
+                res = await process_raw_email(
+                    db, raw, source=payload.get("source", "smtp"),
+                    envelope_from=payload.get("envelope_from", ""),
+                )
+                log.info("SMTP mail analyzed: %s score=%s", res["email_id"], res["fraud_score"])
+            except Exception:
+                log.exception("SMTP pipeline run failed")
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            log.info("SMTP consumer stopped")
+            break
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .modules.privacy.chain_of_custody import require_custody_key
+
     init_db()
     log.info("DB ready at %s", settings.resolved_db_url())
-    yield
+    require_custody_key()
+    controller = None
+    consumer = None
+    if settings.smtp_on:
+        from .modules.ingestion.smtp_server import start_smtp
+        controller = start_smtp(settings.smtp_host, settings.smtp_port)
+        consumer = asyncio.create_task(_smtp_consumer())
+        log.info("SMTP ingestion listening on %s:%s", settings.smtp_host, settings.smtp_port)
+    try:
+        yield
+    finally:
+        if consumer:
+            consumer.cancel()
+        if controller:
+            controller.stop()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
