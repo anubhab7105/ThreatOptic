@@ -700,6 +700,80 @@ export function CampaignDetail({ id }: { id: string }) {
   );
 }
 
+/* ---------------- Model transparency ---------------- */
+
+export function ModelInfo() {
+  const [m, setM] = useState<any>(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    jget('/model/metrics')
+      .then(setM)
+      .catch((e) => setErr(e instanceof ApiError ? `Could not load model metrics (${e.status}): ${e.message}` : String(e)))
+      .finally(() => setLoading(false));
+  }, []);
+  if (loading) return <div className="page"><h1>Model Info</h1><SkeletonList /></div>;
+  if (err) return <div className="page"><h1>Model Info</h1><Toast msg={err} /></div>;
+  const labels: string[] = m.confusion_labels || [];
+  const per = m.per_class || {};
+  return (
+    <div className="page">
+      <h1>Model Info</h1>
+      <p className="sub">
+        Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
+        ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
+      </p>
+      <div className="grid stats">
+        <StatCard label="Accuracy" value={`${Math.round((m.accuracy ?? 0) * 100)}%`} />
+        <StatCard label="Macro F1" value={(m.macro_f1 ?? 0).toFixed(3)} />
+        <StatCard label="Macro precision" value={(m.macro_precision ?? 0).toFixed(3)} />
+        <StatCard label="Macro recall" value={(m.macro_recall ?? 0).toFixed(3)} />
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        <div className="card">
+          <h3>Per-class precision / recall / F1</h3>
+          <table className="tbl">
+            <thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr></thead>
+            <tbody>
+              {labels.map((l) => (
+                <tr key={l}>
+                  <td><b>{l}</b></td>
+                  <td>{(per[l]?.precision ?? 0).toFixed(3)}</td>
+                  <td>{(per[l]?.recall ?? 0).toFixed(3)}</td>
+                  <td>{(per[l]?.f1 ?? 0).toFixed(3)}</td>
+                  <td>{per[l]?.support ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="card">
+          <h3>Confusion matrix (rows = actual, cols = predicted)</h3>
+          <table className="tbl">
+            <thead><tr><th></th>{labels.map((l) => <th key={l}>{l}</th>)}</tr></thead>
+            <tbody>
+              {(m.confusion_matrix || []).map((row: number[], i: number) => {
+                const total = Math.max(1, row.reduce((x, y) => x + y, 0));
+                return (
+                  <tr key={labels[i]}>
+                    <th style={{ textAlign: 'left' }}>{labels[i]}</th>
+                    {row.map((v, j) => (
+                      <td key={j} style={{ background: i === j ? 'rgba(34,197,94,0.15)' : v ? 'rgba(239,68,68,0.15)' : undefined }}>
+                        <b>{v}</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>{Math.round((100 * v) / total)}%</span>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="sub" style={{ marginBottom: 0 }}>Diagonal cells are correct predictions; off-diagonal cells are confusions.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Cases ---------------- */
 
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };

@@ -240,3 +240,21 @@ def run_retention(
     admin: models.User = Depends(require_roles("Admin")),
 ):
     return apply_retention(db)
+
+
+@router.get("/model/metrics")
+def model_metrics():
+    """NLP classifier transparency: held-out precision/recall/F1/confusion matrix.
+
+    Metrics are computed and cached by backend/scripts/train_nlp.py.
+    """
+    import json
+    import os
+    metrics_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "metrics.json"))
+    model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "phishing_clf.joblib"))
+    if not os.path.exists(metrics_path):
+        raise HTTPException(404, "metrics not computed yet (run: python backend/scripts/train_nlp.py)")
+    with open(metrics_path) as f:
+        metrics = json.load(f)
+    metrics["model_exists"] = os.path.exists(model_path)
+    return metrics

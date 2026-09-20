@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage } from './pages';
+import { Dashboard, EmailView, Cases, Campaigns, CampaignDetail, LoginPage, ModelInfo } from './pages';
 
 function Shell() {
   const { user, loading, logout } = useAuth();
@@ -25,9 +25,11 @@ function Shell() {
       ? 'campaign'
       : hash.startsWith('#/campaigns')
         ? 'campaigns'
-        : hash.startsWith('#/cases')
-          ? 'cases'
-          : 'dash';
+        : hash.startsWith('#/model')
+          ? 'model'
+          : hash.startsWith('#/cases')
+            ? 'cases'
+            : 'dash';
 
   if (loading) {
     return (
@@ -51,6 +53,7 @@ function Shell() {
         <a className={`nl${route === 'dash' ? ' active' : ''}`} href="#/">Dashboard</a>
         <a className={`nl${route === 'campaigns' || route === 'campaign' ? ' active' : ''}`} href="#/campaigns">Campaigns</a>
         <a className={`nl${route === 'cases' ? ' active' : ''}`} href="#/cases">Cases</a>
+        <a className={`nl${route === 'model' ? ' active' : ''}`} href="#/model">Model Info</a>
         <span className="spacer" />
         <span className="health" title={`${user.username} · ${user.role}`}>
           {user.username} ({user.role})
