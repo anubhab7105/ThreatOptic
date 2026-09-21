@@ -86,19 +86,30 @@ def test_cache_geo_and_dns_wrappers(monkeypatch):
     assert whois_dns.dns_lookup("example.com")["domain"] == "example.com"
 
 
-def test_websocket_push_on_high_risk():
+def test_websocket_push_on_high_risk(monkeypatch):
     from app.main import app
+    import app.services.pipeline as pipe
 
+    real_compute = pipe.compute_scores
+
+    def _hot(*a, **k):
+        out = real_compute(*a, **k)
+        out.update(fraud_score=95.0, classification="High",
+                   threat_classification="Phishing-High", action="JunkOrHold")
+        return out
+
+    monkeypatch.setattr(pipe, "compute_scores", _hot)
     with TestClient(app) as c:
         h = _auth(c)
         tok = h["Authorization"].split(" ", 1)[1]
         with c.websocket_connect(f"/api/v1/ws/alerts?token={tok}") as ws:
             c.post("/api/v1/emails/ingest", headers=h, json={
                 "raw": ("From: \"CEO\" <ceo@xn--paypa1-secure.top>\nTo: f@c.test\n"
-                        "Subject: Urgent wire\nMessage-ID: <w1@x.top>\n"
+                        "Subject: Urgent wire transfer - verify account now\nMessage-ID: <w1@x.top>\n"
                         "Return-Path: <b@evil.test>\n"
                         "Received: from evil.test (evil.test [45.148.10.88]) by mx.c with ESMTPS\n"
-                        "Content-Type: text/plain\n\nKindly wire $9000 immediately, confidential.")})
+                        "Content-Type: text/plain\n\nKindly wire $9000 to the new vendor immediately, "
+                        "do not disclose. Verify your account now at http://malicious-example.com/login")})
             msg = ws.receive_json()
             assert msg["event"] == "high-risk-alert"
             assert msg["fraud_score"] >= 75 and msg["email_id"]
@@ -118,6 +129,9 @@ def test_websocket_org_isolation():
     received: list = []
 
     class FakeWS:
+        async def accept(self):
+            return None
+
         async def send_json(self, payload):
             received.append(payload)
 

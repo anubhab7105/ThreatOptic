@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import timezone
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
