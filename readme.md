@@ -15,6 +15,7 @@ Please refer to the following markdown files in this repository to understand th
 6. [Implementation Plan](Implementationplan.md) - Phased roadmap for development and rollout.
 7. [Project Tracker (Tracker)](Tracker.md) - Actionable checklist of tasks.
 8. [System Rules (Rules)](Rules.md) - Detection thresholds, privacy safeguards, and compliance policies.
+9. [Security Runbook (SECURITY)](SECURITY.md) - compromise assumption, out-of-band secret rotation, verification.
 
 ## Getting Started (Developer Setup)
 
@@ -96,7 +97,7 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 
 ### Present-Stage Notes (September 2026)
 - "AI" scope: the running ML is TF-IDF + LogisticRegression (30% of fraud score) plus hand-written linguistic cues; transformer reranking is a dormant hook, not installed. See PRD § Present-Stage Scope Note.
-- Seed demo accounts when missing: `PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`).
+- Seed demo accounts when missing: `ALLOW_SEED=1 APP_ENV=development PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`; refuses to run otherwise).
 - Quirk: API returns transient 500s while `uvicorn --reload` restarts on file saves — wait ~10s and retry.
 - Sync speed: large real emails take tens of seconds each through the pipeline; multi-mail syncs complete but slowly (background-job fix queued).
 - Split deploy (Vercel + Render): set `VITE_API_URL` to the Render backend; register exactly `https://<app>.vercel.app/` as the Google OAuth redirect URI; mirror it in `GOOGLE_REDIRECT_URI`, `FRONTEND_URL`, `CORS_ORIGINS`.
