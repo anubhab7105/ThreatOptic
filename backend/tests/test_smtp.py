@@ -6,12 +6,14 @@ from email.message import EmailMessage
 SMTP_TEST_PORT = 10025
 
 
-def test_smtp_ingest_creates_record():
+def test_smtp_ingest_creates_record(monkeypatch):
     import aiosmtplib
     from app import models
     from app.database import SessionLocal, init_db
     from app.main import _smtp_consumer
     from app.modules.ingestion.smtp_server import start_smtp
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "smtp_require_auth", "0")
 
     init_db()
     from app.modules.ingestion import smtp_server

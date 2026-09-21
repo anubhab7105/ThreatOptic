@@ -115,6 +115,7 @@ def test_smtp_oversize_rejected(monkeypatch):
     from app.modules.ingestion.smtp_server import start_smtp
 
     settings = get_settings()
+    monkeypatch.setattr(settings, "smtp_require_auth", "0")
     monkeypatch.setattr(settings, "smtp_data_limit_bytes", 200)
     controller = start_smtp("127.0.0.1", 10027)
     try:
