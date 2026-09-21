@@ -138,7 +138,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         urls = []
 
     import os
-    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+    from ..config import get_settings
+    vt_key = get_settings().virustotal_api_key or os.environ.get("VIRUSTOTAL_API_KEY", "")
 
     nlp_res, url_res, attach_res = await asyncio.gather(
         _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", "")),
@@ -155,7 +156,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("threat intel failed: %s", e)
         intel = {"hits": [], "count": 0}
-    intel["malicious_count"] = url_res.get("malicious_count", 0)
+    intel["malicious_count"] = int(intel.get("malicious_count", 0)) + int(url_res.get("malicious_count", 0))
     intel_hits = intel.get("hits", []) + [{"type": "url", **h} for h in url_res.get("hits", [])]
     intel_hits += [{"type": "attachment", **f} for f in attach_res.get("findings", [])]
 
