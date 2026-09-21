@@ -22,8 +22,8 @@ def _whois_cached(domain: str) -> dict[str, Any]:
         import socket
         import whois
         # python-whois has no timeout parameter: run the blocking call in a
-        # worker thread with join(timeout) instead of touching the process-
-        # global socket.setdefaulttimeout (Step 4 — no global side effects).
+        # worker thread with join(timeout) instead of touching any
+        # process-global socket defaults (Step 4 — no global side effects).
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(whois.whois, domain)
