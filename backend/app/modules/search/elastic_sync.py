@@ -63,6 +63,9 @@ def delete_email(email_id: str) -> dict:
     except Exception as e:
         log.warning("elastic delete failed for %s: %s", email_id, e)
         return {"deleted": False, "error": str(e)[:300]}
+
+
+def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
     from ...config import get_settings
 
     es = _client()
