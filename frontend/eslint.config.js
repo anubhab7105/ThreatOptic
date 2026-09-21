@@ -29,4 +29,6 @@ export default tseslint.config(
   },
   // Pragmatic any for untyped API payloads: warn, don't fail the gate.
   { rules: { '@typescript-eslint/no-explicit-any': 'warn' } },
+  // Fetch-on-mount effects are the intentional data-loading pattern here.
+  { rules: { 'react-hooks/set-state-in-effect': 'warn' } },
 );
