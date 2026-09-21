@@ -78,7 +78,15 @@ def test_callback_sync_disconnect(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h, uname = _auth(c)
+        h = _auth(c)
+        # disconnect requires Analyst+: promote the freshly registered (ReadOnly) user
+        dbp = SessionLocal()
+        try:
+            tok_user = dbp.query(models.User).order_by(models.User.created_at.desc()).first()
+            tok_user.role = "Analyst"
+            dbp.commit()
+        finally:
+            dbp.close()
         # hermetic: drop any leftover fixture row from interrupted runs
         db0 = SessionLocal()
         try:
