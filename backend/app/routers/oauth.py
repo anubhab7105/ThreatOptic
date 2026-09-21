@@ -113,8 +113,10 @@ def authorize(
 
 
 @router.get("/{provider}/callback")
+@limiter.limit("30/minute")
 async def callback(
     provider: str,
+    request: Request,
     code: str = Query(...),
     state: str = Query(...),
     db: Session = Depends(get_db),
@@ -169,6 +171,7 @@ async def callback(
         or_(models.OAuthState.used == True,  # noqa: E712
             models.OAuthState.expires_at < _utcnow())).delete(synchronize_session=False)
     db.commit()
+    audit("oauth.callback", provider=p, account=address)
     base = get_settings().frontend_url.rstrip("/")
     return RedirectResponse(f"{base}/#/mailboxes?connected={p}:{address}", status_code=302)
 
@@ -190,8 +193,10 @@ def disconnect(provider: str, user: models.User = Depends(require_roles("Admin",
 
 
 @router.post("/sync-now")
+@limiter.limit("10/minute")
 async def sync_now(
     payload: SyncNowIn,
+    request: Request,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -203,6 +208,7 @@ async def sync_now(
     )
     if result["polled"] == 0:
         raise HTTPException(404, "no mailbox connected")
+    audit("oauth.sync", user=user.username, synced=result["synced"])
     return result
 
 
