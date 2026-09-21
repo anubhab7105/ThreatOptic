@@ -6,7 +6,7 @@ export default tseslint.config(
   { ignores: ['dist/**', 'node_modules/**', 'vite.config.ts', '**/*.js'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  reactHooks.configs['recommended-latest'],
+  reactHooks.configs.flat.recommended,
   {
     languageOptions: {
       globals: {
