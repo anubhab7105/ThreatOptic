@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
@@ -19,13 +20,12 @@ function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
 }
 function setCanonical(path: string) {
-  const href = `${CANONICAL_BASE}${path.startsWith('/') ? path : `/${path}`}`.replace(/#.*$/, '');
-  // keep hash canonical as query-less path for crawlers: hash routes are client-side, we expose clean path
-  const hashPath = path.includes('#') ? path : path;
-  const full = hashPath.includes('#') ? `${CANONICAL_BASE}/${hashPath}` : href;
+  // History-API routes are real URLs: the canonical is the clean path itself.
+  const clean = path.split(/[?#]/)[0] || '/';
+  const href = `${CANONICAL_BASE}${clean.startsWith('/') ? clean : `/${clean}`}`;
   let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!el) { el = document.createElement('link'); el.rel = 'canonical'; document.head.appendChild(el); }
-  el.href = full;
+  el.href = href;
 }
 function setMeta(name: string, content: string) {
   let el = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
@@ -60,7 +60,7 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^#\/?/, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\//, '')}` : undefined,
     })),
   };
   return (
@@ -69,7 +69,7 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
         <ol>
           {items.map((it, i) => (
             <li key={i}>
-              {it.href ? <a href={it.href}>{it.label}</a> : <span aria-current="page">{it.label}</span>}
+              {it.href ? <Link to={it.href}>{it.label}</Link> : <span aria-current="page">{it.label}</span>}
               {i < items.length - 1 ? <span className="sep" aria-hidden="true"> › </span> : null}
             </li>
           ))}
@@ -82,20 +82,20 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
 
 function InternalLinks({ current }: { current: string }) {
   const links = [
-    { href: '#/', label: 'Dashboard', desc: 'Threat overview' },
-    { href: '#/campaigns', label: 'Campaigns', desc: 'Infrastructure clusters' },
-    { href: '#/cases', label: 'Cases', desc: 'Kanban investigation' },
-    { href: '#/mailboxes', label: 'Mailboxes', desc: 'OAuth connectors' },
-    { href: '#/model', label: 'Model Info', desc: 'Transparency & metrics' },
+    { href: '/', label: 'Dashboard', desc: 'Threat overview' },
+    { href: '/campaigns', label: 'Campaigns', desc: 'Infrastructure clusters' },
+    { href: '/cases', label: 'Cases', desc: 'Kanban investigation' },
+    { href: '/mailboxes', label: 'Mailboxes', desc: 'OAuth connectors' },
+    { href: '/model', label: 'Model Info', desc: 'Transparency & metrics' },
   ].filter(l => l.href !== current);
   return (
     <div className="card" style={{ marginTop: 18 }}>
       <h3>Explore the platform</h3>
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
         {links.slice(0, 4).map(l => (
-          <a key={l.href} href={l.href} className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>
+          <Link key={l.href} to={l.href} className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>
             <b>{l.label}</b> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>- {l.desc}</span>
-          </a>
+          </Link>
         ))}
       </div>
       <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
@@ -111,7 +111,7 @@ export function LoginPage() {
   usePageMeta({
     title: 'Sign In - SOC Forensics Lab | Secure Analyst Access',
     description: 'JWT-secured sign in for SOC analysts. Access the email threat dashboard with forensic intelligence, geolocation and chain-of-custody reporting.',
-    canonical: '/#/login',
+    canonical: '/login',
     image: 'https://socforensics.io/og-image.svg',
   });
   const { login, register } = useAuth();
@@ -137,7 +137,7 @@ export function LoginPage() {
 
   return (
     <div className="page" style={{ maxWidth: 440 }}>
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Sign In' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Sign In' }]} />
       <h1>SOC Sign in</h1>
       <p className="sub">JWT-secured access to the forensic intelligence platform.</p>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
@@ -163,11 +163,13 @@ export function LoginPage() {
         </div>
         <p className="sub" style={{ marginTop: 12, marginBottom: 0 }}>
           {mode === 'register'
-            ? 'New accounts join as Analyst (first-ever account becomes Admin).'
-            : 'Demo seed: admin / admin123, analyst / analyst123.'}
+            ? 'New accounts join as ReadOnly; an Analyst seat can be requested after signup.'
+            : import.meta.env.DEV
+              ? 'Demo seed: admin / admin123, analyst / analyst123.'
+              : 'Use your provisioned analyst credentials.'}
         </p>
       </div>
-      <InternalLinks current="#/" />
+      <InternalLinks current="/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
@@ -445,7 +447,7 @@ export function Dashboard() {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Threat Dashboard' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Threat Dashboard' }]} />
       <h1>Global Threat Dashboard</h1>
       <p className="sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
 
@@ -455,11 +457,11 @@ export function Dashboard() {
           <h3 style={{ marginTop: 0 }}>Headers, scores, and locations in one view</h3>
           <p className="sub" style={{ marginBottom: 8 }}>Paste RFC822, upload .eml, or sync Gmail. Each message gets a 0-100 fraud score, SPF/DKIM/DMARC checks, VirusTotal and blocklist lookups, and an origin map with SHA-256 custody hash.</p>
           <div className="row">
-            <a href="#/campaigns">View Campaigns →</a>
+            <Link to="/campaigns">View Campaigns →</Link>
             <span style={{ color: 'var(--muted)' }}>·</span>
-            <a href="#/cases">Open Cases →</a>
+            <Link to="/cases">Open Cases →</Link>
             <span style={{ color: 'var(--muted)' }}>·</span>
-            <a href="#/model">Model Transparency →</a>
+            <Link to="/model">Model Transparency →</Link>
           </div>
         </div>
       </div>
@@ -539,7 +541,7 @@ export function Dashboard() {
               return (
                 <tr key={e.id}>
                   <td>{s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}</td>
-                  <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
+                  <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
                   <td><span className="mono">{e.sender_address}</span></td>
                   <td>{s?.cls ?? '—'}</td>
                   <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
@@ -554,7 +556,7 @@ export function Dashboard() {
         </table>
       )}
 
-      <InternalLinks current="#/" />
+      <InternalLinks current="/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
         description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
@@ -659,7 +661,7 @@ export function EmailView({ id }: { id: string }) {
   usePageMeta({
     title: d ? `${subject} - Score ${fraudScore} - SOC Forensics Lab` : `Email Forensics - SOC Forensics Lab`,
     description: d ? `Forensic analysis for "${subject}" - classification ${d.analysis?.threat_classification || 'unknown'}, action ${d.analysis?.action_taken || '-'}, authentication and geolocation trace.` : 'Email forensic detail with header chain, geolocation and identity graph.',
-    canonical: `#/email/${id}`,
+    canonical: `/email/${id}`,
     image: 'https://socforensics.io/og-image.svg',
   });
 
@@ -693,8 +695,8 @@ export function EmailView({ id }: { id: string }) {
     }
   }, [d]);
 
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Email', href: '#/' }, { label: 'Error' }]} /><a href="#/">← back</a><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Email' }]} /><a href="#/">← back</a><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><SkeletonList /></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
   const auth = a.authentication_results || {};
@@ -702,8 +704,8 @@ export function EmailView({ id }: { id: string }) {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Dashboard', href: '#/' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
-      <a href="#/">← back to dashboard</a>
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Dashboard', href: '/' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
+      <Link to="/">← back to dashboard</Link>
       <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
@@ -834,6 +836,8 @@ export function EmailView({ id }: { id: string }) {
                   height="380"
                   style={{ border: 0, borderRadius: 8 }}
                   loading="lazy"
+                  sandbox="allow-scripts allow-same-origin"
+                  referrerPolicy="no-referrer"
                   src={`https://www.openstreetmap.org/export/embed.html?bbox=${t.geolocation.lon - 10}%2C${t.geolocation.lat - 10}%2C${t.geolocation.lon + 10}%2C${t.geolocation.lat + 10}&layer=mapnik&marker=${t.geolocation.lat}%2C${t.geolocation.lon}`}
                 />
                 <p><a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=5/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map</a></p>
@@ -851,10 +855,10 @@ export function EmailView({ id }: { id: string }) {
           <pre className="dump">{JSON.stringify(graph, null, 2)}</pre>
         </div>
       )}
-      <InternalLinks current="#/email" />
+      <InternalLinks current="/email" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
-        description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/#/email/${id}`,
+        description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/email/${id}`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
       })}} />
     </div>
@@ -867,7 +871,7 @@ export function Campaigns() {
   usePageMeta({
     title: 'Campaigns - Shared Infrastructure Clusters - SOC Forensics Lab',
     description: 'Graph-detected campaign clusters sharing sender infrastructure, domains and IPs. Analyze confidence, attribution and forensic timelines.',
-    canonical: '#/campaigns',
+    canonical: '/campaigns',
     image: 'https://socforensics.io/og-image.svg',
   });
   const [cards, setCards] = useState<any[]>([]);
@@ -883,7 +887,7 @@ export function Campaigns() {
   }, []);
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns' }]} />
       <h1>Campaigns</h1>
       <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
       <img src="/og-image.svg" alt="Campaign clustering visualization - threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
@@ -892,7 +896,7 @@ export function Campaigns() {
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {cards.map((k) => (
             <div key={k.id} className="card">
-              <h3><a href={`#/campaign/${k.id}`}>{k.name}</a></h3>
+              <h3><Link to={`/campaign/${k.id}`}>{k.name}</Link></h3>
               <div className="stat-num">{k.email_count} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>emails</span></div>
               <dl className="kv" style={{ gridTemplateColumns: '110px 1fr' }}>
                 <dt>Confidence</dt><dd><b>{Math.round(k.confidence * 100)}%</b></dd>
@@ -902,12 +906,12 @@ export function Campaigns() {
                 <dt>First seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.first_seen)}</dd>
                 <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.last_seen)}</dd>
               </dl>
-              <a href={`#/campaign/${k.id}`}>Open campaign →</a>
+              <Link to={`/campaign/${k.id}`}>Open campaign →</Link>
             </div>
           ))}
         </div>
       )}
-      <InternalLinks current="#/campaigns" />
+      <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
         description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/#/campaigns`,
@@ -924,7 +928,7 @@ export function CampaignDetail({ id }: { id: string }) {
   usePageMeta({
     title: `${cardName} - Campaign Detail - SOC Forensics Lab`,
     description: d ? `Campaign ${cardName} with ${d.card.email_count} emails, confidence ${Math.round(d.card.confidence * 100)}%, shared IP ${d.card.ip}. Attribution graph and email list.` : 'Campaign attribution detail with graph and forensic emails.',
-    canonical: `#/campaign/${id}`,
+    canonical: `/campaign/${id}`,
     image: 'https://socforensics.io/og-image.svg',
   });
   useEffect(() => {
@@ -936,17 +940,17 @@ export function CampaignDetail({ id }: { id: string }) {
       .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)); });
     return () => { cancelled = true; };
   }, [id]);
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: 'Error' }]} /><a href="#/campaigns">← campaigns</a><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: 'Loading' }]} /><a href="#/campaigns">← campaigns</a><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><SkeletonList /></div>;
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Campaigns', href: '#/campaigns' }, { label: cardName }]} />
-      <a href="#/campaigns">← campaigns</a>
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: cardName }]} />
+      <Link to="/campaigns">← campaigns</Link>
       <h1 style={{ marginTop: 8 }}>{d.card.name}</h1>
       <p className="sub">
         {d.card.email_count} emails · confidence {Math.round(d.card.confidence * 100)}% · IP <span className="mono">{d.card.ip}</span>
         {d.card.asn ? <> · ASN {d.card.asn}</> : null}
-        {' · '}<a href="#/">Dashboard</a> · <a href="#/cases">Cases</a>
+        {' · '}<Link to="/">Dashboard</Link> · <Link to="/cases">Cases</Link>
       </p>
       <div className="card" style={{ marginBottom: 14 }}>
         <h3>Attribution graph (campaign nodes)</h3>
@@ -961,7 +965,7 @@ export function CampaignDetail({ id }: { id: string }) {
               {d.emails.map((e: any) => (
                 <tr key={e.id}>
                   <td><ScoreBadge v={e.fraud_score ?? 0} /></td>
-                  <td><a href={`#/email/${e.id}`}>{e.subject || '(no subject)'}</a></td>
+                  <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
                   <td><span className="mono">{e.sender}</span></td>
                   <td>{e.classification}</td>
                   <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
@@ -971,7 +975,7 @@ export function CampaignDetail({ id }: { id: string }) {
           </table>
         )}
       </div>
-      <InternalLinks current="#/campaigns" />
+      <InternalLinks current="/campaigns" />
     </div>
   );
 }
@@ -982,7 +986,7 @@ export function ModelInfo() {
   usePageMeta({
     title: 'Model Transparency & Metrics - SOC Forensics Lab',
     description: 'Phishing/BEC/clean classifier transparency: accuracy, macro F1, per-class precision/recall and confusion matrix from held-out evaluation.',
-    canonical: '#/model',
+    canonical: '/model',
     image: 'https://socforensics.io/og-image.svg',
   });
   const [m, setM] = useState<any>(null);
@@ -996,13 +1000,13 @@ export function ModelInfo() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
-  if (loading) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><SkeletonList /></div>;
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><Toast msg={err} /></div>;
+  if (loading) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><Toast msg={err} /></div>;
   const labels: string[] = m.confusion_labels || [];
   const per = m.per_class || {};
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Model Transparency' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Transparency' }]} />
       <h1>Model Transparency</h1>
       <p className="sub">
         Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
@@ -1056,7 +1060,7 @@ export function ModelInfo() {
           <p className="sub" style={{ marginBottom: 0 }}>Diagonal cells are correct predictions; off-diagonal cells are confusions.</p>
         </div>
       </div>
-      <InternalLinks current="#/model" />
+      <InternalLinks current="/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
         description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/#/model`,
@@ -1072,7 +1076,7 @@ export function Mailboxes() {
   usePageMeta({
     title: 'Mailboxes - OAuth Connectors - SOC Forensics Lab',
     description: 'Organization-level OAuth connectors for Google and Microsoft mailboxes with encrypted refresh tokens, polling and manual sync.',
-    canonical: '#/mailboxes',
+    canonical: '/mailboxes',
     image: 'https://socforensics.io/og-image.svg',
   });
   const [conns, setConns] = useState<any[]>([]);
@@ -1123,7 +1127,7 @@ export function Mailboxes() {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Mailboxes' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Mailboxes' }]} />
       <h1>Mailboxes</h1>
       <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. Refresh tokens are encrypted server-side.</p>
       <img src="/favicon.svg" alt="Mailbox connectors - secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
@@ -1157,7 +1161,7 @@ export function Mailboxes() {
             title="Max emails to sync (any number)"
           />
           <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
-          <a href="#/">Back to Dashboard</a>
+          <Link to="/">Back to Dashboard</Link>
         </div>
       </div>
       <div className="card">
@@ -1172,7 +1176,7 @@ export function Mailboxes() {
           <p className="sub" style={{ marginBottom: 0 }}>After consent you return here automatically. Polling interval: server `MAIL_POLL_MINUTES` (0 = manual sync only).</p>
         </div>
       </div>
-      <InternalLinks current="#/mailboxes" />
+      <InternalLinks current="/mailboxes" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/#/mailboxes`,
@@ -1196,7 +1200,7 @@ export function Cases() {
   usePageMeta({
     title: 'Case Management - Kanban Board - SOC Forensics Lab',
     description: 'Track forensic investigations from triage to closure. Kanban board for Open, In Progress and Closed cases with email linkage.',
-    canonical: '#/cases',
+    canonical: '/cases',
     image: 'https://socforensics.io/og-image.svg',
   });
   const { user } = useAuth();
@@ -1252,7 +1256,7 @@ export function Cases() {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Case Management' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Case Management' }]} />
       <h1>Case Management</h1>
       <p className="sub">Track investigations from triage to closure.</p>
       <img src="/favicon.svg" alt="Case management kanban board - investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
@@ -1261,7 +1265,7 @@ export function Cases() {
         <input type="text" style={{ maxWidth: 360 }} value={title} onChange={(e) => setTitle(e.target.value)}
           placeholder="New case title…" onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} />
         <button onClick={create}>Create case</button>
-        <a href="#/campaigns" className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>View Campaigns →</a>
+        <Link to="/campaigns" className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>View Campaigns →</Link>
       </div>
       {loading ? <SkeletonList /> : (
         <div className="kanban">
@@ -1286,7 +1290,7 @@ export function Cases() {
           ))}
         </div>
       )}
-      <InternalLinks current="#/cases" />
+      <InternalLinks current="/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
         description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/#/cases`,
@@ -1302,12 +1306,12 @@ export function PrivacyPolicy() {
   usePageMeta({
     title: 'Privacy Policy - SOC Forensics Lab',
     description: 'How SOC Forensics Lab handles email data, cookies, and analyst accounts. Retention, masking, and your rights.',
-    canonical: '#/privacy',
+    canonical: '/privacy',
     image: 'https://socforensics.io/og-image.svg',
   });
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Privacy Policy' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Privacy Policy' }]} />
       <h1>Privacy Policy</h1>
       <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
       <div className="card">
@@ -1322,7 +1326,7 @@ export function PrivacyPolicy() {
         <h3>Data location</h3>
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
       </div>
-      <InternalLinks current="#/privacy" />
+      <InternalLinks current="/privacy" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
         description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/privacy`,
@@ -1338,12 +1342,12 @@ export function TermsConditions() {
   usePageMeta({
     title: 'Terms and Conditions - SOC Forensics Lab',
     description: 'Terms for using the SOC Forensics email threat platform. Acceptable use, liability, and reporting.',
-    canonical: '#/terms',
+    canonical: '/terms',
     image: 'https://socforensics.io/og-image.svg',
   });
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Terms and Conditions' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Terms and Conditions' }]} />
       <h1>Terms and Conditions</h1>
       <p className="sub">Effective 20 Sep 2026 - Use of socforensics.io is governed by these terms.</p>
       <div className="card">
@@ -1358,7 +1362,7 @@ export function TermsConditions() {
         <h3>Contact</h3>
         <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
       </div>
-      <InternalLinks current="#/terms" />
+      <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
         description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/terms`,

@@ -12,6 +12,13 @@ describe('severityOf', () => {
     expect(severityOf(49)).toBe('low');
     expect(severityOf(0)).toBe('low');
   });
+
+  it('never falls through to green for unknown values', () => {
+    expect(severityOf(NaN)).toBe('unknown');
+    expect(severityOf(-1)).toBe('unknown');
+    expect(severityColor('unknown')).toBe('#6b7280');
+    expect(severityColor('mystery')).toBe('#6b7280');
+  });
 });
 
 describe('severityColor', () => {

@@ -173,7 +173,7 @@ async def callback(
     db.commit()
     audit("oauth.callback", provider=p, account=address)
     base = get_settings().frontend_url.rstrip("/")
-    return RedirectResponse(f"{base}/#/mailboxes?connected={p}:{address}", status_code=302)
+    return RedirectResponse(f"{base}/mailboxes?connected={p}:{address}", status_code=302)
 
 
 @router.get("/status")

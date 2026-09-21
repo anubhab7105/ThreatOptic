@@ -105,7 +105,7 @@ def test_callback_sync_disconnect(monkeypatch):
             r = c.get("/api/v1/oauth/google/callback",
                       params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
             assert r.status_code == 302, r.text
-            assert "/#/mailboxes?connected=" in r.headers["location"]
+            assert "/mailboxes?connected=" in r.headers["location"]
             # state is single-use: replay fails
             r2 = c.get("/api/v1/oauth/google/callback",
                        params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)

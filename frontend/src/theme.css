@@ -96,6 +96,7 @@ code, .mono {
 .badge.high { background: var(--high); }
 .badge.medium { background: var(--medium); }
 .badge.low, .badge.clean { background: var(--low); }
+.badge.unknown { background: #6b7280; }
 .badge.info { background: var(--accent); }
 .sev { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: baseline; }
 

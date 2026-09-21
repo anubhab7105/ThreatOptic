@@ -1,17 +1,22 @@
 import React from 'react';
 
-export function severityOf(score: number): 'critical' | 'high' | 'medium' | 'low' {
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+
+export function severityOf(score: number): Severity {
+  if (typeof score !== 'number' || Number.isNaN(score)) return 'unknown';
   if (score >= 90) return 'critical';
   if (score >= 75) return 'high';
   if (score >= 50) return 'medium';
-  return 'low';
+  if (score >= 0) return 'low';
+  return 'unknown';
 }
 
 export function severityColor(s: string): string {
   if (s === 'critical' || s === 'Critical') return '#ef4444';
   if (s === 'high' || s === 'High') return '#f97316';
   if (s === 'medium' || s === 'Medium') return '#eab308';
-  return '#22c55e';
+  if (s === 'low' || s === 'Low' || s === 'clean' || s === 'Clean') return '#22c55e';
+  return '#6b7280';
 }
 
 export function ScoreBadge({ v }: { v: number }) {
@@ -35,7 +40,7 @@ export function StatCard({ label, value, caption }: { label: string; value: Reac
 
 export function Toast({ msg, kind }: { msg: string; kind?: 'error' | 'info' }) {
   if (!msg) return null;
-  return <div className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
+  return <div role="alert" className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
 }
 
 export function Empty({ msg }: { msg: string }) {

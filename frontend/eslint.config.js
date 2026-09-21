@@ -21,6 +21,7 @@ export default tseslint.config(
         confirm: 'readonly',
         AbortController: 'readonly',
         Event: 'readonly',
+        localStorage: 'readonly',
       },
     },
   },
