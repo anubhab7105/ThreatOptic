@@ -137,7 +137,8 @@ async def sync(
             out.errors.append(f"{m.get('id')}: {e}"[:200])
         await asyncio.sleep(0)
     out.synced = len(out.email_ids)
-    acct.last_sync_at = datetime.utcnow()
+    from ..database import utcnow
+    acct.last_sync_at = utcnow()
     db.commit()
     if out.synced:
         try:

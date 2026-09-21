@@ -16,11 +16,12 @@ BATCH = 500
 
 
 def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) -> dict:
-    # NOTE: naive UTC matches the timestamps historically stored in SQLite;
-    # Step 5 migrates the codebase to timezone-aware datetimes consistently.
-    now = datetime.utcnow()
-    clean_cut = now - timedelta(days=clean_days)
+    from ...database import as_utc, utcnow
+    now = utcnow()
     mal_cut = now - timedelta(days=malicious_days)
+    # SQLite stores datetimes as naive ISO strings: bind a naive cutoff so
+    # lexicographic comparison stays correct across naive/aware mixes.
+    clean_cut_db = (now - timedelta(days=clean_days)).replace(tzinfo=None)
     purged_body = 0
     deleted = 0
     from ..search.elastic_sync import delete_email
@@ -29,7 +30,7 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
     offset = 0
     while True:
         batch = (db.query(EmailRecord)
-                 .filter(EmailRecord.timestamp < clean_cut)
+                 .filter(EmailRecord.timestamp < clean_cut_db)
                  .order_by(EmailRecord.timestamp)
                  .limit(BATCH).offset(offset).all())
         if not batch:
@@ -48,7 +49,7 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
                         e.body_text = ""
                         e.body_text_masked = ""
                         purged_body += 1
-                elif e.timestamp and e.timestamp < mal_cut:
+                elif e.timestamp and as_utc(e.timestamp) < mal_cut:
                     if e.body_text or e.body_text_masked:
                         purged_body += 1
                     if a:

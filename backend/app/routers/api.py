@@ -135,7 +135,8 @@ def task_status(task_id: str):
 
 
 @router.get("/emails", response_model=list[schemas.EmailOut])
-def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_length=200),
+def list_emails(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+                q: str = Query("", max_length=200),
                 db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     query = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
     if q:
@@ -147,7 +148,7 @@ def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_len
             models.EmailRecord.recipient_address.ilike(like, escape="\\"),
             models.EmailRecord.body_text_masked.ilike(like, escape="\\"),
         ))
-    records = query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
+    records = query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).offset(offset).all()
     if not records:
         return []
     email_ids = [r.id for r in records]
@@ -351,9 +352,10 @@ def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db),
 
 
 @router.get("/cases", response_model=list[schemas.CaseOut])
-def list_cases(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+def list_cases(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
+               db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return _org_filter(db.query(models.InvestigationCase), models.InvestigationCase, user).order_by(
-        desc(models.InvestigationCase.created_at)).all()
+        desc(models.InvestigationCase.created_at)).limit(limit).offset(offset).all()
 
 
 VALID_CASE_STATUSES = {"Open", "InProgress", "Closed"}
