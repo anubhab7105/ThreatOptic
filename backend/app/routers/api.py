@@ -97,12 +97,13 @@ def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_len
                 db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     query = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
     if q:
-        like = f"%{q}%"
+        from ..modules.search.elastic_sync import _escape_like
+        like = f"%{_escape_like(q)}%"
         query = query.filter(or_(
-            models.EmailRecord.subject.ilike(like),
-            models.EmailRecord.sender_address.ilike(like),
-            models.EmailRecord.recipient_address.ilike(like),
-            models.EmailRecord.body_text_masked.ilike(like),
+            models.EmailRecord.subject.ilike(like, escape="\\"),
+            models.EmailRecord.sender_address.ilike(like, escape="\\"),
+            models.EmailRecord.recipient_address.ilike(like, escape="\\"),
+            models.EmailRecord.body_text_masked.ilike(like, escape="\\"),
         ))
     records = query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
     if not records:

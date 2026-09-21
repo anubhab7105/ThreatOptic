@@ -208,9 +208,12 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         attribution = {"campaign": "unknown", "confidence": 0.0, "signals": []}
     try:
         from ..modules.search.elastic_sync import index_email
+        # Step 3: index masked/minimal fields only — never raw PII.
         index_email(email_row.id,
-                    {"subject": email_row.subject, "sender_address": email_row.sender_address,
-                     "recipient_address": email_row.recipient_address, "body_text_masked": masked_body,
+                    {"subject": mask_text(email_row.subject),
+                     "sender_address": mask_text(email_row.sender_address),
+                     "recipient_address": mask_text(email_row.recipient_address),
+                     "body_text_masked": masked_body,
                      "organization_id": email_row.organization_id},
                     {"fraud_score": scoring["fraud_score"],
                      "threat_classification": scoring["threat_classification"]})

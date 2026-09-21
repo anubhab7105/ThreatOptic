@@ -80,12 +80,14 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
     # SQLite fallback (mirrors list_emails filtering)
     from sqlalchemy import desc, or_
     from ... import models
-    like = f"%{query}%"
+    if db is None:
+        return {"backend": "none", "hits": []}
+    like = f"%{_escape_like(query)}%"
     q = db.query(models.EmailRecord).filter(or_(
-        models.EmailRecord.subject.ilike(like),
-        models.EmailRecord.sender_address.ilike(like),
-        models.EmailRecord.recipient_address.ilike(like),
-        models.EmailRecord.body_text_masked.ilike(like)))
+        models.EmailRecord.subject.ilike(like, escape="\\"),
+        models.EmailRecord.sender_address.ilike(like, escape="\\"),
+        models.EmailRecord.recipient_address.ilike(like, escape="\\"),
+        models.EmailRecord.body_text_masked.ilike(like, escape="\\")))
     if organization_id != "__all__":
         q = q.filter(models.EmailRecord.organization_id == organization_id)
     rows = q.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
