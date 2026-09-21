@@ -44,7 +44,7 @@ def test_authorize_urls():
         assert c.get("/api/v1/oauth/status").status_code == 401
 
 
-async def _fake_g_exchange(code, cid, sec, uri):
+async def _fake_g_exchange(code, cid, sec, uri, code_verifier=""):
     return {"access_token": "ya29.x", "refresh_token": "1//r-token", "expires_in": 3600}
 
 

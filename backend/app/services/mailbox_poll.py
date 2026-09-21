@@ -68,7 +68,8 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
         out = {"synced": 0, "email_ids": [], "errors": []}
         for m in messages:
             try:
-                res = await process_raw_email(db, m["raw"], source=f"oauth-{provider}")
+                res = await process_raw_email(db, m["raw"], source=f"oauth-{provider}",
+                                              organization_id=conn.organization_id)
                 out["email_ids"].append(res["email_id"])
             except Exception as e:
                 log.warning("mailbox %s message failed: %s", conn.account_email, e)

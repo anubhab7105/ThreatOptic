@@ -130,7 +130,7 @@ async def sync(
     out = schemas.GmailSyncResult()
     for m in messages:
         try:
-            res = await process_raw_email(db, m["raw"], source="gmail")
+            res = await process_raw_email(db, m["raw"], source="gmail", organization_id=user.organization_id)
             out.email_ids.append(res["email_id"])
         except Exception as e:
             log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)
