@@ -431,6 +431,9 @@ def report_json(email_id: str, db: Session = Depends(get_db)):
 def report_pdf(email_id: str, db: Session = Depends(get_db)):
     from ..modules.reporting.generator import build_report_pdf
     from ..modules.graph.attribution import attribute
+    if not re.match(r"^[A-Za-z0-9\-]{1,64}$", email_id or ""):
+        # email_id lands in Content-Disposition: reject anything else.
+        raise HTTPException(400, "invalid report id")
     e, a, t = _report_context(email_id, db)
     email_d = {"subject": e.subject, "sender_address": e.sender_address, "recipient_address": e.recipient_address,
                "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash}
@@ -469,7 +472,11 @@ def model_metrics():
     model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "phishing_clf.joblib"))
     if not os.path.exists(metrics_path):
         raise HTTPException(404, "metrics not computed yet (run: python backend/scripts/train_nlp.py)")
-    with open(metrics_path) as f:
-        metrics = json.load(f)
+    try:
+        with open(metrics_path) as f:
+            metrics = json.load(f)
+    except (OSError, ValueError) as e:
+        log.warning("metrics.json unreadable: %s", type(e).__name__)
+        raise HTTPException(500, "model metrics unavailable")
     metrics["model_exists"] = os.path.exists(model_path)
     return metrics
