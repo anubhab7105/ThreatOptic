@@ -36,9 +36,29 @@ export class ApiError extends Error {
   }
 }
 
-async function handle(r: Response) {
-  if (r.status === 401) {
-    // Let the auth context drop the session; callers still get the error.
+async function handle(r: Response, opts: { retryAuth?: boolean } = {}) {
+  if (r.status === 401 && opts.retryAuth !== false && !r.url.includes('/auth/refresh') && !r.url.includes('/auth/login')) {
+    // Single refresh attempt before giving up (Step 6): sessions survive
+    // access-token expiry; only a failed refresh drops the session.
+    const t = getTokens();
+    if (t?.refresh_token) {
+      try {
+        const rr = await fetch(API + '/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: t.refresh_token }),
+        });
+        if (rr.ok) {
+          const pair = await rr.json();
+          setTokens(pair);
+          const retry = await fetch(r.url, {
+            method: (r as any)._retryMethod || 'GET',
+            headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          });
+          return handle(retry, { retryAuth: false });
+        }
+      } catch { /* fall through to unauthorized */ }
+    }
     window.dispatchEvent(new Event('soc:unauthorized'));
   }
   if (!r.ok) {
@@ -47,7 +67,15 @@ async function handle(r: Response) {
   }
   const ct = r.headers.get('content-type') || '';
   if (ct.includes('application/pdf')) return r.blob();
-  return r.json();
+  if (!ct.includes('application/json')) {
+    // Non-JSON 2xx (plain text, empty): return text, never throw SyntaxError.
+    return r.text().catch(() => '');
+  }
+  try {
+    return await r.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function jget(path: string) {
