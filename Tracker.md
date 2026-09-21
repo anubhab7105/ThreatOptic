@@ -1,5 +1,8 @@
 # Project Task Tracker — IMPLEMENTED ✅
 
+## Security Audit Remediation (C1–C15) — in progress
+- [x] Step 0 ground rules — compromise assumption + rotation runbook in `SECURITY.md` (out-of-band rotation, not code); `seed.py` gated behind `ALLOW_SEED=1` + `APP_ENV=development`, raises otherwise. Tests: `test_step0_seed_gate.py` (3 passed).
+
 ## Phase 0: Demo-safe audit fixes (F1–F4) ✅
 - [x] F1 auth & RBAC — `routers/auth.py` (register/login/refresh/me), passlib/bcrypt hashing, JWT from `secret_key`/`access_token_expire_minutes`, `get_current_user` on all `/api/v1/*`, Admin-only DELETE cases + retention; frontend in-memory token, login page, 401 redirect, admin UI hidden. Tests: `test_auth.py` (401 + 403 proven).
 - [x] F2 CORS — explicit `CORS_ORIGINS` env (default `http://localhost:5173`), `allow_credentials=True`. Test: `test_security.py::test_cors_allows_configured_origin_only`.

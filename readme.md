@@ -7,7 +7,6 @@ The platform is designed to move beyond static, signature-based email filtering 
 
 ## Documentation Index
 Please refer to the following markdown files in this repository to understand the system comprehensively:
-
 1. [Product Requirements Document (PRD)](PRD.md) - Problem statement, proposed solutions, and key components.
 2. [Technical Specification (Techspec)](Techspec.md) - Tech stack and core module breakdown.
 3. [Application Flow (AppFlow)](AppFlow.md) - Step-by-step data lifecycle from ingestion to alerting.
