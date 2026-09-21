@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
     apply_limiter_setting()
     init_db()
     log.info("DB ready at %s", settings.resolved_db_url())
+    try:
+        from .modules.nlp.engine import warmup
+        warmup()
+        log.info("NLP model warmed up")
+    except Exception as ex:
+        log.warning("NLP warmup deferred: %s", ex)
     require_custody_key()
     from .modules.graph.store import graph_consistency_note
     note = graph_consistency_note()

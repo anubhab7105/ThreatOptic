@@ -221,7 +221,18 @@ def main() -> dict:
         "classes": [str(c) for c in pipe.classes_],
     }
     model_path, metrics_path = out_paths()
-    joblib.dump(pipe, model_path)
+    # Atomic write: tmp file + rename, then a pinned checksum sidecar that
+    # the engine verifies before unpickling (Step 4, C10).
+    import hashlib as _hashlib
+    tmp_path = model_path + ".tmp"
+    joblib.dump(pipe, tmp_path)
+    os.replace(tmp_path, model_path)
+    h = _hashlib.sha256()
+    with open(model_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    with open(model_path + ".sha256", "w") as f:
+        f.write(h.hexdigest())
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     print(f"saved model to {model_path}, classes={pipe.classes_}")
