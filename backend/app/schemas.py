@@ -23,6 +23,8 @@ class RegisterIn(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[\w.\-@]+$")
     password: str = Field(min_length=8, max_length=128)
     role: str | None = None
+    # Out-of-band bootstrap secret; required ONLY when requesting Admin (C2).
+    setup_token: str | None = None
 
 
 class AdminCreateUserIn(BaseModel):
