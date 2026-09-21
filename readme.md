@@ -45,7 +45,7 @@ docker compose up --build
 - POST /api/v1/cases | PATCH /api/v1/cases/{id} | DELETE /api/v1/cases/{id} (Admin)
 
 Demo accounts (seeded): `admin / admin123` (Admin), `analyst / analyst123` (Analyst).
-Public self-registration creates **ReadOnly** accounts by default (Analyst also allowed); creating an Admin requires the out-of-band `SETUP_TOKEN`. Access tokens live 20 minutes with rotating single-use refresh tokens (reuse kills the whole token family).
+Public self-registration creates **ReadOnly** accounts by default (Analyst also allowed); creating an Admin requires the out-of-band `SETUP_TOKEN`. Access tokens live 20 minutes with rotating single-use refresh tokens (reuse kills the whole token family). Roles: ReadOnly reads, Analyst ingests + edits cases, Admin deletes + retention + provisioning. Every account gets a personal workspace org; all email/case/dashboard/search queries are tenant-scoped (Admins see all).
 
 ### Gmail live demo
 1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
