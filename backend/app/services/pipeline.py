@@ -231,6 +231,19 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("alert dispatch failed: %s", e)
         alert = {"severity": "Low", "action": scoring.get("action", "Deliver"), "sent": ["dashboard"]}
+    # Real-time push for high-risk mail (best-effort; never fails ingestion).
+    try:
+        if scoring["fraud_score"] >= 75:
+            from ..routers.ws import manager as _ws_manager
+            await _ws_manager.broadcast_alert(
+                {"event": "high-risk-alert", "email_id": email_row.id,
+                 "fraud_score": scoring["fraud_score"],
+                 "classification": scoring["threat_classification"],
+                 "subject": (email_row.subject or "")[:120]},
+                organization_id,
+            )
+    except Exception as e:
+        log.warning("ws broadcast failed: %s", e)
 
     return {
         "email_id": email_row.id, "fraud_score": scoring["fraud_score"],

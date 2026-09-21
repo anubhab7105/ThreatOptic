@@ -1,6 +1,7 @@
 """REST API: ingest, analysis, cases, dashboard, reports (per Design.md + AppFlow.md)."""
 import enum
 import logging
+import re
 from datetime import timezone
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, Query
 from fastapi.responses import Response
@@ -84,15 +85,24 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
             "classification": res["classification"], "action": res["action"]}
 
 
-@router.post("/emails/upload", response_model=schemas.EmailIngestResponse)
+@router.post("/emails/upload", response_model=schemas.EmailIngestResponse | schemas.AsyncIngestResponse)
 @limiter.limit("60/minute")
-async def ingest_upload(request: Request, f: UploadFile = File(...), db: Session = Depends(get_db),
+async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode: bool = Query(False),
+                        db: Session = Depends(get_db),
                         user: models.User = Depends(require_roles(*READ_WRITE))):
     raw = await f.read()
     if not raw or not raw.strip():
         raise HTTPException(400, "empty file")
     if len(raw) > MAX_RAW_BYTES:
         raise HTTPException(413, "file too large (max 5MB)")
+    if async_mode:
+        from ..services.tasks import analyze_email_task, broker_configured
+        if not broker_configured():
+            raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
+        import base64
+        task = analyze_email_task.delay(base64.b64encode(raw).decode(), "upload", "", user.organization_id)
+        audit("email.upload.queued", user=user.username, task_id=task.id)
+        return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
         res = await process_raw_email(db, raw, source="upload", organization_id=user.organization_id)
     except ValueError as e:
@@ -105,6 +115,23 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), db: Session
     cache_delete_prefix("dash:")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
+
+
+@router.get("/tasks/{task_id}", response_model=schemas.AsyncTaskStatus)
+def task_status(task_id: str):
+    """Poll a Celery ingestion task (202 flow)."""
+    from ..services.tasks import broker_configured, celery_app
+    if not broker_configured():
+        raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
+    if not re.match(r"^[A-Za-z0-9\-]{1,64}$", task_id or ""):
+        raise HTTPException(400, "invalid task id")
+    res = celery_app.AsyncResult(task_id)
+    out: dict = {"task_id": task_id, "state": res.state}
+    if res.state == "SUCCESS":
+        out["result"] = res.result if isinstance(res.result, dict) else {"result": str(res.result)}
+    elif res.state == "FAILURE":
+        out["error"] = str(res.result)[:300]
+    return out
 
 
 @router.get("/emails", response_model=list[schemas.EmailOut])
