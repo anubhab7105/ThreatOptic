@@ -139,6 +139,8 @@ async def sync(
     out.synced = len(out.email_ids)
     acct.last_sync_at = datetime.utcnow()
     db.commit()
+    from ..modules.auth.rate_limit import audit as _audit
+    _audit("gmail.sync", user=user.username, synced=out.synced)
     return out
 
 
