@@ -7,7 +7,11 @@ Two layers, both offline-safe:
      check_virustotal() in url_analyzer.py.
 """
 import os
+from functools import lru_cache
 from typing import Any
+
+# Cap VT hash lookups per email: heuristics always run, network doesn't scale.
+VT_MAX_ATTACHMENTS = 5
 
 MACRO_EXTS = {".docm", ".xlsm", ".pptm", ".dotm", ".xltm", ".potm", ".xlam", ".docb"}
 EXEC_EXTS = {".exe", ".scr", ".com", ".bat", ".cmd", ".msi", ".ps1", ".vbs", ".vbe",
@@ -64,33 +68,48 @@ def static_heuristics(filename: str, content_type: str = "", magic: str = "") ->
     return flags
 
 
+@lru_cache(maxsize=4096)
+def _lookup_hash_cached(sha256: str, api_key: str) -> tuple:
+    """Cached VT file lookup (Step 4: no repeat network hits for one hash)."""
+    import requests
+    r = requests.get(
+        f"https://www.virustotal.com/api/v3/files/{sha256}",
+        headers={"x-apikey": api_key}, timeout=5,
+    )
+    if r.status_code == 200:
+        stats = r.json().get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
+        return ("ok", int(stats.get("malicious", 0)), int(stats.get("suspicious", 0)))
+    if r.status_code == 404:
+        return ("unknown", 0, 0)
+    return ("status", r.status_code, 0)
+
+
 def lookup_hash_virustotal(sha256: str, api_key: str = "") -> dict[str, Any]:
     if not api_key:
         return {"source": "virustotal-file", "skipped": True}
     if not sha256:
         return {"source": "virustotal-file", "skipped": True, "reason": "no-hash"}
     try:
-        import requests
-        r = requests.get(
-            f"https://www.virustotal.com/api/v3/files/{sha256}",
-            headers={"x-apikey": api_key}, timeout=5,
-        )
-        if r.status_code == 200:
-            stats = r.json().get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
-            return {"source": "virustotal-file", "malicious": int(stats.get("malicious", 0)),
-                    "suspicious": int(stats.get("suspicious", 0))}
-        if r.status_code == 404:
+        kind, a, b = _lookup_hash_cached(sha256, api_key)
+        if kind == "ok":
+            return {"source": "virustotal-file", "malicious": a, "suspicious": b}
+        if kind == "unknown":
             return {"source": "virustotal-file", "unknown": True}
-        return {"source": "virustotal-file", "status": r.status_code}
+        return {"source": "virustotal-file", "status": a}
     except Exception as e:
         return {"source": "virustotal-file", "error": str(e)[:300]}
 
 
 def analyze_attachments(attachments: list[dict] | None, vt_key: str = "") -> dict[str, Any]:
-    """Returns {findings, risk (0-100), malicious_count}."""
+    """Returns {findings, risk (0-100), malicious_count}.
+
+    Heuristics run for every attachment; VT hash lookups are capped
+    (VT_MAX_ATTACHMENTS) and cached per hash.
+    """
     vt_key = vt_key or os.environ.get("VIRUSTOTAL_API_KEY", "")
     findings: list[dict] = []
     risk = 0.0
+    vt_lookups = 0
     for a in attachments or []:
         fname = a.get("filename", "")
         entry: dict[str, Any] = {"filename": fname, "sha256": a.get("sha256", ""),
@@ -106,7 +125,12 @@ def analyze_attachments(attachments: list[dict] | None, vt_key: str = "") -> dic
             risk = max(risk, 65.0)
         if reasons and risk < 30.0:
             risk = max(risk, 30.0)
-        vt = lookup_hash_virustotal(a.get("sha256", ""), vt_key)
+        if vt_key and vt_lookups < VT_MAX_ATTACHMENTS:
+            vt_lookups += 1
+            vt = lookup_hash_virustotal(a.get("sha256", ""), vt_key)
+        else:
+            vt = {"source": "virustotal-file", "skipped": True,
+                  "reason": "no-key" if not vt_key else "cap-reached"}
         if vt.get("malicious"):
             reasons.append(f"virustotal-malicious:{vt['malicious']}")
             risk = 100.0
