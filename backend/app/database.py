@@ -37,12 +37,40 @@ def get_db():
         db.close()
 
 
+def _alembic_upgrade() -> bool:
+    """Managed-database path (Step 5): real Alembic migrations. True on success."""
+    import logging
+    import os
+
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
+        if not os.path.exists(ini):
+            return False
+        cfg = Config(ini)
+        cfg.set_main_option("script_location", os.path.join(os.path.dirname(ini), "alembic"))
+        command.upgrade(cfg, "head")
+        return True
+    except Exception as e:
+        logging.getLogger("database").warning("alembic upgrade failed, using create_all fallback: %s", type(e).__name__)
+        return False
+
+
 def init_db():
     from . import models  # noqa: F401
     from sqlalchemy import inspect, text
+    from .config import get_settings
+
+    if not get_settings().resolved_db_url().startswith("sqlite"):
+        # Managed Postgres etc: real migrations first, naive path only as fallback.
+        if _alembic_upgrade():
+            return
     Base.metadata.create_all(bind=engine)
     # Additive migration for pre-existing SQLite files: create_all never adds
     # columns to tables that already exist, so backfill any missing ones.
+    # (NOT NULL/DEFAULT/FK changes still require a real Alembic revision.)
     try:
         with engine.begin() as conn:
             existing = {t: {c["name"] for c in inspect(conn).get_columns(t)} for t in inspect(conn).get_table_names()}
