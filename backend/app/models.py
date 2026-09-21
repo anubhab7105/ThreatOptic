@@ -138,3 +138,22 @@ class MailboxConnection(Base):    """Organization-level mailbox connection for b
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OAuthState(Base):
+    """Server-side OAuth state + PKCE store (C3).
+
+    Single-use, short-lived: authorize() creates a row, callback() verifies
+    the state belongs to a live session, checks expiry, then consumes it.
+    """
+    __tablename__ = "oauth_states"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    state: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="google")
+    redirect_uri: Mapped[str] = mapped_column(String(1024), default="")
+    client_id: Mapped[str] = mapped_column(String(320), default="")
+    code_verifier: Mapped[str] = mapped_column(String(256), default="")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
