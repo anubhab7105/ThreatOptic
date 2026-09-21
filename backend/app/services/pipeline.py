@@ -62,6 +62,30 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     if not raw or not raw.strip():
         raise ValueError("empty email payload")
 
+    import hashlib
+    eml_hash = hashlib.sha256(bytes(raw)).hexdigest()
+    # Idempotent ingest: same bytes + same tenant returns the stored verdict
+    # instead of duplicating rows (unique raw_eml_hash backing).
+    dup = db.query(EmailRecord).filter(
+        EmailRecord.raw_eml_hash == eml_hash,
+        EmailRecord.organization_id == organization_id).first()
+    if dup is not None:
+        stored = db.query(AnalysisResult).filter(AnalysisResult.email_id == dup.id).first()
+        trace = db.query(TraceabilityData).filter(TraceabilityData.email_id == dup.id).first()
+        return {
+            "email_id": dup.id,
+            "fraud_score": stored.fraud_score if stored else 0.0,
+            "classification": stored.threat_classification if stored else "Clean",
+            "action": stored.action_taken if stored else "Deliver",
+            "breakdown": {},
+            "signals": stored.score_breakdown if stored else [],
+            "origin_ip": trace.origin_ip if trace else "",
+            "geo": trace.geolocation if trace else {},
+            "alert": {"severity": "Low", "action": "Deliver", "sent": []},
+            "attribution": {"campaign": "unknown", "confidence": 0.0, "signals": []},
+            "duplicate": True,
+        }
+
     parsed = parse_eml(raw)
     headers = parsed.get("raw_headers", {})
 
