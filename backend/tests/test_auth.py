@@ -127,7 +127,7 @@ def test_rbac_admin_only_delete():
     admin_u, analyst_u = _uname("boss"), _uname("worker")
     _mk_admin(admin_u)
     with TestClient(app) as c:
-        analyst_tok = _register(c, analyst_u)["access_token"]
+        analyst_tok = _register(c, analyst_u, role="Analyst")["access_token"]
         admin_tok = _login(c, admin_u)["access_token"]
         ah = {"Authorization": f"Bearer {analyst_tok}"}
         dh = {"Authorization": f"Bearer {admin_tok}"}

@@ -100,7 +100,6 @@ def test_case_status_validation():
         assert r1.status_code == 200
         assert r1.json()["status"] == "InProgress"
 
-        # Invalid status
+        # Invalid status (validated enum -> 422)
         r2 = c.patch(f"/api/v1/cases/{cid}", headers=headers, json={"status": "Exploded"})
-        assert r2.status_code == 400
-        assert "invalid status" in r2.json()["detail"]
+        assert r2.status_code == 422
