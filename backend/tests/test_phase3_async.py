@@ -3,9 +3,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app import models
 from app.config import get_settings
-from app.database import SessionLocal
 
 
 def _auth(c: TestClient, role: str = "Analyst") -> dict:
@@ -122,7 +120,6 @@ def test_websocket_push_on_high_risk(monkeypatch):
 
 
 def test_websocket_org_isolation():
-    from app.main import app
     from app.routers.ws import manager
     import asyncio
 
