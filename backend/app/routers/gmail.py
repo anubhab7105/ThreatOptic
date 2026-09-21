@@ -85,9 +85,12 @@ async def callback(
     encrypted_refresh = vault.encrypt_secret(tokens["refresh_token"])
     if acct:
         acct.gmail_address, acct.refresh_token = address, encrypted_refresh
+        # Pin the client_id used at connect time; refresh reuses it (Step 2).
+        acct.client_id = cid
         db.commit()
     else:
-        db.add(models.GmailAccount(user_id=user.id, gmail_address=address, refresh_token=encrypted_refresh))
+        db.add(models.GmailAccount(user_id=user.id, gmail_address=address,
+                                   refresh_token=encrypted_refresh, client_id=cid))
         db.commit()
     return _status_payload(user, db)
 
