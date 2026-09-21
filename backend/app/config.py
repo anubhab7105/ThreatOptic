@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     elastic_index: str = "emails"
     kafka_bootstrap: str = ""
     kafka_topic: str = "emails-ingest"
+    # Redis shared cache (Phase 3). Empty = in-process dict cache (same API).
+    redis_url: str = ""
+    # Celery async ingestion (Phase 3). Empty = synchronous pipeline (default).
+    celery_broker_url: str = ""
 
     maxmind_db_path: str = "./GeoLite2-City.mmdb"
     virustotal_api_key: str = ""

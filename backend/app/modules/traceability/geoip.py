@@ -118,7 +118,16 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
 
 
 def geolocate(ip: str) -> dict[str, Any]:
-    """Public entry: always returns a FRESH dict (cache poisoning impossible)."""
+    """Public entry: shared-cache (24h) in front of the compute path.
+
+    Always returns a FRESH dict (cache poisoning impossible).
+    """
+    from ..cache import cache_get, cache_set
     if not ip:
         return _unresolved("none")
-    return dict(_geolocate_cached(ip))
+    hit = cache_get(f"geoip:{ip}")
+    if isinstance(hit, dict):
+        return dict(hit)
+    res = dict(_geolocate_cached(ip))
+    cache_set(f"geoip:{ip}", res, 24 * 3600)
+    return res

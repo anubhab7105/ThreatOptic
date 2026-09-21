@@ -61,11 +61,17 @@ def whois_lookup(domain: str) -> dict[str, Any]:
         return {}
     if not _live():
         return {"domain": domain, "note": "live-lookups-disabled"}
-    return dict(_whois_cached(domain))
+    from ..cache import cache_get, cache_set
+    hit = cache_get(f"whois:{domain}")
+    if isinstance(hit, dict):
+        return dict(hit)
+    res = dict(_whois_cached(domain))
+    cache_set(f"whois:{domain}", res, 24 * 3600)
+    return res
 
 
 @lru_cache(maxsize=1024)
-def dns_lookup(domain: str) -> dict[str, Any]:
+def dns_lookup_uncached(domain: str) -> dict[str, Any]:
     domain = (domain or "").strip().lower().split("@")[-1].strip(" <>")
     out: dict[str, Any] = {"domain": domain, "mx": [], "a": [], "txt_spf": ""}
     if not domain or "." not in domain:
