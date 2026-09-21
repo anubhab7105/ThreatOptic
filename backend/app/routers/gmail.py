@@ -103,12 +103,14 @@ async def sync(
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
     settings = get_settings()
     try:
+        # No plaintext fallback: undecryptable rows are pre-vault legacy
+        # values — the owner must reconnect (C5 forced re-auth).
         raw_token = vault.decrypt_secret(acct.refresh_token)
     except Exception:
-        raw_token = acct.refresh_token
+        raise HTTPException(400, "stored Gmail credentials are invalid — please disconnect and reconnect the mailbox")
     try:
         fresh = await connectors.refresh_gmail_token(
-            raw_token, settings.google_client_id or "", _client_secret(payload.client_secret)
+            raw_token, settings.google_client_id or "", _client_secret()
         )
     except httpx.HTTPError as e:
         raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {e}")
