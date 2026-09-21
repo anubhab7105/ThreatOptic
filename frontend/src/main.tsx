@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { BASE } from './api';
+import { BASE, getTokens } from './api';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -166,6 +166,57 @@ function NotFoundPage() {
   );
 }
 
+function AlertBell() {
+  const [alerts, setAlerts] = React.useState<any[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const [live, setLive] = React.useState(false);
+  React.useEffect(() => {
+    let ws: WebSocket | null = null;
+    let closed = false;
+    try {
+      const pair = getTokens();
+      if (!pair?.access_token) return;
+      const base = BASE;
+      const wsBase = base
+        ? base.replace(/^http/, 'ws')
+        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+      ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?token=${encodeURIComponent(pair.access_token)}`);
+      ws.onopen = () => { if (!closed) setLive(true); };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.event === 'high-risk-alert') setAlerts((a) => [msg, ...a].slice(0, 20));
+        } catch { /* ignore malformed frames */ }
+      };
+      ws.onclose = () => { if (!closed) setLive(false); };
+    } catch { /* WS unavailable: bell stays dormant */ }
+    return () => { closed = true; try { ws?.close(); } catch { /* noop */ } };
+  }, []);
+  return (
+    <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
+      <button className="ghost" onClick={() => setOpen((o) => !o)} aria-label={`Alerts (${alerts.length} unread)`} title="High-risk alerts">
+        🔔{alerts.length > 0 && <b style={{ color: '#ef4444' }}> {alerts.length}</b>}
+        <span className="dot" style={{ background: live ? '#22c55e' : '#6b7280', marginLeft: 6 }} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
+          <h3>High-risk alerts {live ? '(live)' : '(offline)'}</h3>
+          {alerts.length === 0 ? <p className="sub">No alerts this session.</p> : (
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              {alerts.map((a, i) => (
+                <li key={i}><a href={`#/email/${a.email_id}`}>{a.subject || a.email_id}</a> <b>{a.fraud_score}</b></li>
+              ))}
+            </ul>
+          )}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="ghost" onClick={() => { setAlerts([]); setOpen(false); }}>Clear</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; msg: string }>
 {
   constructor(props: any) { super(props); this.state = { hasError: false, msg: '' }; }
@@ -289,6 +340,7 @@ function Shell() {
         <a className={`nl${route.name === 'mailboxes' ? ' active' : ''}`} href="#/mailboxes">Mailboxes</a>
         <a className={`nl${route.name === 'model' ? ' active' : ''}`} href="#/model">Model Info</a>
         <span className="spacer" />
+        <AlertBell />
         <ThemeToggle />
         <span className="health" title={`${user.username} - ${user.role}`}>
           {user.username} ({user.role})

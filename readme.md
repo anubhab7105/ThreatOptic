@@ -93,6 +93,9 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 ### Configuration
 - `ENABLE_LIVE_LOOKUPS=1` — **recommended for any live deployment**: opt into live enrichment (ip-api over HTTPS, WHOIS, DNS, DNSBL, URLhaus, SPF/DKIM/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network. Offline, auth checks report `unverifiable` (distinct from real failures) and score near-zero.
 - `TRUSTED_RELAY_HOSTS` / `TRUSTED_RELAY_IPS` (comma-separated) — your own relays, used as the trust boundary for origin-IP extraction.
+- `CELERY_BROKER_URL` (e.g. `redis://localhost:6379/0`) — enables the optional Celery async path (`?async_mode` + `GET /tasks/{id}`); unset keeps the synchronous pipeline. `CELERY_RESULT_BACKEND` defaults to in-memory cache.
+- `REDIS_URL` — shared cache for GeoIP (24h), WHOIS (24h), DNS (1h) and dashboard (5min, invalidated on writes); unset keeps an in-process dict cache with the same TTLs.
+- High-risk mail (score ≥75) is pushed over WebSocket `/api/v1/ws/alerts?token=<jwt>` to same-org clients (Admins get all); the nav bell shows the live stream.
 - `KNOWN_LEGIT_DOMAINS` (comma-separated) — extra brands for lookalike-domain detection, appended to the built-in list.
 - Operator blocklist lives in `backend/data/local_blocklist.txt` (one domain per line), not in code; hard-coded demo domains only fire in development.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
