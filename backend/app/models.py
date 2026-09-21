@@ -117,13 +117,14 @@ class GmailAccount(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
     gmail_address: Mapped[str] = mapped_column(String(320), default="")
     refresh_token: Mapped[str] = mapped_column(Text, default="")
+    # OAuth client_id used at connect time; reused for refresh (C2-fix).
+    client_id: Mapped[str] = mapped_column(String(320), default="")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class MailboxConnection(Base):
-    """Organization-level mailbox connection for background polling (F7).
+class MailboxConnection(Base):    """Organization-level mailbox connection for background polling (F7).
 
     Refresh tokens are Fernet-encrypted (modules/auth/vault.py).
     """
