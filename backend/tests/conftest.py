@@ -11,3 +11,5 @@ os.environ.setdefault("SECRET_KEY", "pytest-only-secret-key-32-chars-minimum")
 os.environ.setdefault("CUSTODY_KEY", "pytest-only-custody-key-32-chars-min")
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "pytest-only-vault-key-32-chars-min!")
 os.environ.setdefault("SETUP_TOKEN", "pytest-setup-token")
+# Rate limiting is opt-out in tests (per-test opt-in proves the gates).
+os.environ.setdefault("RATE_LIMIT_ENABLED", "0")

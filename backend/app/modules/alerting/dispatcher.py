@@ -15,8 +15,10 @@ def evaluate_policy(score: float) -> tuple[str, str, str]:
 
 
 def dispatch_alert(email_id: str, score: float, classification: str, summary: dict[str, Any]) -> dict[str, Any]:
+    from ..auth.rate_limit import audit
     sev, action, channel = evaluate_policy(score)
     sent: list[str] = ["dashboard"]
+    audit("alert.dispatch", email_id=email_id, severity=sev, action=action)
     # Slack
     hook = os.environ.get("SLACK_WEBHOOK_URL", "")
     if hook and sev in ("Critical", "High"):
