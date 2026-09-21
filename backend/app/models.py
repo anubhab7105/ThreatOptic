@@ -36,6 +36,23 @@ class User(Base):
     organization: Mapped[Organization | None] = relationship(back_populates="users")
 
 
+class RefreshToken(Base):
+    """Server-side refresh-token ledger for rotation + reuse detection (C1).
+
+    Only the SHA-256 fingerprint of each token is stored — never the token.
+    A row is single-use: rotation marks it revoked and links the replacement.
+    Re-presenting a revoked token signals theft: the whole family is revoked.
+    """
+    __tablename__ = "refresh_tokens"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class InvestigationCase(Base):
     __tablename__ = "investigation_cases"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)

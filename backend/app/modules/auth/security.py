@@ -6,6 +6,7 @@ DBs keep working, but all new hashes are bcrypt.
 """
 import hashlib
 import hmac
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
