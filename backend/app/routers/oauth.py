@@ -191,15 +191,14 @@ async def sync_now(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    org = user.organization_id if user.organization_id else None
     result = await poll_all_mailboxes_async(
         max_results=payload.max_results,
         provider=_provider_or_400(payload.provider) if payload.provider else None,
-        organization_id=org if org else "__user__",
+        organization_id=user.organization_id,
+        user_id=user.id,
     )
-    if org is None:
-        # __user__ sentinel not understood by service; re-scope inline instead
-        pass
+    if result["polled"] == 0:
+        raise HTTPException(404, "no mailbox connected")
     return result
 
 
