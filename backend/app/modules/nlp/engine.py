@@ -150,6 +150,15 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
     ml_score = _apply_transformer_rerank(text, ml_score)
 
     return {
+        "urgency_cues": urgency,
+        "impersonation_cues": imperson,
+        "bec_cues": bec,
+        "credential_cues": cred,
+        "nlp_cues_detected": cues,
+        "ml_score": round(ml_score, 4),
+        "ml_label": ml_label,
+    }
+
 
 def _get_transformer():
     """Cached transformer rerank. Env model names honored in dev only (C10);
@@ -188,11 +197,3 @@ def _apply_transformer_rerank(text: str, ml_score: float) -> float:
     except Exception:
         pass
     return ml_score
-        "urgency_cues": urgency,
-        "impersonation_cues": imperson,
-        "bec_cues": bec,
-        "credential_cues": cred,
-        "nlp_cues_detected": cues,
-        "ml_score": round(ml_score, 4),
-        "ml_label": ml_label,
-    }
