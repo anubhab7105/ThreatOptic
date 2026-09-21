@@ -13,7 +13,11 @@ from app.modules.privacy.retention import apply_retention
 def test_masking_kinds():
     assert "[SSN-REDACTED]" in mask_text("ssn 123-45-6789 here")
     assert "[PHONE-REDACTED]" in mask_text("call +1 (555) 123-4567 now")
-    assert mask_text("secret", unmask=True) == "secret"
+    assert "[PHONE-REDACTED]" in mask_text("ring +44 20 7946 0958 today")
+    # Luhn-invalid digit runs are NOT cards; bare 10-digit IDs are NOT phones
+    assert "1234567890123" in mask_text("ref 1234567890123 closed")
+    assert "1234567890" in mask_text("ticket 1234567890 closed")
+    assert mask_text("") == ""
 
 
 def _db():

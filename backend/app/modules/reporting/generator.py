@@ -5,10 +5,10 @@ from ..privacy.masking import mask_text
 from ..privacy.chain_of_custody import custody_manifest
 
 
-def build_report_json(email: dict, analysis: dict, trace: dict, attribution: dict, unmask: bool = False) -> dict:
+def build_report_json(email: dict, analysis: dict, trace: dict, attribution: dict) -> dict:
     mail_masked = dict(email)
     if "body_text" in mail_masked:
-        mail_masked["body_text"] = mask_text(mail_masked.get("body_text", ""), unmask=unmask)
+        mail_masked["body_text"] = mask_text(mail_masked.get("body_text", ""))
     return {
         "email": mail_masked,
         "analysis": analysis,

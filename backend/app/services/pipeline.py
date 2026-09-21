@@ -57,7 +57,7 @@ async def _to_thread(fn, *args, **kwargs):
         return None
 
 
-async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "", unmask: bool = False,
+async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "",
                       organization_id: str | None = None) -> dict:
     if not raw or not raw.strip():
         raise ValueError("empty email payload")
@@ -169,7 +169,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
                    "action": "Deliver", "breakdown": {}, "signals": []}
 
-    masked_body = mask_text(body, unmask=unmask)
+    masked_body = mask_text(body)
     email_row = EmailRecord(
         message_id=parsed.get("message_id", ""), sender_address=parsed.get("sender_address", ""),
         recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
