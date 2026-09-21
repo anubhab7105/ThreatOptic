@@ -168,7 +168,7 @@ export function LoginPage() {
         </p>
       </div>
       <InternalLinks current="#/" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
         url: `${CANONICAL_BASE}/#/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -555,7 +555,7 @@ export function Dashboard() {
       )}
 
       <InternalLinks current="#/" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
         description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -852,7 +852,7 @@ export function EmailView({ id }: { id: string }) {
         </div>
       )}
       <InternalLinks current="#/email" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
         description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/#/email/${id}`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
@@ -908,7 +908,7 @@ export function Campaigns() {
         </div>
       )}
       <InternalLinks current="#/campaigns" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
         description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/#/campaigns`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -1057,7 +1057,7 @@ export function ModelInfo() {
         </div>
       </div>
       <InternalLinks current="#/model" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
         description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/#/model`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
@@ -1173,7 +1173,7 @@ export function Mailboxes() {
         </div>
       </div>
       <InternalLinks current="#/mailboxes" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/#/mailboxes`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -1287,7 +1287,7 @@ export function Cases() {
         </div>
       )}
       <InternalLinks current="#/cases" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
         description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/#/cases`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -1323,7 +1323,7 @@ export function PrivacyPolicy() {
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
       </div>
       <InternalLinks current="#/privacy" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
         description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/privacy`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -1359,7 +1359,7 @@ export function TermsConditions() {
         <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
       </div>
       <InternalLinks current="#/terms" />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
         description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/terms`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
