@@ -58,7 +58,7 @@ async def _to_thread(fn, *args, **kwargs):
 
 
 async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "",
-                      organization_id: str | None = None) -> dict:
+                      organization_id: str | None = None, envelope_tos: list[str] | None = None) -> dict:
     if not raw or not raw.strip():
         raise ValueError("empty email payload")
 
@@ -196,7 +196,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         threat_classification=scoring["threat_classification"],
         nlp_cues_detected=list(nlp.get("nlp_cues_detected", [])) + list(routing_flags) + list(hinfo.get("flags", [])),
         authentication_results=auth,
-        trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path)},
+        trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path),
+                       "envelope_rcpt_tos": list(envelope_tos or [])},
         threat_intel_hits=intel_hits, action_taken=scoring["action"],
         score_breakdown=scoring.get("signals", []),
     )

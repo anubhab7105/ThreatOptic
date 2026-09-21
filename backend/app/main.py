@@ -1,7 +1,6 @@
 """FastAPI entrypoint."""
 import asyncio
 import logging
-import queue as std_queue
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,15 +23,15 @@ settings = get_settings()
 
 async def _smtp_consumer() -> None:
     """Background loop: SMTP queue -> forensic pipeline (F3)."""
-    from .modules.ingestion.queue import _mem_queue
+    from .modules.ingestion.queue import dequeue_email
     from .services.pipeline import process_raw_email
     log.info("SMTP consumer started")
     while True:
         try:
             try:
-                payload = await asyncio.to_thread(_mem_queue.get, True, 0.5)
-            except std_queue.Empty:
-                continue
+                payload = await dequeue_email()
+            except asyncio.CancelledError:
+                raise
             raw = payload.get("raw", b"")
             if isinstance(raw, str):
                 raw = raw.encode()
@@ -41,6 +40,7 @@ async def _smtp_consumer() -> None:
                 res = await process_raw_email(
                     db, raw, source=payload.get("source", "smtp"),
                     envelope_from=payload.get("envelope_from", ""),
+                    envelope_tos=payload.get("rcpt_tos") or [],
                 )
                 log.info("SMTP mail analyzed: %s score=%s", res["email_id"], res["fraud_score"])
                 try:
@@ -103,6 +103,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        try:
+            from .modules.ingestion.queue import close_producer, set_shutdown
+            set_shutdown()
+            await close_producer()
+        except Exception:
+            pass
         if scheduler:
             scheduler.shutdown(wait=False)
         if consumer:

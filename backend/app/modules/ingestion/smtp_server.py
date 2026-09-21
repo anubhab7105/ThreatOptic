@@ -34,14 +34,19 @@ def _intake_allowed(peer_ip: str) -> bool:
 
 class IngestHandler:
     async def handle_DATA(self, server, session, envelope):
+        import queue as _queue_mod
         from ..auth.rate_limit import audit
         peer_ip = getattr(session, "peer", "") or "unknown"
         if not _intake_allowed(peer_ip):
             audit("smtp.intake.throttled", peer=peer_ip, sender=envelope.mail_from)
             return "421 rate limited, try again later"
-        await enqueue_email({"raw": envelope.content, "source": "smtp",
-                             "envelope_from": envelope.mail_from,
-                             "rcpt_tos": list(getattr(envelope, "rcpt_tos", []) or [])})
+        try:
+            await enqueue_email({"raw": envelope.content, "source": "smtp",
+                                 "envelope_from": envelope.mail_from,
+                                 "rcpt_tos": list(getattr(envelope, "rcpt_tos", []) or [])})
+        except _queue_mod.Full:
+            audit("smtp.intake.queue-full", peer=peer_ip)
+            return "452 mailbox full, try again later"
         audit("smtp.intake", peer=peer_ip, sender=envelope.mail_from)
         return "250 queued for forensic analysis"
 
