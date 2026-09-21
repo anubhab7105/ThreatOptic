@@ -146,19 +146,48 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
         # rule fallback score
         ml_score = min(0.95, 0.15 * len(urgency) + 0.25 * len(bec) + 0.2 * len(imperson) + 0.15 * len(cred))
 
-    # Optional transformer rerank
-    t_model = os.environ.get("TRANSFORMERS_MODEL", "")
-    if t_model:
-        try:
-            from transformers import pipeline
-            pipe = pipeline("text-classification", model=t_model)
-            r = pipe(text[:2000])[0]
-            if "phish" in r["label"].lower() or r["label"].startswith("LABEL_1"):
-                ml_score = max(ml_score, float(r["score"]))
-        except Exception:
-            pass
+    # Optional transformer rerank (cached object, dev-only model names)
+    ml_score = _apply_transformer_rerank(text, ml_score)
 
     return {
+
+def _get_transformer():
+    """Cached transformer rerank. Env model names honored in dev only (C10);
+    built once, never per-request."""
+    global _transformer_pipe
+    if _transformer_pipe is not None:
+        return _transformer_pipe
+    t_model = os.environ.get("TRANSFORMERS_MODEL", "").strip()
+    if not t_model:
+        return None
+    try:
+        from ...config import get_settings
+        dev = get_settings().is_development()
+    except Exception:
+        dev = True
+    if not dev:
+        import logging
+        logging.getLogger("nlp").warning("ignoring TRANSFORMERS_MODEL outside development")
+        return None
+    try:
+        from transformers import pipeline
+        _transformer_pipe = pipeline("text-classification", model=t_model)
+        return _transformer_pipe
+    except Exception:
+        return None
+
+
+def _apply_transformer_rerank(text: str, ml_score: float) -> float:
+    try:
+        pipe = _get_transformer()
+        if pipe is None:
+            return ml_score
+        r = pipe(text[:2000])[0]
+        if "phish" in r["label"].lower() or r["label"].startswith("LABEL_1"):
+            return max(ml_score, float(r["score"]))
+    except Exception:
+        pass
+    return ml_score
         "urgency_cues": urgency,
         "impersonation_cues": imperson,
         "bec_cues": bec,
