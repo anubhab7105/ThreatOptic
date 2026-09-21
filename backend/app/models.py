@@ -59,6 +59,7 @@ class InvestigationCase(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="Open")  # Open, InProgress, Closed
     assignee_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     email_ids: Mapped[list] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -77,6 +78,7 @@ class EmailRecord(Base):
     body_text_masked: Mapped[str] = mapped_column(Text, default="")
     attachments_metadata: Mapped[list] = mapped_column(JSON, default=list)
     raw_eml_hash: Mapped[str] = mapped_column(String(64), default="")
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
