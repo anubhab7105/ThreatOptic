@@ -20,23 +20,41 @@ def _live() -> bool:
 @lru_cache(maxsize=1024)
 def _whois_cached(domain: str) -> dict[str, Any]:
     try:
+        import socket
         import whois
-        # python-whois has no timeout; run with a socket-level guard.
-        socket.setdefaulttimeout(2.5)
-        try:
-            w = whois.whois(domain)
-        finally:
-            socket.setdefaulttimeout(None)
-        creation = str(w.creation_date) if w.creation_date else ""
+        # python-whois has no timeout parameter: run the blocking call in a
+        # worker thread with join(timeout) instead of touching the process-
+        # global socket.setdefaulttimeout (Step 4 — no global side effects).
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(whois.whois, domain)
+            try:
+                w = future.result(timeout=8)
+            except concurrent.futures.TimeoutError:
+                return {"domain": domain, "error": "whois-timeout"}
+        creation = _stringify_date(w.creation_date)
+        expiry = _stringify_date(w.expiration_date)
         return {
             "domain": domain,
             "registrar": str(w.registrar or ""),
             "creation_date": creation[:100],
-            "expiration_date": str(w.expiration_date)[:100] if w.expiration_date else "",
+            "expiration_date": expiry[:100],
             "name_servers": [str(x) for x in (w.name_servers or [])][:10],
         }
     except Exception as e:
         return {"domain": domain, "error": f"whois-unavailable: {e}"[:300]}
+
+
+def _stringify_date(value: Any) -> str:
+    """whois dates arrive as datetime | list[datetime] | str | None."""
+    from datetime import datetime
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
 
 
 def whois_lookup(domain: str) -> dict[str, Any]:
