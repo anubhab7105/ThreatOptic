@@ -376,7 +376,9 @@ function Shell() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <AuthProvider>
-    <Shell />
-  </AuthProvider>,
+  <BrowserRouter>
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
+  </BrowserRouter>,
 );
