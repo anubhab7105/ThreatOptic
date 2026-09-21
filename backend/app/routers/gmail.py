@@ -24,10 +24,12 @@ def _client_id(explicit: str | None) -> str:
     return cid
 
 
-def _client_secret(explicit: str | None) -> str:
-    secret = explicit or get_settings().google_client_secret
+def _client_secret() -> str:
+    # Server-side settings only (C5): per-request client_secret is no longer
+    # accepted — secrets must never transit through request bodies/logs.
+    secret = get_settings().google_client_secret
     if not secret:
-        raise HTTPException(400, "Google OAuth client_secret not configured (env GOOGLE_CLIENT_SECRET or request field)")
+        raise HTTPException(400, "Google OAuth client_secret not configured (env GOOGLE_CLIENT_SECRET)")
     return secret
 
 
@@ -68,7 +70,7 @@ async def callback(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cid, secret, uri = _client_id(payload.client_id), _client_secret(payload.client_secret), _redirect_uri(payload.redirect_uri)
+    cid, secret, uri = _client_id(payload.client_id), _client_secret(), _redirect_uri(payload.redirect_uri)
     try:
         tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri)
     except httpx.HTTPError as e:
