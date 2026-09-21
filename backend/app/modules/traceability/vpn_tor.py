@@ -14,6 +14,7 @@ from functools import lru_cache
 
 CLOUD_ASN_HINTS = ("amazon", "aws", "google", "microsoft", "azure", "cloudflare", "digitalocean", "ovh", "hetzner", "alibaba")
 TOR_BULK_URL = "https://check.torproject.org/torbulkexitlist"
+TOR_DNS_SUFFIX = "dnsel.torproject.org"  # used by is_tor_exit_via_dnsel()
 TOR_TTL_S = 24 * 3600
 
 _cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
