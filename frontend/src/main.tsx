@@ -55,7 +55,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}${it.href.replace(/^#/, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}${it.href.replace(/^\//, '')}` : undefined,
     })),
   };
   return (
@@ -114,12 +114,12 @@ function CookieConsent() {
   return (
     <div className="cookie-banner" role="dialog" aria-label="Cookie consent">
       <p>
-        We use essential cookies to keep you signed in and to remember your theme and privacy choice. Analytics cookies are off by default. See our <a href="#/privacy">Privacy Policy</a> and <a href="#/terms">Terms</a>.
+        We use essential cookies to keep you signed in and to remember your theme and privacy choice. Analytics cookies are off by default. See our <Link to="/privacy">Privacy Policy</Link> and <Link to="/terms">Terms</Link>.
       </p>
       <div className="cookie-actions">
         <button onClick={accept}>Accept essential</button>
         <button className="ghost" onClick={decline}>Decline</button>
-        <a href="#/privacy" className="ghost" style={{ padding: '8px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel-2)', textDecoration: 'none', color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>Learn more</a>
+        <Link to="/privacy" className="ghost" style={{ padding: '8px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel-2)', textDecoration: 'none', color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>Learn more</Link>
       </div>
     </div>
   );
@@ -135,7 +135,7 @@ function NotFoundPage() {
   }, []);
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: '404 Not Found' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: '404 Not Found' }]} />
       <h1>404 - Page Not Found</h1>
       <p className="sub">The forensic resource you requested does not exist or has been moved. This incident has not been logged - it is a routing miss, not a threat.</p>
       <div className="card" style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -143,11 +143,11 @@ function NotFoundPage() {
         <div>
           <p style={{ marginTop: 0 }}>Try one of these instead:</p>
           <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
-            <li><a href="#/">Global Threat Dashboard</a> - ingest and score emails</li>
-            <li><a href="#/campaigns">Campaigns</a> - shared infrastructure clusters</li>
-            <li><a href="#/cases">Case Management</a> - triage to closure</li>
-            <li><a href="#/mailboxes">Mailboxes</a> - OAuth connectors</li>
-            <li><a href="#/model">Model Info</a> - transparency, metrics, confusion matrix</li>
+            <li><Link to="/">Global Threat Dashboard</Link> - ingest and score emails</li>
+            <li><Link to="/campaigns">Campaigns</Link> - shared infrastructure clusters</li>
+            <li><Link to="/cases">Case Management</Link> - triage to closure</li>
+            <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
+            <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
           <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@socforensics.io - Austin, TX SOC.</p>
         </div>
@@ -211,7 +211,7 @@ function AlertBell() {
           {alerts.length === 0 ? <p className="sub">No alerts this session.</p> : (
             <ul style={{ paddingLeft: 18, margin: 0 }}>
               {alerts.map((a, i) => (
-                <li key={i}><a href={`#/email/${a.email_id}`}>{a.subject || a.email_id}</a> <b>{a.fraud_score}</b></li>
+                <li key={i}><Link to={`/email/${a.email_id}`}>{a.subject || a.email_id}</Link> <b>{a.fraud_score}</b></li>
               ))}
             </ul>
           )}

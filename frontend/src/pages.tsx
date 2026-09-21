@@ -173,7 +173,7 @@ export function LoginPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
-        url: `${CANONICAL_BASE}/#/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+        url: `${CANONICAL_BASE}/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
   );
@@ -258,7 +258,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     const q = new URLSearchParams(window.location.search).get('code');
     if (q) {
       setCode(q);
-      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+      window.history.replaceState({}, '', window.location.pathname);
       void finish(q);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -914,7 +914,7 @@ export function Campaigns() {
       <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
-        description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/#/campaigns`,
+        description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/campaigns`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -1063,7 +1063,7 @@ export function ModelInfo() {
       <InternalLinks current="/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
-        description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/#/model`,
+        description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/model`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
       })}} />
     </div>
@@ -1179,7 +1179,7 @@ export function Mailboxes() {
       <InternalLinks current="/mailboxes" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
-        description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/#/mailboxes`,
+        description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/mailboxes`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -1293,7 +1293,7 @@ export function Cases() {
       <InternalLinks current="/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
-        description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/#/cases`,
+        description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/cases`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -1329,7 +1329,7 @@ export function PrivacyPolicy() {
       <InternalLinks current="/privacy" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
-        description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/privacy`,
+        description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/privacy`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -1365,7 +1365,7 @@ export function TermsConditions() {
       <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
-        description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/#/terms`,
+        description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/terms`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
