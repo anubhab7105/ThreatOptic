@@ -78,39 +78,55 @@ def test_callback_sync_disconnect(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h = _auth(c)
-        assert c.get("/api/v1/oauth/status", headers=h).json() == []
-        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "redirect_uri": "http://localhost:5173/"}, follow_redirects=False)
-        assert r.status_code == 302, r.text
-        assert "/#/mailboxes?connected=" in r.headers["location"]
-
-        db = SessionLocal()
+        h, uname = _auth(c)
+        # hermetic: drop any leftover fixture row from interrupted runs
+        db0 = SessionLocal()
         try:
-            row = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
-            assert row is not None and decrypt_secret(row.encrypted_refresh_token) == "1//r-token"
-            assert "1//r-token" not in row.encrypted_refresh_token
+            db0.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+            db0.commit()
         finally:
-            db.close()
-
-        st = c.get("/api/v1/oauth/status", headers=h).json()
-        assert len(st) == 1 and st[0]["account_email"] == "owner@gmail.com"
-
-        r = c.post("/api/v1/oauth/sync-now", headers=h, json={"provider": "google", "max_results": 5})
-        assert r.status_code == 200, r.text
-        assert r.json()["synced"] == 1
-
-        db = SessionLocal()
+            db0.close()
         try:
-            mail = db.query(models.EmailRecord).filter_by(message_id="<oauth-probe@test>").first()
-            assert mail is not None
-            eid = mail.id
-            db.query(models.AnalysisResult).filter_by(email_id=eid).delete()
-            db.query(models.TraceabilityData).filter_by(email_id=eid).delete()
-            db.query(models.EmailRecord).filter_by(id=eid).delete()
-            db.commit()
-        finally:
-            db.close()
+            assert c.get("/api/v1/oauth/status", headers=h).json() == []
+            r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "redirect_uri": "http://localhost:5173/"}, follow_redirects=False)
+            assert r.status_code == 302, r.text
+            assert "/#/mailboxes?connected=" in r.headers["location"]
 
-        assert c.delete("/api/v1/oauth/google", headers=h).status_code == 200
-        assert c.get("/api/v1/oauth/status", headers=h).json() == []
-        assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
+            db = SessionLocal()
+            try:
+                row = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
+                assert row is not None and decrypt_secret(row.encrypted_refresh_token) == "1//r-token"
+                assert "1//r-token" not in row.encrypted_refresh_token
+            finally:
+                db.close()
+
+            st = c.get("/api/v1/oauth/status", headers=h).json()
+            assert len(st) == 1 and st[0]["account_email"] == "owner@gmail.com"
+
+            r = c.post("/api/v1/oauth/sync-now", headers=h, json={"provider": "google", "max_results": 5})
+            assert r.status_code == 200, r.text
+            assert r.json()["synced"] == 1
+
+            db = SessionLocal()
+            try:
+                mail = db.query(models.EmailRecord).filter_by(message_id="<oauth-probe@test>").first()
+                assert mail is not None
+                eid = mail.id
+                db.query(models.AnalysisResult).filter_by(email_id=eid).delete()
+                db.query(models.TraceabilityData).filter_by(email_id=eid).delete()
+                db.query(models.EmailRecord).filter_by(id=eid).delete()
+                db.commit()
+            finally:
+                db.close()
+
+            assert c.delete("/api/v1/oauth/google", headers=h).status_code == 200
+            assert c.get("/api/v1/oauth/status", headers=h).json() == []
+            assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
+        finally:
+            # never leak the fixture row (disconnect deletes by provider only)
+            dbf = SessionLocal()
+            try:
+                dbf.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+                dbf.commit()
+            finally:
+                dbf.close()
