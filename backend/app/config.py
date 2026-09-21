@@ -20,8 +20,16 @@ class Settings(BaseSettings):
 
     app_name: str = "Email Threat & Forensics Platform"
     api_prefix: str = "/api/v1"
-    secret_key: str = "change-me-in-prod"
-    access_token_expire_minutes: int = 480
+    # No default: must be provisioned via env/secrets manager. Startup
+    # refuses to boot outside development when unset, default, or short.
+    secret_key: str = ""
+    access_token_expire_minutes: int = 20
+    # Explicit setup token that authorizes creation of the first Admin
+    # account via POST /auth/register (replaces first-registrant bootstrap).
+    setup_token: str = ""
+    # Separate key for the mailbox-token vault (never reuse secret_key).
+    # Required (min 32 chars); fail closed when empty.
+    token_encryption_key: str = ""
 
     # Comma-separated browser origins allowed to call the API. Credentials
     # are only safe with an explicit list — never "*".
@@ -56,8 +64,12 @@ class Settings(BaseSettings):
     # Chain-of-custody signing (F4). CUSTODY_KEY must come from a secrets
     # manager in any non-local deployment; the dev fallback only applies
     # when APP_ENV=development.
-    app_env: str = "development"
+    # Production-safe posture by default: anything but an explicit
+    # APP_ENV=development is treated as a real deployment.
+    app_env: str = "production"
     custody_key: str = ""
+    # Previous custody key accepted during rotation windows only.
+    custody_key_previous: str = ""
 
     # Gmail OAuth2 demo connector (optional; per-request overrides also accepted).
     google_client_id: str = ""
@@ -102,6 +114,42 @@ class Settings(BaseSettings):
     @property
     def live_lookups(self) -> bool:
         return str(self.enable_live_lookups).lower() not in ("", "0", "false", "no")
+
+    def is_development(self) -> bool:
+        return self.app_env.strip().lower() == "development"
+
+
+FORGEABLE_SECRET_MARKERS = {"", "change-me-in-prod", "changeme", "secret", "test"}
+MIN_SECRET_BYTES = 32
+
+
+def require_secrets() -> None:
+    """Fail fast at startup unless secrets are provisioned (C1).
+
+    Outside APP_ENV=development the JWT secret must be set, must not be a
+    well-known default, and must be at least 32 characters. Development
+    keeps working out of the box but logs a loud warning.
+    """
+    import logging
+
+    settings = get_settings()
+    secret = (settings.secret_key or "")
+    if settings.is_development():
+        if not secret or secret.strip().lower() in FORGEABLE_SECRET_MARKERS or len(secret) < MIN_SECRET_BYTES:
+            logging.getLogger("config").warning(
+                "JWT secret_key is unset/default/short — development only. "
+                "Set a 32+ char SECRET_KEY before any non-local deployment."
+            )
+        return
+    if not secret or secret.strip().lower() in FORGEABLE_SECRET_MARKERS:
+        raise RuntimeError(
+            "Refusing to boot: SECRET_KEY is unset or a well-known default. "
+            "Provision it from a secrets manager (see SECURITY.md)."
+        )
+    if len(secret) < MIN_SECRET_BYTES:
+        raise RuntimeError(
+            f"Refusing to boot: SECRET_KEY is only {len(secret)} chars; minimum is {MIN_SECRET_BYTES}."
+        )
 
 
 @lru_cache
