@@ -168,13 +168,11 @@ class GmailCallbackIn(BaseModel):
     code: str = Field(min_length=1)
     redirect_uri: str | None = None
     client_id: str | None = None
-    client_secret: str | None = None
 
 
 class GmailSyncIn(BaseModel):
     max_results: int = Field(default=10, ge=1)
     query: str = Field(default="is:unread", max_length=200)
-    client_secret: str | None = None
 
 
 class GmailSyncResult(BaseModel):
