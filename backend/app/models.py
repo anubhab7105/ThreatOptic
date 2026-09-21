@@ -7,7 +7,7 @@ Graph entities are in Neo4j / networkx, not here.
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
@@ -19,7 +19,7 @@ def _uuid() -> str:
 class Organization(Base):
     __tablename__ = "organizations"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     compliance_policy: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -45,7 +45,7 @@ class RefreshToken(Base):
     """
     __tablename__ = "refresh_tokens"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -68,9 +68,10 @@ class InvestigationCase(Base):
 
 class EmailRecord(Base):
     __tablename__ = "email_records"
+    __table_args__ = (UniqueConstraint("raw_eml_hash", "organization_id", name="uq_email_hash_org"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     message_id: Mapped[str] = mapped_column(String(1024), default="")
-    sender_address: Mapped[str] = mapped_column(String(512), default="")
+    sender_address: Mapped[str] = mapped_column(String(512), default="", index=True)
     recipient_address: Mapped[str] = mapped_column(String(512), default="")
     subject: Mapped[str] = mapped_column(Text, default="")
     raw_headers: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -85,8 +86,8 @@ class EmailRecord(Base):
 class AnalysisResult(Base):
     __tablename__ = "analysis_results"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    email_id: Mapped[str] = mapped_column(String(36), ForeignKey("email_records.id"), nullable=False, index=True)
-    fraud_score: Mapped[float] = mapped_column(Float, default=0.0)
+    email_id: Mapped[str] = mapped_column(String(36), ForeignKey("email_records.id", ondelete="CASCADE"), nullable=False, index=True)
+    fraud_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     threat_classification: Mapped[str] = mapped_column(String(64), default="Clean")
     nlp_cues_detected: Mapped[list] = mapped_column(JSON, default=list)
     authentication_results: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -100,7 +101,7 @@ class AnalysisResult(Base):
 class TraceabilityData(Base):
     __tablename__ = "traceability_data"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    email_id: Mapped[str] = mapped_column(String(36), ForeignKey("email_records.id"), nullable=False, index=True)
+    email_id: Mapped[str] = mapped_column(String(36), ForeignKey("email_records.id", ondelete="CASCADE"), nullable=False, index=True)
     origin_ip: Mapped[str] = mapped_column(String(64), default="")
     relay_chain: Mapped[list] = mapped_column(JSON, default=list)
     geolocation: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -114,7 +115,7 @@ class GmailAccount(Base):
     """One connected Gmail mailbox per user (OAuth2 refresh token vault)."""
     __tablename__ = "gmail_accounts"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     gmail_address: Mapped[str] = mapped_column(String(320), default="")
     refresh_token: Mapped[str] = mapped_column(Text, default="")
     # OAuth client_id used at connect time; reused for refresh (C2-fix).
@@ -130,8 +131,9 @@ class MailboxConnection(Base):
     Refresh tokens are Fernet-encrypted (modules/auth/vault.py).
     """
     __tablename__ = "mailbox_connections"
+    __table_args__ = (UniqueConstraint("provider", "account_email", name="uq_mailbox_provider_email"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True)
     provider: Mapped[str] = mapped_column(String(32), default="google")  # google | microsoft
     account_email: Mapped[str] = mapped_column(String(320), default="")
@@ -150,7 +152,7 @@ class OAuthState(Base):
     __tablename__ = "oauth_states"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     state: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(32), default="google")
     redirect_uri: Mapped[str] = mapped_column(String(1024), default="")
     client_id: Mapped[str] = mapped_column(String(320), default="")
