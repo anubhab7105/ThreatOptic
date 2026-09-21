@@ -65,8 +65,11 @@ Without the download (offline), training falls back to the curated lists. No pub
 ### Attachment analysis
 Attachments are hash-checked against VirusTotal (skipped without `VIRUSTOTAL_API_KEY`) plus offline heuristics: macro-enabled Office docs, double extensions, executables, and magic-byte mismatches feed an `attachment_risk` score weight (0.10).
 
+### Privacy model
+Raw email bodies are **never persisted** — only the masked version is stored (cards/SSN/phones/email-localparts redacted; names/addresses/IPs are not masked). Forensic reports mask subject/sender/recipient as well. Search escapes LIKE wildcards and indexes masked fields only.
+
 ### Retention
-`services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Manual run: `POST /api/v1/admin/retention` (Admin).
+`services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Old clean mail is body-blanked (metadata kept); old malicious mail is fully deleted (email + analysis + trace + ES doc + graph node) in batches with per-batch rollback. Manual run: `POST /api/v1/admin/retention` (Admin).
 
 ### Secrets (compose / k8s)
 No credentials are committed. For compose: `cp backend/.env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
