@@ -17,15 +17,15 @@ def test_origin_ip_last_external_in_wire_order():
 def test_origin_ip_trust_boundary():
     # our MX on top: origin is the nearest public IP below it, not spoofed lines above
     wire = [
-        {"by_host": "mx.ours.test", "ips": ["203.0.113.1"]},
-        {"by_host": "evil.test", "ips": ["198.51.100.9"]},
-        {"by_host": "mx.ours.test", "ips": ["198.51.100.7"]},
+        {"by_host": "mx.ours.test", "ips": ["8.8.8.8"]},
+        {"by_host": "evil.test", "ips": ["1.1.1.1"]},
+        {"by_host": "mx.ours.test", "ips": ["9.9.9.9"]},
     ]
     path = list(reversed(wire))  # chronological
     import os
     os.environ["TRUSTED_RELAY_HOSTS"] = "mx.ours.test"
     try:
-        assert extract_origin_ip(path) == "198.51.100.9"
+        assert extract_origin_ip(path) == "1.1.1.1"
     finally:
         del os.environ["TRUSTED_RELAY_HOSTS"]
 
