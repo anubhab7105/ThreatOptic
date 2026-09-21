@@ -401,7 +401,9 @@ def run_retention(
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_roles("Admin")),
 ):
-    return apply_retention(db)
+    from ..config import get_settings
+    settings = get_settings()
+    return apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days)
 
 
 @router.get("/model/metrics")

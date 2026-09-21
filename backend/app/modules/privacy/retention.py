@@ -6,7 +6,7 @@ still carry a raw body_text get it blanked; new rows never store raw
 bodies at all (see pipeline).
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from ...models import EmailRecord, AnalysisResult, TraceabilityData
 
@@ -15,12 +15,10 @@ log = logging.getLogger("retention")
 BATCH = 500
 
 
-def _utcnow():
-    return datetime.now(timezone.utc)
-
-
 def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) -> dict:
-    now = _utcnow()
+    # NOTE: naive UTC matches the timestamps historically stored in SQLite;
+    # Step 5 migrates the codebase to timezone-aware datetimes consistently.
+    now = datetime.utcnow()
     clean_cut = now - timedelta(days=clean_days)
     mal_cut = now - timedelta(days=malicious_days)
     purged_body = 0
@@ -50,8 +48,7 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
                         e.body_text = ""
                         e.body_text_masked = ""
                         purged_body += 1
-                elif e.timestamp and (e.timestamp.replace(tzinfo=timezone.utc)
-                                      if e.timestamp.tzinfo is None else e.timestamp) < mal_cut:
+                elif e.timestamp and e.timestamp < mal_cut:
                     if e.body_text or e.body_text_masked:
                         purged_body += 1
                     if a:
