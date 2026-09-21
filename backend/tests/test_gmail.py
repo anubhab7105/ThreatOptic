@@ -59,12 +59,17 @@ def test_gmail_unauth_and_auth_url_validation():
 
 def test_gmail_connect_sync_disconnect(monkeypatch):
     from app.main import app
+    from app.config import get_settings
     import app.modules.ingestion.connectors as conn
 
     monkeypatch.setattr(conn, "exchange_gmail_code", _fake_exchange)
     monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_profile)
     monkeypatch.setattr(conn, "refresh_gmail_token", _fake_refresh)
     monkeypatch.setattr(conn, "fetch_gmail_messages", _fake_fetch)
+    # C5: client secrets come from server-side settings only
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
 
     with TestClient(app) as c:
         h, _ = _auth(c)
@@ -74,12 +79,12 @@ def test_gmail_connect_sync_disconnect(monkeypatch):
 
         r = c.post("/api/v1/gmail/callback", headers=h, json={
             "code": "4/fake", "redirect_uri": "http://localhost:5173/",
-            "client_id": "demo-id", "client_secret": "demo-secret",
+            "client_id": "demo-id",
         })
         assert r.status_code == 200, r.text
         assert r.json()["connected"] is True and r.json()["gmail_address"] == "demo@gmail.com"
 
-        r = c.post("/api/v1/gmail/sync", headers=h, json={"max_results": 5, "client_secret": "demo-secret"})
+        r = c.post("/api/v1/gmail/sync", headers=h, json={"max_results": 5})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["synced"] == 1 and len(body["email_ids"]) == 1 and body["errors"] == []
