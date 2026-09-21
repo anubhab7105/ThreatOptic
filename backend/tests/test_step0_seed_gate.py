@@ -1,6 +1,5 @@
 """Step 0 ground rules: seed.py must never run outside explicit dev-only flag."""
 import asyncio
-import os
 
 import pytest
 

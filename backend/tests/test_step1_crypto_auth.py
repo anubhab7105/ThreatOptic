@@ -1,7 +1,6 @@
 """Step 1 (C1/C2/C5/C6/C7): secrets boot gate, short JWTs + rotation/reuse
 detection, setup-token bootstrap, vault KDF fail-closed, custody v1 payload,
 server-side Gmail secrets."""
-import os
 import uuid
 
 import pytest

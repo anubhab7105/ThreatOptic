@@ -19,7 +19,6 @@ def _live() -> bool:
 @lru_cache(maxsize=1024)
 def _whois_cached(domain: str) -> dict[str, Any]:
     try:
-        import socket
         import whois
         # python-whois has no timeout parameter: run the blocking call in a
         # worker thread with join(timeout) instead of touching any

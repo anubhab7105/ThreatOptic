@@ -1,12 +1,8 @@
 """Tests verifying the Phase 1 audit remediation fixes."""
-import html
 from fastapi.testclient import TestClient
-from app import models, schemas
-from app.database import SessionLocal
 from app.main import app
 from app.modules.forensics.received_chain import detect_routing_anomalies
 from app.modules.reporting.generator import build_report_pdf
-from app.modules.traceability.vpn_tor import TOR_DNS_SUFFIX
 
 
 def _auth(client: TestClient) -> dict:

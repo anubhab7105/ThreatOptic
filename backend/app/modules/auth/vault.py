@@ -8,7 +8,6 @@ Fail-closed: TOKEN_ENCRYPTION_KEY must be set with >= 32 chars or every
 encrypt/decrypt raises VaultError. No deterministic fallback.
 """
 import base64
-import hashlib
 import os
 
 MIN_VAULT_KEY_CHARS = 32
