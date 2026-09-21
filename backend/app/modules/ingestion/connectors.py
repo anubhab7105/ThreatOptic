@@ -6,7 +6,18 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
-def build_gmail_auth_url(client_id: str, redirect_uri: str, state: str = "") -> str:
+def _pkce_challenge(verifier: str) -> str:
+    import base64
+    import hashlib
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+
+
+def _new_verifier() -> str:
+    import secrets
+    return secrets.token_urlsafe(64)
+
+
+def build_gmail_auth_url(client_id: str, redirect_uri: str, state: str = "", code_challenge: str = "") -> str:
     """OAuth2 consent URL (read-only Gmail). Returns the URL the user must open."""
     from urllib.parse import urlencode
     params = {
@@ -19,16 +30,23 @@ def build_gmail_auth_url(client_id: str, redirect_uri: str, state: str = "") -> 
     }
     if state:
         params["state"] = state
+    if code_challenge:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
     return GOOGLE_AUTH_URL + "?" + urlencode(params)
 
 
-async def exchange_gmail_code(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict:
+async def exchange_gmail_code(code: str, client_id: str, client_secret: str, redirect_uri: str,
+                              code_verifier: str = "") -> dict:
     """Exchange an auth code for {access_token, refresh_token, expires_in}."""
     async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(GOOGLE_TOKEN_URL, data={
+        data = {
             "code": code, "client_id": client_id, "client_secret": client_secret,
             "redirect_uri": redirect_uri, "grant_type": "authorization_code",
-        })
+        }
+        if code_verifier:
+            data["code_verifier"] = code_verifier
+        r = await client.post(GOOGLE_TOKEN_URL, data=data)
         r.raise_for_status()
         return r.json()
 

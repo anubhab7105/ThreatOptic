@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     ms_client_secret: str = ""
     frontend_url: str = "http://localhost:5173"
     mail_poll_minutes: int = 0
+    # Extra allowed OAuth redirect_uris, comma-separated, beyond the
+    # configured frontend_url / google_redirect_uri (C3 allowlist).
+    oauth_redirect_allowlist: str = ""
+
+    def oauth_redirect_allowed(self, uri: str) -> bool:
+        allowed = {
+            (self.frontend_url or "").rstrip("/"),
+            (self.google_redirect_uri or "").rstrip("/"),
+            *((u.strip().rstrip("/") for u in str(self.oauth_redirect_allowlist).split(",") if u.strip())),
+        }
+        allowed.discard("")
+        return (uri or "").rstrip("/") in allowed
 
     # When "0" (default) all live network enrichment is skipped for speed/
     # offline reliability; set to "1" to enable ip-api/whois/dns/urlhaus/dnsbl.
