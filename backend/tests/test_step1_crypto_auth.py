@@ -185,7 +185,7 @@ def test_gmail_server_side_secret_and_corrupt_token(monkeypatch):
     from app.main import app
 
     settings = get_settings()
-    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
     monkeypatch.setattr(settings, "google_client_secret", "")
     with TestClient(app) as c:
         uname = _uname("gmailsec")
