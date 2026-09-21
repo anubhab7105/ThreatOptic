@@ -96,9 +96,20 @@ def test_callback_sync_disconnect(monkeypatch):
             db0.close()
         try:
             assert c.get("/api/v1/oauth/status", headers=h).json() == []
-            r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "redirect_uri": "http://localhost:5173/"}, follow_redirects=False)
+            # full flow: authorize mints server-side state + PKCE, callback consumes it
+            au = c.get("/api/v1/oauth/google/authorize", headers=h, params={
+                "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(au).query)
+            assert "state" in q and "code_challenge" in q and q["code_challenge_method"] == ["S256"]
+            r = c.get("/api/v1/oauth/google/callback",
+                      params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
             assert r.status_code == 302, r.text
             assert "/#/mailboxes?connected=" in r.headers["location"]
+            # state is single-use: replay fails
+            r2 = c.get("/api/v1/oauth/google/callback",
+                       params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
+            assert r2.status_code == 400
 
             db = SessionLocal()
             try:
