@@ -91,7 +91,10 @@ python3 backend/scripts/live_demo_check.py            # terminal 2 (uses admin/a
 The script checks env/keys, API health, login, an ingest roundtrip whose Why-breakdown must sum to the score, plus campaigns/model/oauth/gmail endpoints, and exits non-zero with FAIL lines for anything needing attention. For a fully live demo set `ENABLE_LIVE_LOOKUPS=1` with real keys (`VIRUSTOTAL_API_KEY`, MaxMind DB at `GeoLite2-City.mmdb`, `MISP_URL/KEY`) and `SECRET_KEY`/`CUSTODY_KEY` from your secrets manager — rehearse the script once with those set.
 
 ### Configuration
-- `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
+- `ENABLE_LIVE_LOOKUPS=1` — **recommended for any live deployment**: opt into live enrichment (ip-api over HTTPS, WHOIS, DNS, DNSBL, URLhaus, SPF/DKIM/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network. Offline, auth checks report `unverifiable` (distinct from real failures) and score near-zero.
+- `TRUSTED_RELAY_HOSTS` / `TRUSTED_RELAY_IPS` (comma-separated) — your own relays, used as the trust boundary for origin-IP extraction.
+- `KNOWN_LEGIT_DOMAINS` (comma-separated) — extra brands for lookalike-domain detection, appended to the built-in list.
+- Operator blocklist lives in `backend/data/local_blocklist.txt` (one domain per line), not in code; hard-coded demo domains only fire in development.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
 - `CUSTODY_KEY` — HMAC key for chain-of-custody report signatures. **Must be provisioned from a secrets manager in any non-local deployment**; the app refuses to start when `APP_ENV` is not `development` and no key is set. (`APP_ENV=development` is the local default and keeps an explicit dev fallback.)
 - `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task.
