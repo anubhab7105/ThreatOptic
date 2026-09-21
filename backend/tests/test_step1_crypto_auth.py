@@ -73,13 +73,18 @@ def test_refresh_rotation_and_reuse_detection():
         # the rotated token is dead too (whole family revoked on reuse)
         r3 = c.post("/api/v1/auth/refresh", json={"refresh_token": rotated["refresh_token"]})
         assert r3.status_code == 401
-        # fresh login still works after the incident
-        assert c.post("/api/v1/auth/login", json={"username": uname, "password": "Str0ngPass!"}).status_code == 200
         db = SessionLocal()
         try:
             u = db.query(models.User).filter_by(username=uname).first()
             rows = db.query(models.RefreshToken).filter_by(user_id=u.id).all()
             assert rows and all(r.revoked for r in rows)
+        finally:
+            db.close()
+        # fresh login still works after the incident
+        assert c.post("/api/v1/auth/login", json={"username": uname, "password": "Str0ngPass!"}).status_code == 200
+        db = SessionLocal()
+        try:
+            u = db.query(models.User).filter_by(username=uname).first()
             db.query(models.RefreshToken).filter_by(user_id=u.id).delete()
             db.delete(u)
             db.commit()
