@@ -134,17 +134,17 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
     if t:
         modified = False
         geo = t.geolocation or {}
-        if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0) or geo.get("source") in ("offline-stub", "fallback", "none"):
-            from ..modules.traceability.geoip import geolocate
+        from ..modules.traceability.geoip import geolocate, has_coords
+        if not has_coords(geo) or geo.get("source") in ("offline-stub", "fallback", "none", "unresolved"):
             new_geo = geolocate(t.origin_ip) if t.origin_ip else None
-            if not new_geo or (new_geo.get("lat") == 0.0 and new_geo.get("lon") == 0.0):
+            if not has_coords(new_geo):
                 for hop in (t.relay_chain or []):
                     for hop_ip in hop.get("ips", []):
                         g = geolocate(hop_ip)
-                        if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                        if has_coords(g):
                             new_geo = g
                             break
-                    if new_geo and (new_geo.get("lat") != 0.0 or new_geo.get("lon") != 0.0):
+                    if has_coords(new_geo):
                         break
             if (not new_geo or (new_geo.get("lat") == 0.0 and new_geo.get("lon") == 0.0)) and e.sender_address:
                 try:

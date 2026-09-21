@@ -93,7 +93,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         _to_thread(flag_infrastructure, origin_ip, "", ""),
         _to_thread(validate_all, raw, headers, origin_ip or "127.0.0.1", envelope_from or hinfo.get("return_path", "")),
     )
-    geo = geo or {"lat": 0.0, "lon": 0.0, "country": "", "city": "", "source": "fallback"}
+    geo = geo or {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
     whois = whois or {}
     dnsd = dnsd or {}
     infra = infra or {"is_vpn_tor": False, "infra_flags": []}
@@ -102,22 +102,23 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
 
     # If origin_ip gave no coordinates, try relay hops or sender domain IP for approximate geolocation
-    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+    from ..modules.traceability.geoip import has_coords
+    if not has_coords(geo):
         for hop in (path or []):
             for hop_ip in hop.get("ips", []):
                 g = geolocate(hop_ip)
-                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                if has_coords(g):
                     geo = g
                     break
-            if geo and (geo.get("lat") != 0.0 or geo.get("lon") != 0.0):
+            if has_coords(geo):
                 break
-    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+    if not has_coords(geo):
         try:
             import socket
             if domain:
                 dip = socket.gethostbyname(domain)
                 g = geolocate(dip)
-                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                if has_coords(g):
                     geo = {**g, "source": "approx-domain-ip"}
         except Exception:
             pass
