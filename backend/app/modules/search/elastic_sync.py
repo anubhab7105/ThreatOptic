@@ -46,6 +46,11 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
         return {"indexed": False, "error": str(e)[:300]}
 
 
+def _escape_like(raw: str) -> str:
+    """Escape LIKE wildcards so user input can't trigger full scans (Step 3)."""
+    return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
     from ...config import get_settings
 

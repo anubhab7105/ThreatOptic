@@ -9,6 +9,10 @@ def build_report_json(email: dict, analysis: dict, trace: dict, attribution: dic
     mail_masked = dict(email)
     if "body_text" in mail_masked:
         mail_masked["body_text"] = mask_text(mail_masked.get("body_text", ""))
+    # Step 3: subjects/addresses can carry PII — mask them as well.
+    for key in ("subject", "sender_address", "recipient_address"):
+        if key in mail_masked:
+            mail_masked[key] = mask_text(mail_masked.get(key, "") or "")
     return {
         "email": mail_masked,
         "analysis": analysis,
@@ -33,7 +37,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story = [
         Paragraph("Email Forensic Report — Chain of Custody Compliant", styles["Title"]),
         Spacer(1, 12),
-        Paragraph(f"Subject: {_esc(email.get('subject',''))[:300]}", styles["Normal"]),
+        Paragraph(f"Subject: {_esc(mask_text(email.get('subject',''))[:300])}", styles["Normal"]),
         Paragraph(f"From: {_esc(mask_text(email.get('sender_address','')))} | To: {_esc(mask_text(email.get('recipient_address','')))}", styles["Normal"]),
         Paragraph(f"Message-ID: {_esc(email.get('message_id',''))} | SHA256: {_esc(email.get('raw_eml_hash',''))}", styles["Normal"]),
         Spacer(1, 12),
