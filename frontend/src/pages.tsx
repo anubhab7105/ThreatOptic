@@ -234,7 +234,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     if (!c) return;
     setBusy(true); setErr(''); setNotice('');
     try {
-      const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined, client_secret: secret || undefined });
+      // Client secret is server-side only (C5) — never sent from the browser.
+      const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined });
       setStatus(r);
       setCode('');
       setNotice(`Connected as ${r.gmail_address}. You can close this tab.`);
@@ -260,7 +261,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/gmail/sync', { max_results: num, query, client_secret: secret || undefined });
+      const r = await jpost('/gmail/sync', { max_results: num, query });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
       void refresh();
       onSynced();
