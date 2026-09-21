@@ -120,15 +120,19 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     body_html = ""
     else:
         try:
-            body_text = msg.get_content()
+            content = msg.get_content()
+            if isinstance(content, bytes):
+                content = content.decode("utf-8", errors="ignore")
+            body_text = sanitize_html(content) if msg.get_content_type() == "text/html" else content
+            if msg.get_content_type() == "text/html":
+                body_html = body_text
         except Exception:
             payload = msg.get_payload(decode=True)
             body_text = payload.decode("utf-8", errors="ignore") if payload else str(msg.get_payload())
 
     if not body_text and body_html:
-        # crude html strip fallback (full defang in url_analyzer)
-        import re
-        body_text = re.sub(r"<[^>]+>", " ", body_html)
+        # body_html is already bleach-sanitized text at this point.
+        body_text = re.sub(r"\s+", " ", body_html).strip()
 
     return {
         "message_id": message_id,

@@ -31,19 +31,69 @@ BEC_PATTERNS = [
 ]
 CREDENTIAL_PATTERNS = [r"\blogin\b", r"\bpassword\b", r"\bverify\b.*\baccount\b", r"\bclick (here|below)\b.*\blogin\b"]
 
-MODEL_PATH = os.environ.get("NLP_MODEL_PATH", os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml_models", "phishing_clf.joblib"))
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml_models")
+# Pinned artifact path (Step 4, C10). The NLP_MODEL_PATH env override is
+# honored in development ONLY — prod never loads an env-controlled path.
+PINNED_MODEL_PATH = os.path.abspath(os.path.join(MODEL_DIR, "phishing_clf.joblib"))
+PINNED_SHA_PATH = PINNED_MODEL_PATH + ".sha256"
+
+
+def _model_path() -> str:
+    try:
+        from ...config import get_settings
+        dev = get_settings().is_development()
+    except Exception:
+        dev = True
+    override = os.environ.get("NLP_MODEL_PATH", "").strip()
+    if override and dev:
+        import logging
+        logging.getLogger("nlp").warning("using NLP_MODEL_PATH override (development only)")
+        return override
+    return PINNED_MODEL_PATH
+
+
+def _verify_checksum(path: str) -> bool:
+    """Refuse to unpickle a model whose pinned checksum doesn't match (C10)."""
+    import hashlib
+    sha_path = path + ".sha256"
+    if path != PINNED_MODEL_PATH or not os.path.exists(sha_path):
+        # Dev overrides / missing sidecar: fail closed to rule fallback.
+        return False if path != PINNED_MODEL_PATH else True
+    try:
+        with open(sha_path) as f:
+            expected = f.read().strip().split()[0]
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest() == expected
+    except Exception:
+        return False
+
 
 _classifier = None
+_transformer_pipe = None
+
+
+def warmup() -> None:
+    """Load + verify the model once at startup (called from lifespan)."""
+    _get_classifier()
+    _get_transformer()
 
 
 def _get_classifier():
     global _classifier
     if _classifier is not None:
         return _classifier
+    path = _model_path()
     try:
-        if os.path.exists(MODEL_PATH):
+        if path == PINNED_MODEL_PATH and not _verify_checksum(path):
+            import logging
+            logging.getLogger("nlp").error("model checksum mismatch — refusing to load, using rule fallback")
+            return None
+        if os.path.exists(path):
             import joblib
-            _classifier = joblib.load(MODEL_PATH)
+            _classifier = joblib.load(path)
             return _classifier
     except Exception:
         pass
