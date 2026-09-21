@@ -56,6 +56,18 @@ class EmailIngestResponse(BaseModel):
     action: str
 
 
+class AsyncIngestResponse(BaseModel):
+    task_id: str
+    status: str = "queued"
+
+
+class AsyncTaskStatus(BaseModel):
+    task_id: str
+    state: str
+    result: dict | None = None
+    error: str | None = None
+
+
 class AnalysisOut(BaseModel):
     id: str
     email_id: str

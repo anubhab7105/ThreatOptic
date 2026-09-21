@@ -54,10 +54,21 @@ class IngestBody(BaseModel):
     source: str = "api"
 
 
-@router.post("/emails/ingest", response_model=schemas.EmailIngestResponse)
+@router.post("/emails/ingest", response_model=schemas.EmailIngestResponse | schemas.AsyncIngestResponse,
+               status_code=200)
 @limiter.limit("60/minute")
-async def ingest_text(payload: IngestBody, request: Request, db: Session = Depends(get_db),
+async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = Query(False),
+                      db: Session = Depends(get_db),
                       user: models.User = Depends(require_roles(*READ_WRITE))):
+    if async_mode:
+        from ..services.tasks import analyze_email_task, broker_configured
+        if not broker_configured():
+            raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
+        import base64
+        task = analyze_email_task.delay(base64.b64encode(payload.raw.encode()).decode(),
+                                        payload.source or "api", "", user.organization_id)
+        audit("email.ingest.queued", user=user.username, task_id=task.id)
+        return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
         res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api",
                                       organization_id=user.organization_id)
@@ -67,6 +78,8 @@ async def ingest_text(payload: IngestBody, request: Request, db: Session = Depen
         log.exception("ingest failed")
         raise HTTPException(500, "analysis failed")
     audit("email.ingest", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
+    from ..modules.cache import cache_delete_prefix
+    cache_delete_prefix("dash:")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 
@@ -88,6 +101,8 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), db: Session
         log.exception("upload ingest failed")
         raise HTTPException(500, "analysis failed")
     audit("email.upload", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
+    from ..modules.cache import cache_delete_prefix
+    cache_delete_prefix("dash:")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 

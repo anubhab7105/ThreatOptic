@@ -42,6 +42,11 @@ async def _smtp_consumer() -> None:
                     envelope_from=payload.get("envelope_from", ""),
                 )
                 log.info("SMTP mail analyzed: %s score=%s", res["email_id"], res["fraud_score"])
+                try:
+                    from .modules.cache import cache_delete_prefix
+                    cache_delete_prefix("dash:")
+                except Exception:
+                    pass
             except Exception:
                 log.exception("SMTP pipeline run failed")
             finally:

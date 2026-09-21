@@ -77,6 +77,12 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
         out["synced"] = len(out["email_ids"])
         conn.last_poll_at = _utcnow()
         db.commit()
+        if out["synced"]:
+            try:
+                from ..modules.cache import cache_delete_prefix
+                cache_delete_prefix("dash:")
+            except Exception:
+                pass
         return out
     except Exception as e:
         db.rollback()
