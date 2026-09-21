@@ -466,6 +466,10 @@ def model_metrics():
 
     Metrics are computed and cached by backend/scripts/train_nlp.py.
     """
+    return _load_model_metrics()
+
+
+def _load_model_metrics() -> dict:
     import json
     import os
     metrics_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "metrics.json"))
