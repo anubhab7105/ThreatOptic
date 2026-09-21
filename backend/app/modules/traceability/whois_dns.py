@@ -101,6 +101,18 @@ def dns_lookup_uncached(domain: str) -> dict[str, Any]:
     return out
 
 
+def dns_lookup(domain: str) -> dict[str, Any]:
+    """Public entry: shared cache (1h TTL) in front of the compute path."""
+    from ..cache import cache_get, cache_set
+    key = (domain or "").strip().lower()
+    hit = cache_get(f"dns:{key}")
+    if isinstance(hit, dict):
+        return dict(hit)
+    res = dict(dns_lookup_uncached(key))
+    cache_set(f"dns:{key}", res, 3600)
+    return res
+
+
 def domain_age_days(whois_data: dict) -> int | None:
     """Best-effort parse of creation_date to days. None if unknown.
 

@@ -202,6 +202,11 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
 
 @router.get("/dashboard", response_model=schemas.DashboardStats)
 def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    from ..modules.cache import cache_get, cache_set
+    scope = "admin" if user.role == "Admin" else (user.organization_id or "none")
+    hit = cache_get(f"dash:{scope}")
+    if isinstance(hit, dict):
+        return hit
     from ..services.campaigns import _ensure_graph
     _ensure_graph(db)
     email_q = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
@@ -243,9 +248,11 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
             dist["medium"] += 1
         else:
             dist["low"] += 1
-    return {"total_emails": total, "blocked_threats": blocked,
-            "active_campaigns": len(find_campaigns()), "by_classification": by,
-            "recent": recent, "score_distribution": dist}
+    stats = {"total_emails": total, "blocked_threats": blocked,
+             "active_campaigns": len(find_campaigns()), "by_classification": by,
+             "recent": recent, "score_distribution": dist}
+    cache_set(f"dash:{scope}", stats, 300)
+    return stats
 
 
 @router.get("/search")
