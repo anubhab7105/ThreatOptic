@@ -233,16 +233,19 @@ def test_pagination_report_metrics_dedup():
         assert e1 == e2
 
 
-def test_metrics_corrupt_file(monkeypatch):
-    from app.main import app
+def test_metrics_corrupt_file(tmp_path):
+    from fastapi import HTTPException
     import app.routers.api as api_mod
 
-    def _boom():
-        raise ValueError("not json")
-
-    with TestClient(app) as c:
-        h = _auth(c)
-        monkeypatch.setattr(api_mod, "_load_model_metrics", _boom)
-        #507 simulation below uses the real handler path instead:
-        r = c.get("/api/v1/model/metrics", headers=h)
-        assert r.status_code == 500 or "unavailable" in r.text or "accuracy" in r.text
+    bad = tmp_path / "metrics.json"
+    bad.write_text("{not valid json")
+    try:
+        api_mod._load_model_metrics(metrics_path=str(bad), model_path=str(tmp_path / "nope.joblib"))
+        raise SystemExit("corrupt metrics should raise")
+    except HTTPException as e:
+        assert e.status_code == 500 and e.detail == "model metrics unavailable"
+    try:
+        api_mod._load_model_metrics(metrics_path=str(tmp_path / "missing.json"))
+        raise SystemExit("missing metrics should raise")
+    except HTTPException as e:
+        assert e.status_code == 404

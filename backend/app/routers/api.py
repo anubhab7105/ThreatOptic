@@ -469,11 +469,13 @@ def model_metrics():
     return _load_model_metrics()
 
 
-def _load_model_metrics() -> dict:
+def _load_model_metrics(metrics_path: str | None = None, model_path: str | None = None) -> dict:
     import json
     import os
-    metrics_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "metrics.json"))
-    model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "phishing_clf.joblib"))
+    if metrics_path is None:
+        metrics_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "metrics.json"))
+    if model_path is None:
+        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ml_models", "phishing_clf.joblib"))
     if not os.path.exists(metrics_path):
         raise HTTPException(404, "metrics not computed yet (run: python backend/scripts/train_nlp.py)")
     try:
