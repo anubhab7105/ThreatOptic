@@ -93,6 +93,11 @@ async def lifespan(app: FastAPI):
             consumer.cancel()
         if controller:
             controller.stop()
+        try:
+            from .modules.graph.store import close_neo
+            close_neo()
+        except Exception:
+            pass
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
