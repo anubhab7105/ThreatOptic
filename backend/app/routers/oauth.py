@@ -172,7 +172,8 @@ async def callback(
             models.OAuthState.expires_at < _utcnow())).delete(synchronize_session=False)
     db.commit()
     audit("oauth.callback", provider=p, account=address)
-    base = get_settings().frontend_url.rstrip("/")
+    raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
+    base = raw_front or "https://socforensics.io"
     return RedirectResponse(f"{base}/mailboxes?connected={p}:{address}", status_code=302)
 
 

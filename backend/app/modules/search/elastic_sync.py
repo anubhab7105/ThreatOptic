@@ -35,10 +35,13 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
     if es is None:
         return {"indexed": False, "skipped": True}
     try:
+        # Store organization_id both nested and top-level for filtering robustness
+        org = email_doc.get("organization_id")
+        doc = {"email": email_doc, "analysis": analysis_doc, "organization_id": org}
         es.index(
             index=get_settings().elastic_index,
             id=email_id,
-            document={"email": email_doc, "analysis": analysis_doc},
+            document=doc,
         )
         return {"indexed": True}
     except Exception as e:
@@ -78,10 +81,15 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
             }}
             if organization_id != "__all__":
                 # Tenant filter inside ES; docs without org match NULL-org tenants.
-                should = [{"term": {"organization_id": organization_id}}]
+                # Legacy docs may only have email.organization_id, so check both.
                 if organization_id is None:
-                    should = [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]
-                es_query = {"bool": {"must": [es_query], "filter": should}}
+                    es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]}}
+                else:
+                    should = [
+                        {"term": {"organization_id": organization_id}},
+                        {"term": {"email.organization_id": organization_id}},
+                    ]
+                    es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"should": should, "minimum_should_match": 1}}]}}
             res = es.search(
                 index=get_settings().elastic_index,
                 query=es_query,

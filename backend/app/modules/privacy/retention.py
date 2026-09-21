@@ -27,17 +27,26 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
     from ..search.elastic_sync import delete_email
     from ..graph.store import remove_email_graph
 
-    offset = 0
+    # Keyset pagination (no offset) — offset + delete caused row skips.
+    # We page by (timestamp, id) cursor so deletions never cause gaps.
+    last_ts = None
+    last_id = ""
     while True:
-        batch = (db.query(EmailRecord)
-                 .filter(EmailRecord.timestamp < clean_cut_db)
-                 .order_by(EmailRecord.timestamp)
-                 .limit(BATCH).offset(offset).all())
+        q = db.query(EmailRecord).filter(EmailRecord.timestamp < clean_cut_db)
+        if last_ts is not None:
+            q = q.filter(
+                (EmailRecord.timestamp > last_ts) |
+                ((EmailRecord.timestamp == last_ts) & (EmailRecord.id > last_id))
+            )
+        batch = q.order_by(EmailRecord.timestamp, EmailRecord.id).limit(BATCH).all()
         if not batch:
             break
         email_ids = [e.id for e in batch]
         analyses = {a.email_id: a for a in
                     db.query(AnalysisResult).filter(AnalysisResult.email_id.in_(email_ids)).all()}
+        # Track cursor before mutations
+        last_ts = batch[-1].timestamp
+        last_id = batch[-1].id
         try:
             for e in batch:
                 a = analyses.get(e.id)
@@ -67,5 +76,4 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
             db.rollback()
             log.exception("retention batch failed, rolled back")
             raise
-        offset += BATCH
     return {"purged_body": purged_body, "deleted": deleted}

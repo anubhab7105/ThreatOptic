@@ -28,13 +28,21 @@ def _ensure_graph(db: Session) -> None:
                 upsert_email_graph(sender, ip, [domain] if domain else [])
 
 
-def campaign_cards(db: Session) -> list[dict]:
+def campaign_cards(db: Session, organization_id: str | None = None) -> list[dict]:
     _ensure_graph(db)
     clusters = find_campaigns()
     if not clusters:
         return []
-    emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
-    traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn).all()}
+    # Tenant isolation: scope emails/traces to caller's org unless Admin (None)
+    if organization_id is None:
+        emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
+        traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn).all()}
+    else:
+        emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).filter(
+            models.EmailRecord.organization_id == organization_id).all()
+        traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn
+            ).join(models.EmailRecord, models.TraceabilityData.email_id == models.EmailRecord.id
+            ).filter(models.EmailRecord.organization_id == organization_id).all()}
 
     cards: list[dict] = []
     for c in clusters:
@@ -69,13 +77,23 @@ def campaign_cards(db: Session) -> list[dict]:
     return sorted(cards, key=lambda k: (-k["email_count"], -k["confidence"]))
 
 
-def campaign_detail(db: Session, cid: str) -> dict | None:
-    card = next((c for c in campaign_cards(db) if c["id"] == cid), None)
+def campaign_detail(db: Session, cid: str, organization_id: str | None = None) -> dict | None:
+    card = next((c for c in campaign_cards(db, organization_id=organization_id) if c["id"] == cid), None)
     if not card:
         return None
-    emails = db.query(models.EmailRecord.id, models.EmailRecord.subject, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
-    traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip).all()}
-    analyses = {a.email_id: a for a in db.query(models.AnalysisResult.email_id, models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification).all()}
+    if organization_id is None:
+        emails = db.query(models.EmailRecord.id, models.EmailRecord.subject, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
+        traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip).all()}
+        analyses = {a.email_id: a for a in db.query(models.AnalysisResult.email_id, models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification).all()}
+    else:
+        emails = db.query(models.EmailRecord.id, models.EmailRecord.subject, models.EmailRecord.sender_address, models.EmailRecord.timestamp).filter(
+            models.EmailRecord.organization_id == organization_id).all()
+        traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip
+            ).join(models.EmailRecord, models.TraceabilityData.email_id == models.EmailRecord.id
+            ).filter(models.EmailRecord.organization_id == organization_id).all()}
+        analyses = {a.email_id: a for a in db.query(models.AnalysisResult.email_id, models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification
+            ).join(models.EmailRecord, models.AnalysisResult.email_id == models.EmailRecord.id
+            ).filter(models.EmailRecord.organization_id == organization_id).all()}
     rows = []
     for e in emails:
         sender = (e.sender_address or "").lower()

@@ -291,8 +291,14 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
             dist["medium"] += 1
         else:
             dist["low"] += 1
+    from ..services.campaigns import campaign_cards as _campaign_cards
+    scope_org = None if user.role == "Admin" else user.organization_id
+    try:
+        active = len(_campaign_cards(db, organization_id=scope_org))
+    except Exception:
+        active = 0
     stats = {"total_emails": total, "blocked_threats": blocked,
-             "active_campaigns": len(find_campaigns()), "by_classification": by,
+             "active_campaigns": active, "by_classification": by,
              "recent": recent, "score_distribution": dist}
     cache_set(f"dash:{scope}", stats, 300)
     return stats
@@ -307,7 +313,8 @@ def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query
 
 
 @router.get("/graph/related")
-def graph_related(value: str = Query(..., min_length=1, max_length=320)):
+def graph_related(value: str = Query(..., min_length=1, max_length=320),
+                 db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     import re
     # Accept full "Name <addr>" headers — extract bare email for lookup.
     m = re.search(r"[\w.\-+]+@[\w.\-]+\.\w+", value or "")
@@ -316,20 +323,22 @@ def graph_related(value: str = Query(..., min_length=1, max_length=320)):
 
 
 @router.get("/graph/campaigns")
-def graph_campaigns():
+def graph_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return find_campaigns()
 
 
 @router.get("/campaigns", response_model=list[schemas.CampaignCard])
-def list_campaigns(db: Session = Depends(get_db)):
+def list_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import campaign_cards
-    return campaign_cards(db)
+    scope = None if user.role == "Admin" else user.organization_id
+    return campaign_cards(db, organization_id=scope)
 
 
 @router.get("/campaigns/{cid}", response_model=schemas.CampaignDetail)
-def get_campaign(cid: str, db: Session = Depends(get_db)):
+def get_campaign(cid: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import campaign_detail
-    detail = campaign_detail(db, cid)
+    scope = None if user.role == "Admin" else user.organization_id
+    detail = campaign_detail(db, cid, organization_id=scope)
     if not detail:
         raise HTTPException(404, "campaign not found")
     return detail
@@ -403,9 +412,11 @@ def delete_case(
     return {"deleted": case_id}
 
 
-def _report_context(email_id: str, db: Session):
+def _report_context(email_id: str, db: Session, user: models.User | None = None):
     e = db.query(models.EmailRecord).filter(models.EmailRecord.id == email_id).first()
     if not e:
+        raise HTTPException(404, "email not found")
+    if user is not None and user.role != "Admin" and e.organization_id != user.organization_id:
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
@@ -413,10 +424,10 @@ def _report_context(email_id: str, db: Session):
 
 
 @router.get("/reports/{email_id}.json")
-def report_json(email_id: str, db: Session = Depends(get_db)):
+def report_json(email_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..modules.reporting.generator import build_report_json
     from ..modules.graph.attribution import attribute
-    e, a, t = _report_context(email_id, db)
+    e, a, t = _report_context(email_id, db, user)
     email_d = {"subject": e.subject, "sender_address": e.sender_address, "recipient_address": e.recipient_address,
                "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash, "body_text": e.body_text_masked}
     analysis_d = {"fraud_score": a.fraud_score, "threat_classification": a.threat_classification,
@@ -428,13 +439,13 @@ def report_json(email_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/reports/{email_id}.pdf")
-def report_pdf(email_id: str, db: Session = Depends(get_db)):
+def report_pdf(email_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..modules.reporting.generator import build_report_pdf
     from ..modules.graph.attribution import attribute
     if not re.match(r"^[A-Za-z0-9\-]{1,64}$", email_id or ""):
         # email_id lands in Content-Disposition: reject anything else.
         raise HTTPException(400, "invalid report id")
-    e, a, t = _report_context(email_id, db)
+    e, a, t = _report_context(email_id, db, user)
     email_d = {"subject": e.subject, "sender_address": e.sender_address, "recipient_address": e.recipient_address,
                "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash}
     analysis_d = {"fraud_score": a.fraud_score if a else 0,

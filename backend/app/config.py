@@ -37,7 +37,16 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in str(self.cors_origins).split(",") if o.strip()]
+        # Normalize: strip whitespace + trailing slash so browsers' Origin
+        # (which never carries a trailing slash) matches the setting.
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in str(self.cors_origins).split(","):
+            cand = raw.strip().rstrip("/")
+            if cand and cand not in seen:
+                seen.add(cand)
+                out.append(cand)
+        return out
 
     database_url: str = ""
     # Optional production backends (empty = local fallback)
@@ -97,8 +106,11 @@ class Settings(BaseSettings):
     oauth_redirect_allowlist: str = ""
 
     def oauth_redirect_allowed(self, uri: str) -> bool:
+        # FRONTEND_URL may contain multiple origins (comma-separated during
+        # migration); treat each as an allowed redirect base.
+        frontends = [u.strip().rstrip("/") for u in str(self.frontend_url or "").split(",") if u.strip()]
         allowed = {
-            (self.frontend_url or "").rstrip("/"),
+            *(frontends),
             (self.google_redirect_uri or "").rstrip("/"),
             *((u.strip().rstrip("/") for u in str(self.oauth_redirect_allowlist).split(",") if u.strip())),
         }
@@ -118,9 +130,9 @@ class Settings(BaseSettings):
     smtp_enabled: str = "0"
     smtp_host: str = "127.0.0.1"
     smtp_port: int = 1025
-    # Step 5 (C8): AUTH required when SMTP_REQUIRE_AUTH=1 (needs USERNAME +
-    # PASSWORD set); TLS enforced when cert+key are configured; DATA capped.
-    smtp_require_auth: str = "0"
+    # Step 5 (C8): AUTH required by default (set SMTP_REQUIRE_AUTH=0 to
+    # allow anonymous localhost injection in dev). TLS enforced when cert+key are configured; DATA capped.
+    smtp_require_auth: str = "1"
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_data_limit_bytes: int = 10 * 1024 * 1024
