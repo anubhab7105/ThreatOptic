@@ -289,7 +289,6 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           <div className="row">
             <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
             <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
-            <input type="password" style={{ maxWidth: 220 }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret (if not in env)" autoComplete="off" />
             <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
             <button className="ghost" onClick={disconnect}>Disconnect</button>
           </div>
@@ -306,9 +305,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
             <div className="row">
               <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !redirectUri.trim()}>Connect Gmail</button>
             </div>
-            <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
             <div className="row">
-              <button onClick={() => finish()} disabled={busy || !code.trim() || !secret}>Finish connection</button>
+              <button onClick={() => finish()} disabled={busy || !code.trim()}>Finish connection</button>
             </div>
           </div>
         </div>
