@@ -320,7 +320,10 @@ def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db)
     if payload.status is not None:
         c.status = payload.status.value
     if payload.title is not None:
-        c.title = payload.title.strip()
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(400, "title must not be blank")
+        c.title = title
     if payload.notes is not None:
         c.notes = str(payload.notes)
     if payload.assignee_id is not None:

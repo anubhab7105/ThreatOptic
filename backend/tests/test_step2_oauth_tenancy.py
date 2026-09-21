@@ -147,7 +147,7 @@ def test_case_update_schema():
         # unknown field rejected, bad types rejected
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"hacked": 1}).status_code == 422
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"email_ids": "nope"}).status_code == 422
-        assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"title": "  "}).status_code == 422
+        assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"title": "  "}).status_code == 400
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"assignee_id": "missing-id"}).status_code == 400
         r = c.patch(f"/api/v1/cases/{cid}", headers=h, json={"status": "Closed", "notes": "done"})
         assert r.status_code == 200 and r.json()["status"] == "Closed"
@@ -260,6 +260,7 @@ def test_rate_limit_and_lockout(monkeypatch):
     settings = gs()
     monkeypatch.setattr(settings, "rate_limit_enabled", "1")
     rl.limiter.enabled = True
+    rl.limiter._storage.reset()
     try:
         with TestClient(app) as c:
             uname = _uname("flood")
@@ -268,6 +269,7 @@ def test_rate_limit_and_lockout(monkeypatch):
             codes = [c.post("/api/v1/auth/login",
                             json={"username": uname, "password": "wrong-wrong"}).status_code for _ in range(6)]
             assert codes[:5] == [401] * 5 and codes[5] == 429
+            rl.limiter._storage.reset()
             # slowapi: 11 rapid correct logins -> 11th is 429
             uname2 = _uname("steady")
             c.post("/api/v1/auth/register", json={"username": uname2, "password": "Str0ngPass!"})
