@@ -124,7 +124,8 @@ class GmailAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class MailboxConnection(Base):    """Organization-level mailbox connection for background polling (F7).
+class MailboxConnection(Base):
+    """Organization-level mailbox connection for background polling (F7).
 
     Refresh tokens are Fernet-encrypted (modules/auth/vault.py).
     """
