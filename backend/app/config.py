@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     redis_url: str = ""
     # Celery async ingestion (Phase 3). Empty = synchronous pipeline (default).
     celery_broker_url: str = ""
+    celery_result_backend: str = "cache+memory://"
 
     maxmind_db_path: str = "./GeoLite2-City.mmdb"
     virustotal_api_key: str = ""

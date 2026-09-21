@@ -16,9 +16,12 @@ def _celery_app():
     from celery import Celery
     from ..config import get_settings
 
-    broker = (get_settings().celery_broker_url or "").strip()
-    app = Celery("soc", broker=broker or "memory://")
-    app.conf.update(task_acks_late=True, worker_prefetch_multiplier=1)
+    settings = get_settings()
+    broker = (settings.celery_broker_url or "").strip()
+    backend = (settings.celery_result_backend or "cache+memory://").strip()
+    app = Celery("soc", broker=broker or "memory://", backend=backend)
+    app.conf.update(task_acks_late=True, worker_prefetch_multiplier=1,
+                    task_store_eager_result=True)
     return app
 
 
@@ -42,9 +45,7 @@ def analyze_email_task(self, raw_b64: str, source: str = "api",
     db = SessionLocal()
     try:
         try:
-            res = asyncio.run(process_raw_email(
-                db, raw, source=source, envelope_from=envelope_from,
-                organization_id=organization_id))
+            res = _run_pipeline(db, raw, source, envelope_from, organization_id)
         except Exception as e:
             log.warning("celery task retry: %s", type(e).__name__)
             raise self.retry(exc=e, countdown=5)
@@ -57,3 +58,23 @@ def analyze_email_task(self, raw_b64: str, source: str = "api",
                 "classification": res["classification"], "action": res["action"]}
     finally:
         db.close()
+
+
+def _run_pipeline(db, raw: bytes, source: str, envelope_from: str, organization_id: str | None) -> dict:
+    """Drive the async pipeline with or without a running event loop.
+
+    Real workers have no running loop (plain asyncio.run). Eager inline
+    execution inside an async endpoint DOES — so run in a helper thread
+    with a fresh loop instead of deadlocking.
+    """
+    from .pipeline import process_raw_email
+
+    coro = process_raw_email(db, raw, source=source, envelope_from=envelope_from,
+                             organization_id=organization_id)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
