@@ -163,7 +163,7 @@ function NotFoundPage() {
           <a href="https://socforensics.io/" rel="canonical">socforensics.io</a>
         </div>
       </div>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - SOC Forensics Lab',
         description: 'Requested forensic resource not found', url: `${CANONICAL_BASE}/404`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
