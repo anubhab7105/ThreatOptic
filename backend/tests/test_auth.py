@@ -68,8 +68,8 @@ def test_register_login_refresh_me():
 
         # duplicate
         assert c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).status_code == 400
-        # bad role on public registration
-        assert c.post("/api/v1/auth/register", json={"username": _uname("x"), "password": "Str0ngPass!", "role": "Admin"}).status_code == 400
+        # Admin role without setup token is forbidden (C2; was 400 before setup-token bootstrap)
+        assert c.post("/api/v1/auth/register", json={"username": _uname("x"), "password": "Str0ngPass!", "role": "Admin"}).status_code == 403
         # weak password
         assert c.post("/api/v1/auth/register", json={"username": _uname("y"), "password": "short"}).status_code == 422
 
@@ -81,7 +81,7 @@ def test_register_login_refresh_me():
         me = c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {pair2['access_token']}"})
         assert me.status_code == 200, me.text
         assert me.json()["username"] == uname
-        assert me.json()["role"] in ("Admin", "Analyst")
+        assert me.json()["role"] == "ReadOnly"  # lowest-privilege default (C2)
 
         # refresh rotation
         r = c.post("/api/v1/auth/refresh", json={"refresh_token": pair2["refresh_token"]})
