@@ -1,6 +1,5 @@
 """WHOIS + DNS/MX lookups. Offline-safe; live lookups only when ENABLE_LIVE_LOOKUPS=1."""
 import os
-import socket
 from functools import lru_cache
 from typing import Any
 
@@ -98,9 +97,25 @@ def dns_lookup(domain: str) -> dict[str, Any]:
 
 
 def domain_age_days(whois_data: dict) -> int | None:
-    """Best-effort parse of creation_date to days. None if unknown."""
+    """Best-effort parse of creation_date to days. None if unknown.
+
+    Handles date, datetime, ISO-Z strings, and list-valued whois fields.
+    """
     from datetime import datetime, timezone
-    raw = str(whois_data.get("creation_date", "")).strip()[:25]
+    raw_val = whois_data.get("creation_date", "")
+    if isinstance(raw_val, (list, tuple)):
+        raw_val = raw_val[0] if raw_val else ""
+    raw = str(raw_val).strip()[:30]
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:  # full ISO first (covers offsets and fractional seconds)
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).days
+    except Exception:
+        pass
     for fmt, width in (("%Y-%m-%d", 10), ("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%dT%H:%M:%S", 19)):
         try:
             dt = datetime.strptime(raw[:width], fmt).replace(tzinfo=timezone.utc)
