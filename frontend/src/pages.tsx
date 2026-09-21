@@ -201,7 +201,6 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const [code, setCode] = useState('');
-  const [secret, setSecret] = useState('');
   const [query, setQuery] = useState('is:unread');
   const [maxN, setMaxN] = useState('10');
   const [busy, setBusy] = useState(false);
