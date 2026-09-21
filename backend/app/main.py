@@ -96,6 +96,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def _ratelimit_exceeded(request: Request, exc: RateLimitExceeded):
+    return JSONResponse({"detail": "rate limit exceeded, slow down"}, status_code=429)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
