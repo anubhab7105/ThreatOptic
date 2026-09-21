@@ -173,7 +173,9 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     email_row = EmailRecord(
         message_id=parsed.get("message_id", ""), sender_address=parsed.get("sender_address", ""),
         recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
-        raw_headers=headers, body_text=body, body_text_masked=masked_body,
+        # Step 3: raw body_text is NEVER persisted — only the masked version.
+        # The raw body lives in memory for this run (scoring/masking) and is dropped.
+        raw_headers=headers, body_text="", body_text_masked=masked_body,
         attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
         timestamp=parsed.get("timestamp") or datetime.now(timezone.utc),
         organization_id=organization_id,

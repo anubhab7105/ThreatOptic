@@ -366,7 +366,7 @@ def report_json(email_id: str, db: Session = Depends(get_db)):
     from ..modules.graph.attribution import attribute
     e, a, t = _report_context(email_id, db)
     email_d = {"subject": e.subject, "sender_address": e.sender_address, "recipient_address": e.recipient_address,
-               "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash, "body_text": e.body_text}
+               "message_id": e.message_id, "raw_eml_hash": e.raw_eml_hash, "body_text": e.body_text_masked}
     analysis_d = {"fraud_score": a.fraud_score, "threat_classification": a.threat_classification,
                   "nlp_cues_detected": a.nlp_cues_detected, "authentication_results": a.authentication_results,
                   "action_taken": a.action_taken, "score_breakdown": a.score_breakdown or []} if a else {}
