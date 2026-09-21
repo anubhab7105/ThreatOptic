@@ -1,14 +1,47 @@
-"""Robust MIME parser: headers, body (text/html), attachments metadata, .eml hash."""
+"""Robust MIME parser: headers, body (text/html), attachments metadata, .eml hash.
+
+Step 4 (C9) hardening:
+- hard caps: max .eml bytes, max attachment count/size (ValueError over).
+- HTML is sanitized with bleach: <script>/<style> elements removed
+  entirely, then all remaining tags stripped. The stored/returned
+  body_html is the SANITIZED version — never raw markup — so downstream
+  rendering cannot execute stored scripts.
+- malformed MIME raises ValueError (API maps to 400), never a raw traceback.
+"""
 import email
 import email.policy
 import hashlib
+import re
 from email.message import Message
 from typing import Any
 
+MAX_EML_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENTS = 20
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def sanitize_html(html_text: str) -> str:
+    """Remove script/style elements, then strip all tags. Returns text."""
+    no_scripts = _SCRIPT_STYLE_RE.sub(" ", html_text or "")
+    try:
+        import bleach
+        return bleach.clean(no_scripts, tags=[], attributes={}, strip=True)
+    except Exception:
+        return re.sub(r"<[^>]+>", " ", no_scripts)
+
 
 def parse_eml(raw: bytes) -> dict[str, Any]:
+    if not isinstance(raw, (bytes, bytearray)):
+        raise ValueError("email payload must be bytes")
+    if len(raw) > MAX_EML_BYTES:
+        raise ValueError(f"email exceeds {MAX_EML_BYTES} byte limit")
     sha = hashlib.sha256(raw).hexdigest()
-    msg: Message = email.message_from_bytes(raw, policy=email.policy.default)
+    try:
+        msg: Message = email.message_from_bytes(bytes(raw), policy=email.policy.default)
+    except Exception as e:
+        raise ValueError(f"malformed message: {e}")
 
     raw_headers: dict[str, str] = {}
     for k, v in msg.raw_items():
@@ -62,6 +95,8 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
             disp = part.get_content_disposition()
             if disp == "attachment":
                 payload = part.get_payload(decode=True) or b""
+                if len(payload) > MAX_ATTACHMENT_BYTES:
+                    raise ValueError(f"attachment exceeds {MAX_ATTACHMENT_BYTES} byte limit")
                 attachments.append({
                     "filename": part.get_filename() or "unnamed",
                     "content_type": ctype,
@@ -71,6 +106,8 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     # retaining the (possibly malicious) full payload.
                     "magic": payload[:8].hex(),
                 })
+                if len(attachments) > MAX_ATTACHMENTS:
+                    raise ValueError(f"email exceeds {MAX_ATTACHMENTS} attachments")
             elif ctype == "text/plain" and not body_text:
                 try:
                     body_text = part.get_content()
@@ -78,7 +115,7 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     body_text = ""
             elif ctype == "text/html" and not body_html:
                 try:
-                    body_html = part.get_content()
+                    body_html = sanitize_html(part.get_content())
                 except Exception:
                     body_html = ""
     else:
