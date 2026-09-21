@@ -111,10 +111,14 @@ async def sync(
         raw_token = vault.decrypt_secret(acct.refresh_token)
     except Exception:
         raise HTTPException(400, "stored Gmail credentials are invalid — please disconnect and reconnect the mailbox")
+    # Reuse the client_id pinned at connect time; fail loudly (with a log)
+    # instead of passing an empty string when OAuth is unconfigured.
+    cid = (acct.client_id or "").strip() or settings.google_client_id
+    if not cid:
+        log.error("gmail sync for user %s has no client_id (connect-time or settings)", user.id)
+        raise HTTPException(400, "Google OAuth client_id not configured (env GOOGLE_CLIENT_ID)")
     try:
-        fresh = await connectors.refresh_gmail_token(
-            raw_token, settings.google_client_id or "", _client_secret()
-        )
+        fresh = await connectors.refresh_gmail_token(raw_token, cid, _client_secret())
     except httpx.HTTPError as e:
         raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {e}")
     try:
