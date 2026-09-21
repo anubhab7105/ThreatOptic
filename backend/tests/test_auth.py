@@ -4,10 +4,16 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.database import SessionLocal
 from app import models
 from app.modules.auth.security import create_access_token, hash_password, verify_password
 from app.config import get_settings
+
+
+
+def _session():
+    """Fresh session from the (possibly test-rebound) sessionmaker."""
+    from app.database import SessionLocal
+    return SessionLocal()
 
 
 def _uname(prefix: str) -> str:
@@ -31,7 +37,7 @@ def _login(c: TestClient, username: str, password: str = "Str0ngPass!") -> dict:
 
 def _mk_admin(username: str, password: str = "Str0ngPass!") -> None:
     """Insert an Admin directly (covers RBAC tests regardless of DB bootstrap state)."""
-    db = SessionLocal()
+    db = _session()
     try:
         if not db.query(models.User).filter(models.User.username == username).first():
             db.add(models.User(username=username, password_hash=hash_password(password), role="Admin"))
@@ -41,7 +47,7 @@ def _mk_admin(username: str, password: str = "Str0ngPass!") -> None:
 
 
 def _cleanup(*usernames: str) -> None:
-    db = SessionLocal()
+    db = _session()
     try:
         for u in usernames:
             row = db.query(models.User).filter(models.User.username == u).first()
@@ -79,7 +85,11 @@ def test_register_login_refresh_me():
         # wrong password
         assert c.post("/api/v1/auth/login", json={"username": uname, "password": "nope-nope-nope"}).status_code == 401
         pair2 = _login(c, uname)
-        assert pair2["access_token"] != pair["access_token"] or True  # rotation not required
+        # refresh rotation is real: distinct logins mint distinct token ids
+        import jwt as _jwt
+        jti1 = _jwt.decode(pair["refresh_token"], options={"verify_signature": False})["jti"]
+        jti2 = _jwt.decode(pair2["refresh_token"], options={"verify_signature": False})["jti"]
+        assert jti1 and jti2 and jti1 != jti2
 
         me = c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {pair2['access_token']}"})
         assert me.status_code == 200, me.text

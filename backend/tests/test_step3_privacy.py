@@ -5,7 +5,13 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 
 from app import models
-from app.database import SessionLocal
+
+
+
+def _session():
+    """Fresh session from the (possibly test-rebound) sessionmaker."""
+    from app.database import SessionLocal
+    return SessionLocal()
 
 
 def _auth(c: TestClient, role: str = "Analyst") -> dict:
@@ -22,7 +28,7 @@ def test_raw_body_never_persisted():
         raw = ("From: a@b.test\nTo: c@d.test\nSubject: card inside\n\n"
                "my card 4111 1111 1111 1111 please charge it")
         eid = c.post("/api/v1/emails/ingest", headers=h, json={"raw": raw}).json()["email_id"]
-        db = SessionLocal()
+        db = _session()
         try:
             row = db.query(models.EmailRecord).filter_by(id=eid).first()
             assert row.body_text == ""

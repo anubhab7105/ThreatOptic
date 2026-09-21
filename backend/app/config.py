@@ -140,7 +140,10 @@ class Settings(BaseSettings):
         return str(self.smtp_enabled).lower() not in ("", "0", "false", "no")
 
     def resolved_db_url(self) -> str:
-        url = self.database_url or _default_db_url()
+        # TEST_DATABASE_URL wins when set (CI + pytest isolation); it is
+        # never read from .env files, only the real environment.
+        test_url = os.environ.get("TEST_DATABASE_URL", "").strip()
+        url = test_url or self.database_url or _default_db_url()
         # Normalize Supabase / Railway postgres URLs: Heroku-style `postgres://` and
         # bare `postgresql://` need the psycopg2 driver for SQLAlchemy.
         if url.startswith("postgres://"):

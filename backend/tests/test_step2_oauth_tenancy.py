@@ -6,7 +6,13 @@ from fastapi.testclient import TestClient
 
 from app import models
 from app.config import get_settings
-from app.database import SessionLocal
+
+
+
+def _session():
+    """Fresh session from the (possibly test-rebound) sessionmaker."""
+    from app.database import SessionLocal
+    return SessionLocal()
 
 
 def _uname(prefix: str) -> str:
@@ -26,7 +32,7 @@ def _make_org_with_user(c: TestClient, role: str = "Analyst") -> tuple[dict, str
     """Two-step: register, then move user into a fresh org. Returns (headers, user_id, org_id)."""
     uname = _uname("tenant")
     h = _register(c, uname, role=role)
-    db = SessionLocal()
+    db = _session()
     try:
         u = db.query(models.User).filter_by(username=uname).first()
         org = models.Organization(name=f"org-{uname}", compliance_policy={})
@@ -54,7 +60,7 @@ def test_oauth_state_expiry_and_allowlist(monkeypatch):
         r = c.get("/api/v1/oauth/google/callback", params={"code": "x", "state": "bogus-state"})
         assert r.status_code == 400 and "state" in r.text.lower()
         # expired state rejected
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).order_by(models.User.created_at.desc()).first()
             db.add(models.OAuthState(state="expired-state-123", user_id=u.id, provider="google",
@@ -66,7 +72,7 @@ def test_oauth_state_expiry_and_allowlist(monkeypatch):
             db.close()
         r = c.get("/api/v1/oauth/google/callback", params={"code": "x", "state": "expired-state-123"})
         assert r.status_code == 400 and "expired" in r.text.lower()
-        db = SessionLocal()
+        db = _session()
         try:
             db.query(models.OAuthState).filter_by(state="expired-state-123").delete()
             db.commit()
@@ -95,7 +101,7 @@ def test_tenant_isolation_emails_cases_dashboard():
         assert dash_b["total_emails"] == 0
         # owner + admin can
         assert c.get(f"/api/v1/emails/{eid}", headers=ha).status_code == 200
-        db = SessionLocal()
+        db = _session()
         try:
             admin = models.User(username=_uname("root"), password_hash="x", role="Admin", organization_id=org_b)
             db.add(admin)
@@ -110,7 +116,7 @@ def test_tenant_isolation_emails_cases_dashboard():
         assert c.get(f"/api/v1/emails/{eid}", headers=dh).status_code == 200
         assert c.get("/api/v1/dashboard", headers=dh).json()["total_emails"] >= 1
         # cleanup
-        db = SessionLocal()
+        db = _session()
         try:
             for m, col in ((models.AnalysisResult, "email_id"), (models.TraceabilityData, "email_id")):
                 db.query(m).filter(getattr(m, col) == eid).delete()
@@ -171,7 +177,7 @@ def test_provider_refresh_persisted(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     import asyncio
-    db = SessionLocal()
+    db = _session()
     try:
         u = models.User(username=_uname("pol"), password_hash="x", role="Analyst")
         db.add(u)
@@ -186,7 +192,7 @@ def test_provider_refresh_persisted(monkeypatch):
         db.close()
     out = asyncio.run(mailbox_poll.poll_connection_by_id(cid))
     assert out["errors"] == [] and out["synced"] == 0
-    db = SessionLocal()
+    db = _session()
     try:
         row = db.query(models.MailboxConnection).filter_by(id=cid).first()
         assert decrypt_secret(row.encrypted_refresh_token) == "1//rotated"
@@ -230,7 +236,7 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
         r = c.post("/api/v1/gmail/callback", headers=h, json={
             "code": "x", "redirect_uri": "http://localhost:5173/", "client_id": "override-id"})
         assert r.status_code == 200, r.text
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).order_by(models.User.created_at.desc()).first()
             acct = db.query(models.GmailAccount).filter_by(user_id=u.id).first()
@@ -242,7 +248,7 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
         monkeypatch.setattr(settings, "google_client_id", "other-id")
         assert c.post("/api/v1/gmail/sync", headers=h, json={}).status_code == 200
         assert seen.get("cid") == "override-id"
-        db = SessionLocal()
+        db = _session()
         try:
             db.query(models.GmailAccount).filter_by(user_id=uid).delete()
             db.query(models.RefreshToken).filter_by(user_id=uid).delete()

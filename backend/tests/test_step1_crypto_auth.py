@@ -8,7 +8,13 @@ from fastapi.testclient import TestClient
 
 from app import models
 from app.config import get_settings
-from app.database import SessionLocal
+
+
+
+def _session():
+    """Fresh session from the (possibly test-rebound) sessionmaker."""
+    from app.database import SessionLocal
+    return SessionLocal()
 
 
 def _uname(prefix: str) -> str:
@@ -72,7 +78,7 @@ def test_refresh_rotation_and_reuse_detection():
         # the rotated token is dead too (whole family revoked on reuse)
         r3 = c.post("/api/v1/auth/refresh", json={"refresh_token": rotated["refresh_token"]})
         assert r3.status_code == 401
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).filter_by(username=uname).first()
             rows = db.query(models.RefreshToken).filter_by(user_id=u.id).all()
@@ -81,7 +87,7 @@ def test_refresh_rotation_and_reuse_detection():
             db.close()
         # fresh login still works after the incident
         assert c.post("/api/v1/auth/login", json={"username": uname, "password": "Str0ngPass!"}).status_code == 200
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).filter_by(username=uname).first()
             db.query(models.RefreshToken).filter_by(user_id=u.id).delete()
@@ -115,7 +121,7 @@ def test_setup_token_bootstrap(monkeypatch):
         assert r2.json() and c.get(
             "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {r2.json()['access_token']}"}).json()["role"] == "ReadOnly"
-        db = SessionLocal()
+        db = _session()
         try:
             for name in (u, u2):
                 row = db.query(models.User).filter_by(username=name).first()
@@ -194,7 +200,7 @@ def test_gmail_server_side_secret_and_corrupt_token(monkeypatch):
         r = c.post("/api/v1/gmail/callback", headers=h, json={"code": "x", "redirect_uri": "http://localhost:5173/"})
         assert r.status_code == 400 and "GOOGLE_CLIENT_SECRET" in r.text
         # corrupt stored credential -> forced re-auth, not silent plaintext fallback
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).filter_by(username=uname).first()
             db.add(models.GmailAccount(user_id=u.id, gmail_address="x@y.test", refresh_token="not-a-vault-value"))
@@ -204,7 +210,7 @@ def test_gmail_server_side_secret_and_corrupt_token(monkeypatch):
         monkeypatch.setattr(settings, "google_client_secret", "s" * 16)
         r = c.post("/api/v1/gmail/sync", headers=h, json={})
         assert r.status_code == 400 and "reconnect" in r.text
-        db = SessionLocal()
+        db = _session()
         try:
             u = db.query(models.User).filter_by(username=uname).first()
             db.query(models.GmailAccount).filter_by(user_id=u.id).delete()
