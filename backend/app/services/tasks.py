@@ -38,43 +38,44 @@ def broker_configured() -> bool:
 def analyze_email_task(self, raw_b64: str, source: str = "api",
                        envelope_from: str = "", organization_id: str | None = None) -> dict:
     """Run the forensic pipeline in a worker. Returns the pipeline summary."""
-    from ..database import SessionLocal
-    from .pipeline import process_raw_email
-
-    raw = base64.b64decode(raw_b64.encode())
-    db = SessionLocal()
     try:
-        try:
-            res = _run_pipeline(db, raw, source, envelope_from, organization_id)
-        except Exception as e:
-            log.warning("celery task retry: %s", type(e).__name__)
-            raise self.retry(exc=e, countdown=5)
-        try:
-            from ..modules.cache import cache_delete_prefix
-            cache_delete_prefix("dash:")
-        except Exception:
-            pass
-        return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
-                "classification": res["classification"], "action": res["action"]}
-    finally:
-        db.close()
+        res = _run_pipeline(raw_b64, source, envelope_from, organization_id)
+    except Exception as e:
+        log.warning("celery task retry: %s", type(e).__name__)
+        raise self.retry(exc=e, countdown=5)
+    try:
+        from ..modules.cache import cache_delete_prefix
+        cache_delete_prefix("dash:")
+    except Exception:
+        pass
+    return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
+            "classification": res["classification"], "action": res["action"]}
 
 
-def _run_pipeline(db, raw: bytes, source: str, envelope_from: str, organization_id: str | None) -> dict:
-    """Drive the async pipeline with or without a running event loop.
+def _run_pipeline(raw_b64: str, source: str, envelope_from: str, organization_id: str | None) -> dict:
+    """Drive the async pipeline with a session owned by the executing thread.
 
     Real workers have no running loop (plain asyncio.run). Eager inline
     execution inside an async endpoint DOES — so run in a helper thread
     with a fresh loop instead of deadlocking.
     """
+    from ..database import SessionLocal
     from .pipeline import process_raw_email
 
-    coro = process_raw_email(db, raw, source=source, envelope_from=envelope_from,
-                             organization_id=organization_id)
+    def _work() -> dict:
+        raw = base64.b64decode(raw_b64.encode())
+        db = SessionLocal()
+        try:
+            return asyncio.run(process_raw_email(
+                db, raw, source=source, envelope_from=envelope_from,
+                organization_id=organization_id))
+        finally:
+            db.close()
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return _work()
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+        return pool.submit(_work).result()
