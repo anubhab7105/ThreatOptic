@@ -15,7 +15,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..config import get_settings
 from ..database import get_db
+from ..modules.auth.rate_limit import audit, limiter
 from ..modules.auth.vault import encrypt_secret
 from ..modules.ingestion import connectors
 from ..services.mailbox_poll import poll_all_mailboxes_async
@@ -81,8 +82,10 @@ class SyncNowIn(BaseModel):
 
 
 @router.get("/{provider}/authorize")
+@limiter.limit("30/minute")
 def authorize(
     provider: str,
+    request: Request,
     redirect_uri: str = Query(...),
     client_id: str | None = Query(None),
     user: models.User = Depends(get_current_user),
@@ -105,6 +108,7 @@ def authorize(
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
     else:
         url = connectors.build_microsoft_auth_url(cid, uri, state=state, code_challenge=challenge)
+    audit("oauth.authorize", user=user.username, provider=p)
     return {"auth_url": url}
 
 

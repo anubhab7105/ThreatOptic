@@ -84,9 +84,10 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), db: Session
         res = await process_raw_email(db, raw, source="upload", organization_id=user.organization_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
+    except Exception:
         log.exception("upload ingest failed")
         raise HTTPException(500, "analysis failed")
+    audit("email.upload", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 
