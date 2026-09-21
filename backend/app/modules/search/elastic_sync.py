@@ -46,19 +46,26 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
         return {"indexed": False, "error": str(e)[:300]}
 
 
-def search_emails(query: str, limit: int = 50, db=None) -> dict:
+def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
     from ...config import get_settings
 
     es = _client()
     if es is not None:
         try:
+            es_query: dict = {"multi_match": {
+                "query": query,
+                "fields": ["email.subject^3", "email.sender_address^2",
+                           "email.recipient_address", "email.body_text_masked"],
+            }}
+            if organization_id != "__all__":
+                # Tenant filter inside ES; docs without org match NULL-org tenants.
+                should = [{"term": {"organization_id": organization_id}}]
+                if organization_id is None:
+                    should = [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]
+                es_query = {"bool": {"must": [es_query], "filter": should}}
             res = es.search(
                 index=get_settings().elastic_index,
-                query={"multi_match": {
-                    "query": query,
-                    "fields": ["email.subject^3", "email.sender_address^2",
-                               "email.recipient_address", "email.body_text_masked"],
-                }},
+                query=es_query,
                 size=min(max(limit, 1), 100),
             )
             hits = [{"id": h["_id"], **(h.get("_source") or {})} for h in res["hits"]["hits"]]
@@ -69,13 +76,14 @@ def search_emails(query: str, limit: int = 50, db=None) -> dict:
     from sqlalchemy import desc, or_
     from ... import models
     like = f"%{query}%"
-    rows = (db.query(models.EmailRecord)
-            .filter(or_(
-                models.EmailRecord.subject.ilike(like),
-                models.EmailRecord.sender_address.ilike(like),
-                models.EmailRecord.recipient_address.ilike(like),
-                models.EmailRecord.body_text_masked.ilike(like)))
-            .order_by(desc(models.EmailRecord.timestamp)).limit(limit).all())
+    q = db.query(models.EmailRecord).filter(or_(
+        models.EmailRecord.subject.ilike(like),
+        models.EmailRecord.sender_address.ilike(like),
+        models.EmailRecord.recipient_address.ilike(like),
+        models.EmailRecord.body_text_masked.ilike(like)))
+    if organization_id != "__all__":
+        q = q.filter(models.EmailRecord.organization_id == organization_id)
+    rows = q.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
     return {"backend": "sqlite", "hits": [
         {"id": r.id, "email": {"subject": r.subject, "sender_address": r.sender_address,
                               "recipient_address": r.recipient_address}} for r in rows]}

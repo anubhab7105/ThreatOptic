@@ -57,7 +57,8 @@ async def _to_thread(fn, *args, **kwargs):
         return None
 
 
-async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "", unmask: bool = False) -> dict:
+async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "", unmask: bool = False,
+                      organization_id: str | None = None) -> dict:
     if not raw or not raw.strip():
         raise ValueError("empty email payload")
 
@@ -175,6 +176,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         raw_headers=headers, body_text=body, body_text_masked=masked_body,
         attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
         timestamp=parsed.get("timestamp") or datetime.now(timezone.utc),
+        organization_id=organization_id,
     )
     db.add(email_row)
     db.flush()
@@ -206,7 +208,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         from ..modules.search.elastic_sync import index_email
         index_email(email_row.id,
                     {"subject": email_row.subject, "sender_address": email_row.sender_address,
-                     "recipient_address": email_row.recipient_address, "body_text_masked": masked_body},
+                     "recipient_address": email_row.recipient_address, "body_text_masked": masked_body,
+                     "organization_id": email_row.organization_id},
                     {"fraud_score": scoring["fraud_score"],
                      "threat_classification": scoring["threat_classification"]})
     except Exception as e:

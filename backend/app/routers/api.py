@@ -1,4 +1,5 @@
 """REST API: ingest, analysis, cases, dashboard, reports (per Design.md + AppFlow.md)."""
+import enum
 import logging
 from datetime import timezone
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
@@ -11,12 +12,40 @@ from .. import models, schemas
 from ..services.pipeline import process_raw_email
 from ..modules.graph.store import related_entities, find_campaigns
 from ..modules.privacy.retention import apply_retention
-from .deps import require_roles
+from .deps import get_current_user, require_roles
 
 log = logging.getLogger("api")
 router = APIRouter()
 
 MAX_RAW_BYTES = 5 * 1024 * 1024
+
+# ReadOnly = read-only; Analyst = ingest + edit cases; Admin = all + delete/retention/provisioning.
+READ_WRITE = ("Admin", "Analyst")
+
+
+def _org_filter(query, model, user: models.User):
+    """Tenant isolation: Admins see all; everyone else sees their own org
+    (NULL org matches NULL org via IS NULL comparison)."""
+    if user.role == "Admin":
+        return query
+    return query.filter(model.organization_id == user.organization_id)
+
+
+class CaseStatus(str, enum.Enum):
+    Open = "Open"
+    InProgress = "InProgress"
+    Closed = "Closed"
+
+
+class CaseUpdate(BaseModel):
+    """Whitelisted, validated case edits (no mass assignment)."""
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    status: CaseStatus | None = None
+    assignee_id: str | None = None
+    email_ids: list[str] | None = None
+    notes: str | None = None
+
+    model_config = {"extra": "forbid"}
 
 
 class IngestBody(BaseModel):
@@ -25,40 +54,43 @@ class IngestBody(BaseModel):
 
 
 @router.post("/emails/ingest", response_model=schemas.EmailIngestResponse)
-async def ingest_text(payload: IngestBody, db: Session = Depends(get_db)):
+async def ingest_text(payload: IngestBody, db: Session = Depends(get_db),
+                      user: models.User = Depends(require_roles(*READ_WRITE))):
     try:
-        res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api")
+        res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api",
+                                      organization_id=user.organization_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
         log.exception("ingest failed")
-        raise HTTPException(500, f"analysis failed: {e}")
+        raise HTTPException(500, "analysis failed")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 
 
 @router.post("/emails/upload", response_model=schemas.EmailIngestResponse)
-async def ingest_upload(f: UploadFile = File(...), db: Session = Depends(get_db)):
+async def ingest_upload(f: UploadFile = File(...), db: Session = Depends(get_db),
+                        user: models.User = Depends(require_roles(*READ_WRITE))):
     raw = await f.read()
     if not raw or not raw.strip():
         raise HTTPException(400, "empty file")
     if len(raw) > MAX_RAW_BYTES:
         raise HTTPException(413, "file too large (max 5MB)")
     try:
-        res = await process_raw_email(db, raw, source="upload")
+        res = await process_raw_email(db, raw, source="upload", organization_id=user.organization_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
         log.exception("upload ingest failed")
-        raise HTTPException(500, f"analysis failed: {e}")
+        raise HTTPException(500, "analysis failed")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 
 
 @router.get("/emails", response_model=list[schemas.EmailOut])
 def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_length=200),
-                db: Session = Depends(get_db)):
-    query = db.query(models.EmailRecord)
+                db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    query = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
     if q:
         like = f"%{q}%"
         query = query.filter(or_(
@@ -84,9 +116,12 @@ def list_emails(limit: int = Query(50, ge=1, le=200), q: str = Query("", max_len
 
 
 @router.get("/emails/{email_id}", response_model=schemas.EmailDetail)
-def email_detail(email_id: str, db: Session = Depends(get_db)):
+def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     e = db.query(models.EmailRecord).filter(models.EmailRecord.id == email_id).first()
     if not e:
+        raise HTTPException(404, "email not found")
+    if user.role != "Admin" and e.organization_id != user.organization_id:
+        # Same 404 as missing: cross-tenant existence must not leak.
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
@@ -160,21 +195,24 @@ def email_detail(email_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard", response_model=schemas.DashboardStats)
-def dashboard(db: Session = Depends(get_db)):
+def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import _ensure_graph
     _ensure_graph(db)
-    total = db.query(models.EmailRecord).count()
-    blocked = db.query(models.AnalysisResult).filter(models.AnalysisResult.fraud_score >= 75).count()
+    email_q = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
+    total = email_q.count()
+    email_ids = [r[0] for r in email_q.with_entities(models.EmailRecord.id).all()]
+    analyses = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id.in_(email_ids)).all() if email_ids else []
+    blocked = sum(1 for a in analyses if (a.fraud_score or 0) >= 75)
     by: dict[str, int] = {}
-    for (c,) in db.query(models.AnalysisResult.threat_classification).all():
-        by[c or "Unknown"] = by.get(c or "Unknown", 0) + 1
+    for a in analyses:
+        by[a.threat_classification or "Unknown"] = by.get(a.threat_classification or "Unknown", 0) + 1
     recent_rows = (
-        db.query(
+        _org_filter(db.query(
             models.EmailRecord.id,
             models.EmailRecord.subject,
             models.EmailRecord.sender_address,
             models.EmailRecord.timestamp,
-        )
+        ), models.EmailRecord, user)
         .order_by(desc(models.EmailRecord.timestamp))
         .limit(10)
         .all()
@@ -184,11 +222,11 @@ def dashboard(db: Session = Depends(get_db)):
          "ts": (ts.replace(tzinfo=timezone.utc) if ts and ts.tzinfo is None else ts).isoformat() if ts else ""}
         for rid, subj, sender, ts in recent_rows
     ]
-    # score histogram for the UI distribution chart
+    # score histogram for the UI distribution chart (tenant-scoped analyses)
     dist = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    for (s,) in db.query(models.AnalysisResult.fraud_score).all():
+    for a in analyses:
         try:
-            v = float(s or 0)
+            v = float(a.fraud_score or 0)
         except Exception:
             v = 0
         if v >= 90:
@@ -206,10 +244,10 @@ def dashboard(db: Session = Depends(get_db)):
 
 @router.get("/search")
 def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query(50, ge=1, le=100),
-           db: Session = Depends(get_db)):
+           db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Full-text forensic search: Elasticsearch when configured, SQLite fallback (F10)."""
     from ..modules.search.elastic_sync import search_emails
-    return search_emails(q, limit=limit, db=db)
+    return search_emails(q, limit=limit, db=db, organization_id=None if user.role == "Admin" else user.organization_id)
 
 
 @router.get("/graph/related")
