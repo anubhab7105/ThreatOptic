@@ -72,6 +72,13 @@ def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
         role = requested
     user = models.User(username=payload.username, password_hash=hash_password(payload.password), role=role)
     db.add(user)
+    db.flush()
+    # Every account belongs to a tenant: personal workspace org. Without
+    # this, organization_id=None would break tenant isolation (Step 2).
+    org = models.Organization(name=f"{payload.username}'s workspace", compliance_policy={})
+    db.add(org)
+    db.flush()
+    user.organization_id = org.id
     db.commit()
     db.refresh(user)
     return _pair(user, db)

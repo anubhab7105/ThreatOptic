@@ -280,11 +280,15 @@ def get_campaign(cid: str, db: Session = Depends(get_db)):
 
 
 @router.post("/cases", response_model=schemas.CaseOut)
-def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db)):
+def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db),
+                user: models.User = Depends(require_roles(*READ_WRITE))):
     if not payload.title or not payload.title.strip():
         raise HTTPException(400, "title is required")
+    if payload.assignee_id and not db.query(models.User).filter(models.User.id == payload.assignee_id).first():
+        raise HTTPException(400, "assignee not found")
     c = models.InvestigationCase(title=payload.title.strip(), email_ids=payload.email_ids or [],
-                                 assignee_id=payload.assignee_id, notes=payload.notes or "")
+                                 assignee_id=payload.assignee_id, notes=payload.notes or "",
+                                 organization_id=user.organization_id)
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -292,31 +296,34 @@ def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db)):
 
 
 @router.get("/cases", response_model=list[schemas.CaseOut])
-def list_cases(db: Session = Depends(get_db)):
-    return db.query(models.InvestigationCase).order_by(desc(models.InvestigationCase.created_at)).all()
+def list_cases(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    return _org_filter(db.query(models.InvestigationCase), models.InvestigationCase, user).order_by(
+        desc(models.InvestigationCase.created_at)).all()
 
 
 VALID_CASE_STATUSES = {"Open", "InProgress", "Closed"}
 
 
 @router.patch("/cases/{case_id}", response_model=schemas.CaseOut)
-def update_case(case_id: str, payload: dict, db: Session = Depends(get_db)):
+def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db),
+                user: models.User = Depends(require_roles(*READ_WRITE))):
     c = db.query(models.InvestigationCase).filter(models.InvestigationCase.id == case_id).first()
     if not c:
         raise HTTPException(404, "case not found")
-    if "status" in payload:
-        st = str(payload["status"]).strip()
-        if st not in VALID_CASE_STATUSES:
-            raise HTTPException(400, f"invalid status '{st}', must be one of {sorted(VALID_CASE_STATUSES)}")
-        c.status = st
-    if "title" in payload and payload["title"]:
-        c.title = str(payload["title"]).strip()
-    if "notes" in payload:
-        c.notes = str(payload["notes"])
-    if "assignee_id" in payload:
-        c.assignee_id = payload["assignee_id"]
-    if "email_ids" in payload and isinstance(payload["email_ids"], list):
-        c.email_ids = payload["email_ids"]
+    if user.role != "Admin" and c.organization_id != user.organization_id:
+        raise HTTPException(404, "case not found")
+    if payload.status is not None:
+        c.status = payload.status.value
+    if payload.title is not None:
+        c.title = payload.title.strip()
+    if payload.notes is not None:
+        c.notes = str(payload.notes)
+    if payload.assignee_id is not None:
+        if payload.assignee_id and not db.query(models.User).filter(models.User.id == payload.assignee_id).first():
+            raise HTTPException(400, "assignee not found")
+        c.assignee_id = payload.assignee_id
+    if payload.email_ids is not None:
+        c.email_ids = payload.email_ids
     db.commit()
     db.refresh(c)
     return c
