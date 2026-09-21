@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     smtp_host: str = "127.0.0.1"
     smtp_port: int = 1025
 
+    # Trust boundary for origin-IP extraction (Step 4): host suffixes / IPs
+    # of our own relays (comma-separated). The hop below the first match is
+    # the last-external-hop origin.
+    trusted_relay_hosts: str = ""
+    trusted_relay_ips: str = ""
+
     @property
     def smtp_on(self) -> bool:
         return str(self.smtp_enabled).lower() not in ("", "0", "false", "no")

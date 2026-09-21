@@ -1,25 +1,46 @@
 """Header parsing helpers + Received-chain traversal (Tracker Phase 2)."""
+import ipaddress
 import re
 from typing import Any
 
-IP_RE = re.compile(r"\[?(\d{1,3}(?:\.\d{1,3}){3})\]?")
+# Candidate IPs (v4 + v6); every candidate is validated with ipaddress —
+# 999.999.999.999 and friends never survive (Step 4).
+IP_CANDIDATE_RE = re.compile(
+    r"\[?((?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,}(?::[0-9a-fA-F:]*)+)\]?"
+)
 # e.g. from mail.example.com (host [1.2.3.4]) by mx.google.com with ESMTPS id ...
 RECEIVED_FROM_RE = re.compile(r"from\s+([^\s\(\)]+)?\s*(?:\(([^\)]*)\))?", re.IGNORECASE)
 RECEIVED_BY_RE = re.compile(r"\bby\s+([^\s;]+)", re.IGNORECASE)
 
 
+def _valid_ip(candidate: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(candidate.strip("[]")))
+    except ValueError:
+        return None
+
+
 def split_received(raw_headers: dict[str, Any]) -> list[str]:
-    """Return Received headers in wire order (top-most first)."""
+    """Return Received headers in wire order (top-most first).
+
+    Unfolds RFC 5322 continuations first, then splits ONLY on real header
+    boundaries (a newline followed by a non-whitespace char) so folded
+    multi-line Received headers don't become fake hops (Step 4).
+    """
     val = raw_headers.get("Received", "")
     if isinstance(val, list):
-        return [str(v) for v in val]
-    # parser joins duplicates with newline
-    parts = [p.strip() for p in str(val).split("\n") if p.strip()]
-    return parts if parts else []
+        return [str(v).replace("\r\n", "\n").replace("\r", "\n").strip()
+                for v in val if str(v).strip()]
+    text = str(val).replace("\r\n", "\n").replace("\r", "\n")
+    # unfold: newline + whitespace is a continuation, not a boundary
+    unfolded = re.sub(r"\n[ \t]+", " ", text)
+    # split on real boundaries: newline followed by non-whitespace
+    parts = [p.strip() for p in re.split(r"\n(?=\S)", unfolded) if p.strip()]
+    return parts
 
 
 def parse_received_hop(header: str) -> dict[str, Any]:
-    ips = IP_RE.findall(header)
+    ips = [ip for ip in (_valid_ip(c) for c in IP_CANDIDATE_RE.findall(header)) if ip]
     m_from = RECEIVED_FROM_RE.search(header)
     m_by = RECEIVED_BY_RE.search(header)
     return {
@@ -39,6 +60,20 @@ def reconstruct_path(raw_headers: dict[str, Any]) -> list[dict[str, Any]]:
     return hops
 
 
+def _registrable(domain: str) -> str:
+    try:
+        from ..threat_intel.lookalikes import registrable
+        return registrable(domain)
+    except Exception:
+        parts = (domain or "").lower().strip(".").split(".")
+        return ".".join(parts[-2:]) if len(parts) >= 2 else (domain or "").lower()
+
+
+def _clean_domain(raw: str) -> str:
+    m = re.search(r"@([\w.\-]+)", (raw or "").lower())
+    return (m.group(1).strip("<> ") if m else "").rstrip(".")
+
+
 def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
     flags: list[str] = []
     if len(path) == 0:
@@ -46,19 +81,13 @@ def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
     if len(path) == 1:
         flags.append("single-hop-suspicious")
     # forged sender: From domain vs Return-Path domain mismatch
-    rp = str(raw_headers.get("Return-Path", "")).lower()
-    frm = str(raw_headers.get("From", "")).lower()
-    import re as _re
-    rp_dom = (_re.search(r"@([\w\.\-]+)", rp) or [None, ""])[1]
-    frm_dom = (_re.search(r"@([\w\.\-]+)", frm) or [None, ""])[1]
-    if rp_dom and frm_dom and rp_dom.strip("<> ") != frm_dom.strip("<> "):
+    rp_dom = _clean_domain(str(raw_headers.get("Return-Path", "")))
+    frm_dom = _clean_domain(str(raw_headers.get("From", "")))
+    if rp_dom and frm_dom and rp_dom != frm_dom:
         flags.append("return-path-mismatch")
-    # Message-ID domain vs From domain (allow legitimate organizational subdomains)
-    mid = str(raw_headers.get("Message-ID", "")).lower()
-    mid_dom = (_re.search(r"@([\w\.\-]+)", mid) or [None, ""])[1]
-    if mid_dom and frm_dom:
-        m_clean = mid_dom.strip("> ")
-        f_clean = frm_dom.strip("<> ")
-        if m_clean != f_clean and not m_clean.endswith("." + f_clean) and not f_clean.endswith("." + m_clean):
-            flags.append("message-id-mismatch")
+    # Message-ID domain vs From domain, compared by REGISTRABLE domain so
+    # mail.paypal.com vs paypal.com no longer false-positives (Step 4).
+    mid_dom = _clean_domain(str(raw_headers.get("Message-ID", "")))
+    if mid_dom and frm_dom and _registrable(mid_dom) != _registrable(frm_dom):
+        flags.append("message-id-mismatch")
     return flags
