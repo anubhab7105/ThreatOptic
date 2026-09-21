@@ -2,7 +2,7 @@
 import enum
 import logging
 from datetime import timezone
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, or_
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, schemas
 from ..services.pipeline import process_raw_email
+from ..modules.auth.rate_limit import audit, limiter
 from ..modules.graph.store import related_entities, find_campaigns
 from ..modules.privacy.retention import apply_retention
 from .deps import get_current_user, require_roles
@@ -54,22 +55,25 @@ class IngestBody(BaseModel):
 
 
 @router.post("/emails/ingest", response_model=schemas.EmailIngestResponse)
-async def ingest_text(payload: IngestBody, db: Session = Depends(get_db),
+@limiter.limit("60/minute")
+async def ingest_text(payload: IngestBody, request: Request, db: Session = Depends(get_db),
                       user: models.User = Depends(require_roles(*READ_WRITE))):
     try:
         res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api",
                                       organization_id=user.organization_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
+    except Exception:
         log.exception("ingest failed")
         raise HTTPException(500, "analysis failed")
+    audit("email.ingest", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
             "classification": res["classification"], "action": res["action"]}
 
 
 @router.post("/emails/upload", response_model=schemas.EmailIngestResponse)
-async def ingest_upload(f: UploadFile = File(...), db: Session = Depends(get_db),
+@limiter.limit("60/minute")
+async def ingest_upload(request: Request, f: UploadFile = File(...), db: Session = Depends(get_db),
                         user: models.User = Depends(require_roles(*READ_WRITE))):
     raw = await f.read()
     if not raw or not raw.strip():

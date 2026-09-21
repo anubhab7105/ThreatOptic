@@ -2,11 +2,18 @@
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import get_settings
 from ..database import get_db
+from ..modules.auth.rate_limit import (
+    audit,
+    check_login_allowed,
+    clear_login_failures,
+    limiter,
+    record_login_failure,
+)
 from ..modules.auth.security import (
     create_access_token,
     create_refresh_token,
@@ -54,7 +61,8 @@ def _revoke_user_tokens(db: Session, user_id: str) -> None:
 
 
 @router.post("/register", response_model=schemas.TokenPair, status_code=201)
-def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def register(request: Request, payload: schemas.RegisterIn, db: Session = Depends(get_db)):
     if db.query(models.User).filter(models.User.username == payload.username).first():
         raise HTTPException(400, "username already taken")
     requested = (payload.role or "").strip()
@@ -81,19 +89,29 @@ def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
     user.organization_id = org.id
     db.commit()
     db.refresh(user)
+    audit("auth.register", username=user.username, role=user.role)
     return _pair(user, db)
 
 
 @router.post("/login", response_model=schemas.TokenPair)
-def login(payload: schemas.LoginIn, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: schemas.LoginIn, db: Session = Depends(get_db)):
+    if not check_login_allowed(payload.username):
+        audit("auth.login.locked", username=payload.username)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too many failed attempts — try again later")
     user = db.query(models.User).filter(models.User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
+        record_login_failure(payload.username)
+        audit("auth.login.failed", username=payload.username)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid username or password")
+    clear_login_failures(payload.username)
+    audit("auth.login", username=user.username, role=user.role)
     return _pair(user, db)
 
 
 @router.post("/refresh", response_model=schemas.TokenPair)
-def refresh(payload: schemas.RefreshIn, db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def refresh(request: Request, payload: schemas.RefreshIn, db: Session = Depends(get_db)):
     settings = get_settings()
     try:
         data = decode_token(payload.refresh_token, settings.secret_key)
@@ -125,6 +143,7 @@ def refresh(payload: schemas.RefreshIn, db: Session = Depends(get_db)):
     row.revoked = True
     row.replaced_by = new_data.get("jti")
     db.commit()
+    audit("auth.refresh", username=user.username)
     return new_pair
 
 
