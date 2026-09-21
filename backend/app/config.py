@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # Expected backend replica count (F8). With >1 replicas the in-memory
     # graph diverges per pod, so NEO4J_URI must be set for consistency.
     expected_replicas: int = 1
+    # Rate limiting kill-switch (tests default it off; prod keeps it on).
+    rate_limit_enabled: str = "1"
     elasticsearch_url: str = ""
     elasticsearch_user: str = ""
     elasticsearch_password: str = ""
