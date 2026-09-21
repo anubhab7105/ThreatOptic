@@ -12,6 +12,12 @@ export function formatDateTime(ts: string | null | undefined): string {
 
 /* ---------- SEO helpers (custom domain: socforensics.io) ---------- */
 const CANONICAL_BASE = 'https://socforensics.io';
+/** Serialize for <script> injection: escape `</` so a crafted subject can
+ * never break out of the script tag (C14 stored-XSS). `<\/` is valid JSON
+ * and parses to the identical string. */
+function safeJsonLd(obj: unknown): string {
+  return JSON.stringify(obj).replace(/<\//g, '<\\/');
+}
 function setCanonical(path: string) {
   const href = `${CANONICAL_BASE}${path.startsWith('/') ? path : `/${path}`}`.replace(/#.*$/, '');
   // keep hash canonical as query-less path for crawlers: hash routes are client-side, we expose clean path
@@ -69,7 +75,7 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
           ))}
         </ol>
       </nav>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
     </>
   );
 }
