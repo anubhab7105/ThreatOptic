@@ -236,7 +236,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
           <h1>Something went wrong</h1>
           <p className="sub">An unexpected error occurred in the forensic UI. Reload or return to the dashboard.</p>
           <div className="toast">{this.state.msg.slice(0, 400)}</div>
-          <a href="#/">Back to Dashboard</a>
+          <Link to="/">Back to Dashboard</Link>
         </div>
       );
     }
@@ -292,7 +292,7 @@ function Shell() {
     return (
       <div>
         <nav className="nav" aria-label="Primary">
-          <a href="#/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</a>
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
         </nav>
         <div className="page"><div className="skel" style={{ height: 120 }} aria-hidden="true" /></div>
       </div>
