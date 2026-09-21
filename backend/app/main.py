@@ -69,8 +69,6 @@ async def lifespan(app: FastAPI):
         # would send credentials anywhere. Refuse to boot like this.
         raise RuntimeError("Refusing to boot: CORS_ORIGINS contains '*' with credentials enabled.")
     apply_limiter_setting()
-    from .modules.ingestion.queue import clear_shutdown
-    clear_shutdown()
     init_db()
     log.info("DB ready at %s", settings.resolved_db_url())
     try:
@@ -107,8 +105,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         try:
-            from .modules.ingestion.queue import close_producer, set_shutdown
-            set_shutdown()
+            from .modules.ingestion.queue import close_producer
             await close_producer()
         except Exception:
             pass

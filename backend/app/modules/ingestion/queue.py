@@ -6,7 +6,9 @@ Step 5 hardening:
 - one shared Kafka producer (created lazily, guarded by a lock) instead
   of connect-per-message; failures fall back to memory, never silent-drop
   without a log record.
-- graceful shutdown: set_shutdown() wakes all blocking getters.
+- shutdown is delivered via task.cancel(), which the consumer handles.
+  (A process-global shutdown flag was tried and removed: it poisoned every
+  later consumer in the same process, e.g. across TestClient lifespans.)
 """
 import asyncio
 import base64
@@ -19,7 +21,6 @@ from typing import Any
 log = logging.getLogger("queue")
 
 _mem_queue: queue.Queue = queue.Queue()
-_shutdown = threading.Event()
 
 _producer = None
 _producer_lock = threading.Lock()
@@ -37,22 +38,6 @@ def _ensure_capacity() -> None:
     want = _maxsize()
     if _mem_queue.maxsize != want:
         _mem_queue.maxsize = want
-
-
-def set_shutdown() -> None:
-    """Wake blocking consumers so lifespan shutdown never hangs."""
-    _shutdown.set()
-
-
-def clear_shutdown() -> None:
-    """Arm the queue for a new lifespan (shutdown flags are per-lifespan,
-    not per-process — otherwise one TestClient exit would wedge every
-    later consumer in the same process)."""
-    _shutdown.clear()
-
-
-def is_shutting_down() -> bool:
-    return _shutdown.is_set()
 
 
 def _get_producer():
@@ -101,12 +86,13 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
 
 
 async def dequeue_email() -> dict[str, Any]:
-    while not is_shutting_down():
+    # task.cancel() is the shutdown signal: it raises CancelledError at the
+    # await below, and the abandoned get() returns within its 0.5s timeout.
+    while True:
         try:
             return await asyncio.to_thread(_mem_queue.get, True, 0.5)
         except queue.Empty:
             continue
-    raise asyncio.CancelledError()
 
 
 def queue_depth() -> int:
