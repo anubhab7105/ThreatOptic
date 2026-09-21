@@ -38,10 +38,20 @@ startup checks refuse to boot on defaults.
 1. Deploy with the new `SECRET_KEY` — **all previously issued JWTs
    (access + refresh) immediately fail signature verification.** No DB
    migration needed; log everyone out by telling users to sign in again.
-2. Mailbox OAuth: delete rows from `mailbox_connections` and
+   (Refresh-token rows in `refresh_tokens` become cryptographically dead
+   with the old secret; purge them with
+   `DELETE FROM refresh_tokens;` after deploy if desired.)
+2. Custody key rotation without downtime: set `CUSTODY_KEY` to the new
+   key and keep the old value in `CUSTODY_KEY_PREVIOUS` — new manifests
+   sign with the new key while `verify_manifest()` still accepts the old
+   one. Remove `CUSTODY_KEY_PREVIOUS` after one retention window.
+3. Mailbox OAuth: delete rows from `mailbox_connections` and
    `gmail_accounts`, then have owners reconnect (forces fresh provider
    refresh tokens; old Bearer tokens die with the provider revocation).
-3. Postgres/ES/Neo4j: `ALTER USER ... PASSWORD`, restart dependents.
+   Corrupt/undecryptable vault rows already force reconnect with a
+   `400 ... please disconnect and reconnect` error — do not attempt to
+   recover them.
+4. Postgres/ES/Neo4j: `ALTER USER ... PASSWORD`, restart dependents.
 
 ## 4. Verify
 

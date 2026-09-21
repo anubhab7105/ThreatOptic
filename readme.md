@@ -45,12 +45,12 @@ docker compose up --build
 - POST /api/v1/cases | PATCH /api/v1/cases/{id} | DELETE /api/v1/cases/{id} (Admin)
 
 Demo accounts (seeded): `admin / admin123` (Admin), `analyst / analyst123` (Analyst).
-Public self-registration creates Analyst accounts (first-ever account becomes Admin).
+Public self-registration creates **ReadOnly** accounts by default (Analyst also allowed); creating an Admin requires the out-of-band `SETUP_TOKEN`. Access tokens live 20 minutes with rotating single-use refresh tokens (reuse kills the whole token family).
 
 ### Gmail live demo
 1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
-2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env (or paste per-request in the UI; both must belong to the same OAuth client).
-3. Dashboard → "Gmail live import" → fill client ID + secret → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline.
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `backend/.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
+3. Dashboard → "Gmail live import" → fill client ID → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline. (The OAuth client secret lives server-side in `GOOGLE_CLIENT_SECRET` only — the UI never sends it.)
 
 Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 

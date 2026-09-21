@@ -2,6 +2,7 @@
 
 ## Security Audit Remediation (C1–C15) — in progress
 - [x] Step 0 ground rules — compromise assumption + rotation runbook in `SECURITY.md` (out-of-band rotation, not code); `seed.py` gated behind `ALLOW_SEED=1` + `APP_ENV=development`, raises otherwise. Tests: `test_step0_seed_gate.py` (3 passed).
+- [x] Step 1 secrets/auth/crypto (C1,C2,C5,C6,C7) — `secret_key` has no default + `require_secrets()` boot gate (32+ chars outside dev), `APP_ENV` defaults to production posture, access tokens 20 min; refresh rotation with single-use ledger, reuse detection kills the family; setup-token bootstrap replaces first-registrant Admin (public default ReadOnly, server allowlist); vault uses PBKDF2/600k + random salt + `v1$` format, fail-closed on empty/short key, separate from JWT signing key; custody v1 payload binds purpose/version/timestamp, no hardcoded fallback (ephemeral dev key), `verify_manifest()` + previous-key rotation; gmail uses server-side secrets only, corrupt stored tokens force reconnect, no plaintext fallback. Tests: `test_step1_crypto_auth.py` (7 passed), updated `test_auth.py`/`test_gmail.py`.
 
 ## Phase 0: Demo-safe audit fixes (F1–F4) ✅
 - [x] F1 auth & RBAC — `routers/auth.py` (register/login/refresh/me), passlib/bcrypt hashing, JWT from `secret_key`/`access_token_expire_minutes`, `get_current_user` on all `/api/v1/*`, Admin-only DELETE cases + retention; frontend in-memory token, login page, 401 redirect, admin UI hidden. Tests: `test_auth.py` (401 + 403 proven).
