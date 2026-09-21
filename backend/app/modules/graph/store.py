@@ -121,6 +121,23 @@ def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
         return None
 
 
+def remove_email_graph(email_addr: str) -> None:
+    """Best-effort removal of one email node (retention cascade)."""
+    key = f"email:{(email_addr or '').lower()[:320]}"
+    try:
+        if key in G:
+            G.remove_node(key)
+    except Exception:
+        pass
+    drv = _neo()
+    if drv:
+        try:
+            with drv.session() as s:
+                s.run("MATCH (e:Email_Address {address:$a}) DETACH DELETE e", a=(email_addr or "").lower()[:320])
+        except Exception:
+            pass
+
+
 def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: str = "") -> dict[str, Any]:
     email_addr = (email_addr or "").lower()[:320]
     ip = ip or ""

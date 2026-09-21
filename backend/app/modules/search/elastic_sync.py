@@ -51,7 +51,18 @@ def _escape_like(raw: str) -> str:
     return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
+def delete_email(email_id: str) -> dict:
+    """Best-effort ES doc deletion (retention cascade)."""
+    es = _client()
+    if es is None:
+        return {"deleted": False, "skipped": True}
+    try:
+        from ...config import get_settings
+        es.delete(index=get_settings().elastic_index, id=email_id, ignore=[404])
+        return {"deleted": True}
+    except Exception as e:
+        log.warning("elastic delete failed for %s: %s", email_id, e)
+        return {"deleted": False, "error": str(e)[:300]}
     from ...config import get_settings
 
     es = _client()
