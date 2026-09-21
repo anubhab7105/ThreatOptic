@@ -153,12 +153,12 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
                     if domain:
                         dip = socket.gethostbyname(domain)
                         g = geolocate(dip)
-                        if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                        if has_coords(g):
                             new_geo = {**g, "source": "approx-domain-ip"}
                 except Exception:
                     pass
 
-            if new_geo and (new_geo.get("lat") != 0.0 or new_geo.get("lon") != 0.0 or new_geo.get("country") not in ("", "UNKNOWN")):
+            if has_coords(new_geo) or (new_geo or {}).get("country"):
                 t.geolocation = new_geo
                 if new_geo.get("isp") or new_geo.get("asn"):
                     t.isp_asn = f"{new_geo.get('isp', '')} {new_geo.get('asn', '')}".strip()
