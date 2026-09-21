@@ -14,8 +14,11 @@ def _uname(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-def _register(c: TestClient, username: str, password: str = "Str0ngPass!") -> dict:
-    r = c.post("/api/v1/auth/register", json={"username": username, "password": password})
+def _register(c: TestClient, username: str, password: str = "Str0ngPass!", role: str | None = None) -> dict:
+    body: dict = {"username": username, "password": password}
+    if role:
+        body["role"] = role
+    r = c.post("/api/v1/auth/register", json=body)
     assert r.status_code == 201, r.text
     return r.json()
 

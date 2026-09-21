@@ -12,7 +12,7 @@ from app.modules.traceability.vpn_tor import TOR_DNS_SUFFIX
 def _auth(client: TestClient) -> dict:
     import uuid
     uname = f"audit-{uuid.uuid4().hex[:8]}"
-    tok = client.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPassword!"}).json()["access_token"]
+    tok = client.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPassword!", "role": "Analyst"}).json()["access_token"]
     return {"Authorization": f"Bearer {tok}"}
 
 

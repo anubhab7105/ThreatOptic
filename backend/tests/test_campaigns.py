@@ -28,7 +28,7 @@ Quarterly report draft ready for review, no action needed.
 
 def _auth(c: TestClient) -> dict:
     uname = f"campaign-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
+    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
     return {"Authorization": f"Bearer {tok}"}
 
 
