@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .database import Base
+from .database import Base, utcnow
 
 
 def _uuid() -> str:
@@ -21,7 +21,7 @@ class Organization(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     compliance_policy: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     users: Mapped[list["User"]] = relationship(back_populates="organization")
 
 
@@ -32,7 +32,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     role: Mapped[str] = mapped_column(String(32), default="Analyst")  # Admin, Analyst, ReadOnly
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     organization: Mapped[Organization | None] = relationship(back_populates="users")
 
 
@@ -50,7 +50,7 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class InvestigationCase(Base):
@@ -62,8 +62,8 @@ class InvestigationCase(Base):
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     email_ids: Mapped[list] = mapped_column(JSON, default=list)
     notes: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class EmailRecord(Base):
@@ -80,7 +80,7 @@ class EmailRecord(Base):
     attachments_metadata: Mapped[list] = mapped_column(JSON, default=list)
     raw_eml_hash: Mapped[str] = mapped_column(String(64), default="")
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class AnalysisResult(Base):
@@ -95,7 +95,7 @@ class AnalysisResult(Base):
     threat_intel_hits: Mapped[list] = mapped_column(JSON, default=list)
     action_taken: Mapped[str] = mapped_column(String(64), default="Deliver")
     score_breakdown: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class TraceabilityData(Base):
@@ -121,8 +121,8 @@ class GmailAccount(Base):
     # OAuth client_id used at connect time; reused for refresh (C2-fix).
     client_id: Mapped[str] = mapped_column(String(320), default="")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class MailboxConnection(Base):
@@ -139,8 +139,8 @@ class MailboxConnection(Base):
     account_email: Mapped[str] = mapped_column(String(320), default="")
     encrypted_refresh_token: Mapped[str] = mapped_column(Text, default="")
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class OAuthState(Base):
@@ -159,4 +159,4 @@ class OAuthState(Base):
     code_verifier: Mapped[str] = mapped_column(String(256), default="")
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

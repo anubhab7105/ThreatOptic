@@ -1,7 +1,22 @@
 """SQLAlchemy engine/session/Base. SQLite by default, Postgres via DATABASE_URL."""
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import get_settings
+
+
+def utcnow() -> datetime:
+    """Timezone-aware UTC now — the single source for stored timestamps (Step 5)."""
+    return datetime.now(timezone.utc)
+
+
+def as_utc(dt: datetime | None) -> datetime | None:
+    """Normalize a possibly-naive stored timestamp to aware UTC for comparison."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _make_engine():
