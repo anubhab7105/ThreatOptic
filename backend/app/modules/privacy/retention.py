@@ -6,7 +6,7 @@ still carry a raw body_text get it blanked; new rows never store raw
 bodies at all (see pipeline).
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from ...models import EmailRecord, AnalysisResult, TraceabilityData
 
@@ -21,8 +21,8 @@ def _utcnow():
 
 def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) -> dict:
     now = _utcnow()
-    clean_cut = now - timedelta(days=clean_days) if False else now - __import__("datetime").timedelta(days=clean_days)
-    mal_cut = now - __import__("datetime").timedelta(days=malicious_days)
+    clean_cut = now - timedelta(days=clean_days)
+    mal_cut = now - timedelta(days=malicious_days)
     purged_body = 0
     deleted = 0
     from ..search.elastic_sync import delete_email
