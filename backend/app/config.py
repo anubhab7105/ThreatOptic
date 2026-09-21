@@ -118,6 +118,14 @@ class Settings(BaseSettings):
     smtp_enabled: str = "0"
     smtp_host: str = "127.0.0.1"
     smtp_port: int = 1025
+    # Step 5 (C8): AUTH required when SMTP_REQUIRE_AUTH=1 (needs USERNAME +
+    # PASSWORD set); TLS enforced when cert+key are configured; DATA capped.
+    smtp_require_auth: str = "0"
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_data_limit_bytes: int = 10 * 1024 * 1024
+    smtp_tls_cert: str = ""
+    smtp_tls_key: str = ""
 
     # Trust boundary for origin-IP extraction (Step 4): host suffixes / IPs
     # of our own relays (comma-separated). The hop below the first match is

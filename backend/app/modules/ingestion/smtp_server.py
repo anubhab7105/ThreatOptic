@@ -46,14 +46,14 @@ class IngestHandler:
         return "250 queued for forensic analysis"
 
 
-def _auth_callback(username: bytes, password: bytes, mechanism: str = "") -> bool:
+def _auth_callback(mechanism: str, login: bytes, password: bytes) -> bool:
     from ...config import get_settings
     settings = get_settings()
     expected_user = (settings.smtp_username or "").encode()
     expected_pass = (settings.smtp_password or "").encode()
     if not expected_user or not expected_pass:
         return False
-    return hmac.compare_digest(username or b"", expected_user) and \
+    return hmac.compare_digest(login or b"", expected_user) and \
         hmac.compare_digest(password or b"", expected_pass)
 
 
