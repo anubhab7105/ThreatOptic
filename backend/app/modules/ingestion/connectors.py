@@ -77,7 +77,7 @@ MS_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MS_SCOPES = "Mail.Read User.Read offline_access"
 
 
-def build_microsoft_auth_url(client_id: str, redirect_uri: str, state: str = "") -> str:
+def build_microsoft_auth_url(client_id: str, redirect_uri: str, state: str = "", code_challenge: str = "") -> str:
     from urllib.parse import urlencode
     params = {
         "client_id": client_id,
@@ -88,15 +88,22 @@ def build_microsoft_auth_url(client_id: str, redirect_uri: str, state: str = "")
     }
     if state:
         params["state"] = state
+    if code_challenge:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
     return MS_AUTH_URL + "?" + urlencode(params)
 
 
-async def exchange_microsoft_code(code: str, client_id: str, client_secret: str, redirect_uri: str) -> dict:
+async def exchange_microsoft_code(code: str, client_id: str, client_secret: str, redirect_uri: str,
+                                  code_verifier: str = "") -> dict:
     async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(MS_TOKEN_URL, data={
+        data = {
             "client_id": client_id, "client_secret": client_secret,
             "code": code, "redirect_uri": redirect_uri, "grant_type": "authorization_code",
-        })
+        }
+        if code_verifier:
+            data["code_verifier"] = code_verifier
+        r = await client.post(MS_TOKEN_URL, data=data)
         r.raise_for_status()
         return r.json()
 
