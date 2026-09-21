@@ -46,6 +46,8 @@ def test_smtp_auth_size_and_rcpt(monkeypatch):
     monkeypatch.setattr(settings, "smtp_password", "s3cret-relay")
     monkeypatch.setattr(settings, "smtp_data_limit_bytes", 50 * 1024)
     init_db()
+    from app.modules.ingestion import smtp_server
+    smtp_server._intake_hits.clear()
     marker = f"<smtp5-{uuid.uuid4().hex[:8]}@test.local>"
     controller = start_smtp("127.0.0.1", 10026)
 
@@ -76,7 +78,7 @@ def test_smtp_auth_size_and_rcpt(monkeypatch):
                     row = db.query(models.EmailRecord).filter(
                         models.EmailRecord.message_id == marker).first()
                     if row:
-                        eid, subj = row.id, row.subject
+                        eid = row.id
                         break
                 finally:
                     db.close()

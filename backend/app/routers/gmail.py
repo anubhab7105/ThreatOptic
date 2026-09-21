@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query

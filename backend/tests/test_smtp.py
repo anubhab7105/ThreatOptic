@@ -14,6 +14,8 @@ def test_smtp_ingest_creates_record():
     from app.modules.ingestion.smtp_server import start_smtp
 
     init_db()
+    from app.modules.ingestion import smtp_server
+    smtp_server._intake_hits.clear()
     marker = f"<smtp-{uuid.uuid4().hex[:8]}@test.local>"
     controller = start_smtp("127.0.0.1", SMTP_TEST_PORT)
 

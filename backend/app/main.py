@@ -63,7 +63,8 @@ async def lifespan(app: FastAPI):
     from .modules.privacy.chain_of_custody import require_custody_key
 
     require_secrets()
-    if "*" in settings.cors_origin_list:
+    from .config import get_settings as _fresh_settings
+    if "*" in _fresh_settings().cors_origin_list:
         # allow_credentials=True + "*" is a real misconfiguration: browsers
         # would send credentials anywhere. Refuse to boot like this.
         raise RuntimeError("Refusing to boot: CORS_ORIGINS contains '*' with credentials enabled.")

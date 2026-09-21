@@ -6,7 +6,7 @@ still carry a raw body_text get it blanked; new rows never store raw
 bodies at all (see pipeline).
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from ...models import EmailRecord, AnalysisResult, TraceabilityData
 
