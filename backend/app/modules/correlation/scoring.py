@@ -58,15 +58,25 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
             + WEIGHTS["attachment"] * attachment_score)
 
     extras: list[str] = []
-    # Behavioral rule: new domain (<30d) + payment instructions => +30
+    # Behavioral rule: new domain (<30d) + payment instructions => +30.
+    # Negative/future ages are clock garbage, not youth — ignore them.
+    try:
+        age = None if domain_age_days is None else float(domain_age_days)
+        if age is not None and age < 0:
+            age = None
+    except (TypeError, ValueError):
+        age = None
     bonus = 0.0
-    if domain_age_days is not None and domain_age_days < 30 and contains_payment:
+    if age is not None and age < 30 and contains_payment:
         bonus = 30.0
         extras.append("new-domain+payment:+30")
-    # SPF/DKIM fail + C-level claim => auto-escalate High
+    # SPF/DKIM fail + C-level claim => auto-escalate High. A missing DKIM
+    # signature ("none") must NOT let spoofed mail slip past — most spoofed
+    # mail has no signature at all rather than a failing one.
     c_level = any(k in str(nlp.get("impersonation_cues", [])).lower() for k in ["ceo", "cfo", "chief", "president"])
     force_high = False
-    if spf in ("fail", "softfail") and dkim in ("fail",) and (c_level or "impersonation" in nlp.get("nlp_cues_detected", [])):
+    if spf in ("fail", "softfail") and dkim in ("fail", "softfail", "none") and (
+            c_level or "impersonation" in nlp.get("nlp_cues_detected", [])):
         force_high = True
         extras.append("exec-spoof-auth-fail:force-high")
 
