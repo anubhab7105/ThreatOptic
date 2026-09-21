@@ -19,6 +19,12 @@ const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.Ter
 // Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
 const CANONICAL_BASE = 'https://socforensics.io';
 
+/** Serialize for <script> injection: escape `</` so crafted strings can
+ * never break out of the script tag (C14 stored-XSS). */
+function safeJsonLd(obj: unknown): string {
+  return JSON.stringify(obj).replace(/<\//g, '<\\/');
+}
+
 function setCanonical(path: string) {
   const href = `${CANONICAL_BASE}${path}`;
   let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
@@ -63,7 +69,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
           ))}
         </ol>
       </nav>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
     </>
   );
 }
