@@ -32,12 +32,12 @@ def _return_path_domain(raw_headers: dict) -> str:
 
 
 def validate_spf(sender_ip: str, envelope_from: str, helo: str = "") -> dict[str, Any]:
-    if not _live():
-        return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}
-    if not sender_ip:
+    if not (sender_ip or "").strip():
         # Never substitute 127.0.0.1: validating loopback as the sender
         # would vouch for mail we know nothing about.
         return {"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}
+    if not _live():
+        return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}
     if not envelope_from:
         return {"status": "none", "detail": "no envelope sender; SPF not checked"}
     try:
