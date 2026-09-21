@@ -44,6 +44,13 @@ def set_shutdown() -> None:
     _shutdown.set()
 
 
+def clear_shutdown() -> None:
+    """Arm the queue for a new lifespan (shutdown flags are per-lifespan,
+    not per-process — otherwise one TestClient exit would wedge every
+    later consumer in the same process)."""
+    _shutdown.clear()
+
+
 def is_shutting_down() -> bool:
     return _shutdown.is_set()
 
