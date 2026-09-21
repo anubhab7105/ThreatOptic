@@ -166,7 +166,8 @@ function NotFoundPage() {
   );
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; msg: string }> {
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; msg: string }>
+{
   constructor(props: any) { super(props); this.state = { hasError: false, msg: '' }; }
   static getDerivedStateFromError(err: any) { return { hasError: true, msg: err?.message || String(err) }; }
   componentDidCatch() { /* handled */ }

@@ -85,6 +85,17 @@ export async function uploadEmFile(file: File) {
   return handle(await fetch(API + '/emails/upload', { method: 'POST', headers: authHeaders(), body: fd }));
 }
 
+/** Poll a Celery ingestion task until terminal state (Phase 3 item 10). */
+export async function pollTask(taskId: string, tries = 30, delayMs = 2000): Promise<any> {
+  for (let i = 0; i < tries; i++) {
+    const st = await jget(`/tasks/${taskId}`);
+    if (st.state === 'SUCCESS') return st.result;
+    if (st.state === 'FAILURE') throw new ApiError(500, `background task failed: ${st.error || taskId}`);
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  throw new ApiError(504, `background task ${taskId} still running`);
+}
+
 /** Authenticated download (report links can't carry a bearer token as plain anchors). */
 export async function downloadReport(id: string, kind: 'pdf' | 'json') {
   const blob = (await handle(

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, downloadReport, jdel, jget, jpatch, jpost, uploadEmFile } from './api';
+import { ApiError, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
 
@@ -343,6 +343,7 @@ export function Dashboard() {
   const [q, setQ] = useState('');
   const [sevFilter, setSevFilter] = useState('all');
   const [notice, setNotice] = useState('');
+  const [asyncMode, setAsyncMode] = useState(false);
 
   const triggerDownload = async (id: string, kind: 'pdf' | 'json') => {
     try {
@@ -388,8 +389,16 @@ export function Dashboard() {
     setErr('');
     setNotice('');
     try {
-      const r = await jpost('/emails/ingest', { raw });
-      setNotice(`Analyzed - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
+      if (asyncMode) {
+        // Celery path (Phase 3 item 10): queue, then poll the task id.
+        const q = await jpost(`/emails/ingest?async_mode=true`, { raw });
+        setNotice(`Queued background task ${q.task_id} — polling for the verdict…`);
+        const r = await pollTask(q.task_id);
+        setNotice(`Analyzed (background) - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
+      } else {
+        const r = await jpost('/emails/ingest', { raw });
+        setNotice(`Analyzed - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
+      }
       setRaw('');
       await load();
     } catch (e) {
@@ -487,6 +496,9 @@ export function Dashboard() {
         <textarea rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" />
         <div className="row" style={{ marginTop: 10 }}>
           <button onClick={submit} disabled={busy || !raw.trim()}>{busy ? 'Analyzing…' : 'Analyze email'}</button>
+          <label className="row" style={{ gap: 6, fontSize: 12, color: 'var(--muted)' }} title="Queue via Celery worker instead of inline analysis">
+            <input type="checkbox" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} /> background queue
+          </label>
           <button className="ghost" onClick={() => setRaw(PHISH_SAMPLE)}>Load phishing sample</button>
           <button className="ghost" onClick={() => setRaw(CLEAN_SAMPLE)}>Load clean sample</button>
           <label className="row" style={{ gap: 6 }}>
