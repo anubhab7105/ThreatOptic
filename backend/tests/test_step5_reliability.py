@@ -26,8 +26,8 @@ def test_cors_star_with_credentials_refuses_boot(monkeypatch):
 def test_token_url_follows_api_prefix():
     from app.routers import deps
     from app.config import get_settings
-    assert get_settings().api_prefix in deps.oauth2_scheme.tokenUrl
-    assert deps.oauth2_scheme.tokenUrl.endswith("/auth/login")
+    flow = deps.oauth2_scheme.model.flows.password
+    assert flow is not None and flow.tokenUrl == f"{get_settings().api_prefix}/auth/login"
 
 
 def test_smtp_auth_size_and_rcpt(monkeypatch):
@@ -84,8 +84,8 @@ def test_smtp_auth_size_and_rcpt(monkeypatch):
             assert row is not None
             db = SessionLocal()
             try:
-                tr = db.query(models.TraceabilityData).filter_by(email_id=eid).first()
-                assert tr.trace_summary.get("envelope_rcpt_tos") == ["bcc@test.local"]
+                ar = db.query(models.AnalysisResult).filter_by(email_id=eid).first()
+                assert ar.trace_summary.get("envelope_rcpt_tos") == ["bcc@test.local"]
                 db.query(models.AnalysisResult).filter_by(email_id=eid).delete()
                 db.query(models.TraceabilityData).filter_by(email_id=eid).delete()
                 db.query(models.EmailRecord).filter_by(id=eid).delete()
@@ -166,8 +166,11 @@ def test_kafka_producer_singleton(monkeypatch):
     made = []
 
     class FakeProducer:
+        def __init__(self, *args, **kwargs):
+            made.append((args, kwargs))
+
         async def start(self):
-            made.append(self)
+            pass
 
     import sys
     import types
@@ -206,12 +209,25 @@ def test_alembic_upgrade_fresh_db(tmp_path):
 
 
 def test_tz_aware_model_defaults():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
     from app import models
+    from app.database import Base
     from datetime import timezone
-    u = models.User(username="x", password_hash="y")
-    assert u.created_at.tzinfo is not None and u.created_at.tzinfo == timezone.utc
-    e = models.EmailRecord()
-    assert e.timestamp.tzinfo == timezone.utc
+    eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=eng)
+    db = sessionmaker(bind=eng)()
+    try:
+        u = models.User(username="x", password_hash="y")
+        db.add(u)
+        db.flush()
+        assert u.created_at.tzinfo is not None
+        e = models.EmailRecord()
+        db.add(e)
+        db.flush()
+        assert e.timestamp.tzinfo == timezone.utc
+    finally:
+        db.close()
 
 
 def test_pagination_report_metrics_dedup():
