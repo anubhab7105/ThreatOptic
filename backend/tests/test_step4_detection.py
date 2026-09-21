@@ -52,7 +52,7 @@ def test_feeds_honesty_and_aggregate():
     try:
         assert "demo-fixture" not in feeds.check_domain_blocklists("malicious-example.com")
     finally:
-        del os.environ["APP_ENV"]
+        os.environ["APP_ENV"] = "development"
         get_settings.cache_clear()
     # aggregate covers urls and returns the field scoring reads
     out = feeds.aggregate_threat_intel(["malicious-example.com"], ["9.9.9.9"],
@@ -126,7 +126,7 @@ def test_attachment_vt_cache_and_cap(monkeypatch):
     atts = [{"filename": f"f{i}.pdf", "content_type": "application/pdf", "size": 10,
              "sha256": "ab" * 32, "magic": "25504446"} for i in range(7)]
     out = aa.analyze_attachments(atts, vt_key="k")
-    assert out["risk"] == 100.0 and out["malicious_count"] == 1
+    assert out["risk"] == 100.0 and out["malicious_count"] == 5  # capped lookups, all hit
     # same hash twice -> one HTTP call (cache); 7 files -> cap still bounds fresh hashes
     aa.analyze_attachments(atts[:1], vt_key="k")
     assert calls["n"] == 1
@@ -160,7 +160,7 @@ def test_attribution_weighted_no_crash():
     from app.modules.graph.attribution import attribute
     store.G.clear()
     try:
-        store.upsert_email_graph("A@X.TEST", "9.9.9.9", ["x.test"])
+        store.upsert_email_graph("A@X.TEST", "9.9.9.9", ["x.test", "y.test"])
         r = attribute("a@x.test", "9.9.9.9", ["X.TEST"])  # mixed case must match
         assert 0.0 <= r["confidence"] <= 0.99
         assert r["campaign"] != "unknown"

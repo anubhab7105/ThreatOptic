@@ -27,9 +27,10 @@ def sanitize_html(html_text: str) -> str:
     no_scripts = _SCRIPT_STYLE_RE.sub(" ", html_text or "")
     try:
         import bleach
-        return bleach.clean(no_scripts, tags=[], attributes={}, strip=True)
+        cleaned = bleach.clean(no_scripts, tags=[], attributes={}, strip=True)
     except Exception:
-        return re.sub(r"<[^>]+>", " ", no_scripts)
+        cleaned = re.sub(r"<[^>]+>", " ", no_scripts)
+    return re.sub(r"[ \t]+", " ", cleaned).strip()
 
 
 def parse_eml(raw: bytes) -> dict[str, Any]:
