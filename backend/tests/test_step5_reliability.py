@@ -180,7 +180,8 @@ def test_kafka_producer_singleton(monkeypatch):
     qmod._producer = None
     try:
         assert qmod._get_producer() is qmod._get_producer()
-        assert len(made) == 0  # lazy: nothing connects until publish
+        assert len(made) == 1  # constructed once, shared afterwards
+        assert made[0][1] == {"bootstrap_servers": "kafka:9092"}
     finally:
         qmod._producer = None
 
