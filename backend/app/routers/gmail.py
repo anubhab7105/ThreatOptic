@@ -95,6 +95,13 @@ def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | Non
     return secret
 
 
+def _client_secret() -> str:
+    secret = get_settings().google_client_secret
+    if not secret:
+        raise HTTPException(400, "Google OAuth client_secret not configured (env GOOGLE_CLIENT_SECRET)")
+    return secret
+
+
 def _redirect_uri(explicit: str | None) -> str:
     uri = explicit or get_settings().google_redirect_uri or "http://localhost:5173/"
     return uri
@@ -168,21 +175,24 @@ async def callback(
     if acct:
         acct.gmail_address = address
         acct.refresh_token = encrypted_refresh
+        acct.client_id = cid
         acct.encrypted_client_id = encrypted_cid
         acct.encrypted_client_secret = encrypted_sec
     else:
         acct = models.GmailAccount(
-            user_id=user.id, gmail_address=address,
+            user_id=user.id,
+            gmail_address=address,
             refresh_token=encrypted_refresh,
+            client_id=cid,
             encrypted_client_id=encrypted_cid,
             encrypted_client_secret=encrypted_sec,
         )
         db.add(acct)
 
-    # Also keep MailboxConnection in sync
     conn = db.query(models.MailboxConnection).filter(
         models.MailboxConnection.provider == "google",
-        models.MailboxConnection.account_email == address).first()
+        models.MailboxConnection.account_email == address,
+    ).first()
     if conn:
         conn.encrypted_refresh_token = encrypted_refresh
         conn.encrypted_client_id = encrypted_cid
@@ -191,9 +201,14 @@ async def callback(
         conn.organization_id = user.organization_id
     else:
         db.add(models.MailboxConnection(
-            user_id=user.id, organization_id=user.organization_id, provider="google",
-            account_email=address, encrypted_refresh_token=encrypted_refresh,
-            encrypted_client_id=encrypted_cid, encrypted_client_secret=encrypted_sec))
+            user_id=user.id,
+            organization_id=user.organization_id,
+            provider="google",
+            account_email=address,
+            encrypted_refresh_token=encrypted_refresh,
+            encrypted_client_id=encrypted_cid,
+            encrypted_client_secret=encrypted_sec,
+        ))
 
     db.commit()
     return _status_payload(user, db)
@@ -219,9 +234,17 @@ async def sync(
     db.commit()
 
     try:
+        # No plaintext fallback: undecryptable rows are pre-vault legacy
+        # values — the owner must reconnect (C5 forced re-auth).
         raw_token = vault.decrypt_secret(acct.refresh_token)
     except Exception:
-        raw_token = acct.refresh_token
+        raise HTTPException(400, "stored Gmail credentials are invalid — please disconnect and reconnect the mailbox")
+    # Reuse the client_id pinned at connect time; fail loudly (with a log)
+    # instead of passing an empty string when OAuth is unconfigured.
+    cid = (acct.client_id or "").strip() or get_settings().google_client_id
+    if not cid:
+        log.error("gmail sync for user %s has no client_id (connect-time or settings)", user.id)
+        raise HTTPException(400, "Google OAuth client_id not configured (env GOOGLE_CLIENT_ID)")
     try:
         fresh = await connectors.refresh_gmail_token(raw_token, cid, secret)
     except httpx.HTTPError as e:
@@ -232,7 +255,6 @@ async def sync(
         )
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Gmail fetch failed: {e}")
-    # Process emails concurrently with bounded concurrency for fast ingestion
     email_ids: list[str] = []
     errors: list[str] = []
     sem = asyncio.Semaphore(8)
@@ -264,6 +286,14 @@ async def sync(
     )
     acct.last_sync_at = datetime.utcnow()
     db.commit()
+    if out.synced:
+        try:
+            from ..modules.cache import cache_delete_prefix
+            cache_delete_prefix("dash:")
+        except Exception:
+            pass
+    from ..modules.auth.rate_limit import audit as _audit
+    _audit("gmail.sync", user=user.username, synced=out.synced)
     return out
 
 

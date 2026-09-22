@@ -28,7 +28,7 @@ Quarterly report draft ready for review, no action needed.
 
 def _auth(c: TestClient) -> dict:
     uname = f"campaign-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
+    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
     return {"Authorization": f"Bearer {tok}"}
 
 
@@ -38,9 +38,11 @@ def test_campaign_cards_and_detail():
     with TestClient(app) as c:
         h = _auth(c)
         # two domains sharing one IP -> one cluster; third mail on another IP stays out
-        c.post("/api/v1/emails/ingest", headers=h, json={"raw": A_TMPL.format(dom="evilcamp1.test", n="c1", relay="a")})
-        c.post("/api/v1/emails/ingest", headers=h, json={"raw": A_TMPL.format(dom="evilcamp2.test", n="c2", relay="b")})
-        c.post("/api/v1/emails/ingest", headers=h, json={"raw": B_TMPL.format(dom="lonely.test", n="c3")})
+        for dom, n, relay in (("evilcamp1.test", "c1", "a"), ("evilcamp2.test", "c2", "b"),
+                              ("lonely.test", "c3", "c")):
+            tmpl = A_TMPL if relay in ("a", "b") else B_TMPL
+            r = c.post("/api/v1/emails/ingest", headers=h, json={"raw": tmpl.format(dom=dom, n=n, relay=relay)})
+            assert r.status_code == 200, r.text
 
         r = c.get("/api/v1/campaigns", headers=h)
         assert r.status_code == 200, r.text
@@ -48,7 +50,7 @@ def test_campaign_cards_and_detail():
         card = next((k for k in cards if k["ip"] == "203.0.113.99"), None)
         assert card is not None, cards
         assert set(card["domains"]) >= {"evilcamp1.test", "evilcamp2.test"}
-        assert card["email_count"] >= 2
+        assert card["email_count"] == 2
         assert 0 < card["confidence"] <= 0.95
         assert card["first_seen"] and card["last_seen"]
 
@@ -56,7 +58,7 @@ def test_campaign_cards_and_detail():
         assert d.status_code == 200, d.text
         detail = d.json()
         assert detail["card"]["id"] == card["id"]
-        assert len(detail["emails"]) >= 2
+        assert len(detail["emails"]) == 2
         assert detail["graph"]["nodes"]
         subjects = [e["subject"] for e in detail["emails"]]
         assert any("Invoice update" in s for s in subjects)

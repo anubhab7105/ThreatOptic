@@ -44,7 +44,7 @@ def test_authorize_urls():
         assert c.get("/api/v1/oauth/status").status_code == 401
 
 
-async def _fake_g_exchange(code, cid, sec, uri):
+async def _fake_g_exchange(code, cid, sec, uri, code_verifier=""):
     return {"access_token": "ya29.x", "refresh_token": "1//r-token", "expires_in": 3600}
 
 
@@ -79,38 +79,73 @@ def test_callback_sync_disconnect(monkeypatch):
 
     with TestClient(app) as c:
         h = _auth(c)
-        assert c.get("/api/v1/oauth/status", headers=h).json() == []
-        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "redirect_uri": "http://localhost:5173/"}, follow_redirects=False)
-        assert r.status_code == 302, r.text
-        assert "/#/mailboxes?connected=" in r.headers["location"]
-
-        db = SessionLocal()
+        # disconnect requires Analyst+: promote the freshly registered (ReadOnly) user
+        dbp = SessionLocal()
         try:
-            row = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
-            assert row is not None and decrypt_secret(row.encrypted_refresh_token) == "1//r-token"
-            assert "1//r-token" not in row.encrypted_refresh_token
+            tok_user = dbp.query(models.User).order_by(models.User.created_at.desc()).first()
+            tok_user.role = "Analyst"
+            dbp.commit()
         finally:
-            db.close()
-
-        st = c.get("/api/v1/oauth/status", headers=h).json()
-        assert len(st) == 1 and st[0]["account_email"] == "owner@gmail.com"
-
-        r = c.post("/api/v1/oauth/sync-now", headers=h, json={"provider": "google", "max_results": 5})
-        assert r.status_code == 200, r.text
-        assert r.json()["synced"] == 1
-
-        db = SessionLocal()
+            dbp.close()
+        # hermetic: drop any leftover fixture row from interrupted runs
+        db0 = SessionLocal()
         try:
-            mail = db.query(models.EmailRecord).filter_by(message_id="<oauth-probe@test>").first()
-            assert mail is not None
-            eid = mail.id
-            db.query(models.AnalysisResult).filter_by(email_id=eid).delete()
-            db.query(models.TraceabilityData).filter_by(email_id=eid).delete()
-            db.query(models.EmailRecord).filter_by(id=eid).delete()
-            db.commit()
+            db0.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+            db0.commit()
         finally:
-            db.close()
+            db0.close()
+        try:
+            assert c.get("/api/v1/oauth/status", headers=h).json() == []
+            # full flow: authorize mints server-side state + PKCE, callback consumes it
+            au = c.get("/api/v1/oauth/google/authorize", headers=h, params={
+                "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(au).query)
+            assert "state" in q and "code_challenge" in q and q["code_challenge_method"] == ["S256"]
+            r = c.get("/api/v1/oauth/google/callback",
+                      params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
+            assert r.status_code == 302, r.text
+            assert "/mailboxes?connected=" in r.headers["location"]
+            # state is single-use: replay fails
+            r2 = c.get("/api/v1/oauth/google/callback",
+                       params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
+            assert r2.status_code == 400
 
-        assert c.delete("/api/v1/oauth/google", headers=h).status_code == 200
-        assert c.get("/api/v1/oauth/status", headers=h).json() == []
-        assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
+            db = SessionLocal()
+            try:
+                row = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
+                assert row is not None and decrypt_secret(row.encrypted_refresh_token) == "1//r-token"
+                assert "1//r-token" not in row.encrypted_refresh_token
+            finally:
+                db.close()
+
+            st = c.get("/api/v1/oauth/status", headers=h).json()
+            assert len(st) == 1 and st[0]["account_email"] == "owner@gmail.com"
+
+            r = c.post("/api/v1/oauth/sync-now", headers=h, json={"provider": "google", "max_results": 5})
+            assert r.status_code == 200, r.text
+            assert r.json()["synced"] == 1
+
+            db = SessionLocal()
+            try:
+                mail = db.query(models.EmailRecord).filter_by(message_id="<oauth-probe@test>").first()
+                assert mail is not None
+                eid = mail.id
+                db.query(models.AnalysisResult).filter_by(email_id=eid).delete()
+                db.query(models.TraceabilityData).filter_by(email_id=eid).delete()
+                db.query(models.EmailRecord).filter_by(id=eid).delete()
+                db.commit()
+            finally:
+                db.close()
+
+            assert c.delete("/api/v1/oauth/google", headers=h).status_code == 200
+            assert c.get("/api/v1/oauth/status", headers=h).json() == []
+            assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
+        finally:
+            # never leak the fixture row (disconnect deletes by provider only)
+            dbf = SessionLocal()
+            try:
+                dbf.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+                dbf.commit()
+            finally:
+                dbf.close()

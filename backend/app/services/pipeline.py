@@ -57,9 +57,34 @@ async def _to_thread(fn, *args, timeout: float = 3.0, **kwargs):
         return None
 
 
-async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "", unmask: bool = False) -> dict:
+async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelope_from: str = "",
+                      organization_id: str | None = None, envelope_tos: list[str] | None = None) -> dict:
     if not raw or not raw.strip():
         raise ValueError("empty email payload")
+
+    import hashlib
+    eml_hash = hashlib.sha256(bytes(raw)).hexdigest()
+    # Idempotent ingest: same bytes + same tenant returns the stored verdict
+    # instead of duplicating rows (unique raw_eml_hash backing).
+    dup = db.query(EmailRecord).filter(
+        EmailRecord.raw_eml_hash == eml_hash,
+        EmailRecord.organization_id == organization_id).first()
+    if dup is not None:
+        stored = db.query(AnalysisResult).filter(AnalysisResult.email_id == dup.id).first()
+        trace = db.query(TraceabilityData).filter(TraceabilityData.email_id == dup.id).first()
+        return {
+            "email_id": dup.id,
+            "fraud_score": stored.fraud_score if stored else 0.0,
+            "classification": stored.threat_classification if stored else "Clean",
+            "action": stored.action_taken if stored else "Deliver",
+            "breakdown": {},
+            "signals": stored.score_breakdown if stored else [],
+            "origin_ip": trace.origin_ip if trace else "",
+            "geo": trace.geolocation if trace else {},
+            "alert": {"severity": "Low", "action": "Deliver", "sent": []},
+            "attribution": {"campaign": "unknown", "confidence": 0.0, "signals": []},
+            "duplicate": True,
+        }
 
     parsed = parse_eml(raw)
     headers = parsed.get("raw_headers", {})
@@ -92,7 +117,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         _to_thread(flag_infrastructure, origin_ip, "", ""),
         _to_thread(validate_all, raw, headers, origin_ip or "127.0.0.1", envelope_from or hinfo.get("return_path", "")),
     )
-    geo = geo or {"lat": 0.0, "lon": 0.0, "country": "", "city": "", "source": "fallback"}
+    geo = geo or {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
     whois = whois or {}
     dnsd = dnsd or {}
     infra = infra or {"is_vpn_tor": False, "infra_flags": []}
@@ -101,22 +126,23 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
 
     # If origin_ip gave no coordinates, try relay hops or sender domain IP for approximate geolocation
-    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+    from ..modules.traceability.geoip import has_coords
+    if not has_coords(geo):
         for hop in (path or []):
             for hop_ip in hop.get("ips", []):
                 g = geolocate(hop_ip)
-                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                if has_coords(g):
                     geo = g
                     break
-            if geo and (geo.get("lat") != 0.0 or geo.get("lon") != 0.0):
+            if has_coords(geo):
                 break
-    if not geo or (geo.get("lat") == 0.0 and geo.get("lon") == 0.0):
+    if not has_coords(geo):
         try:
             import socket
             if domain:
                 dip = socket.gethostbyname(domain)
                 g = geolocate(dip)
-                if g and (g.get("lat") != 0.0 or g.get("lon") != 0.0):
+                if has_coords(g):
                     geo = {**g, "source": "approx-domain-ip"}
         except Exception:
             pass
@@ -137,7 +163,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         urls = []
 
     import os
-    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+    from ..config import get_settings
+    vt_key = get_settings().virustotal_api_key or os.environ.get("VIRUSTOTAL_API_KEY", "")
 
     nlp_res, url_res, attach_res = await asyncio.gather(
         _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", ""), timeout=5.0),
@@ -155,7 +182,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("threat intel failed: %s", e)
         intel = {"hits": [], "count": 0}
-    intel["malicious_count"] = url_res.get("malicious_count", 0)
+    intel["malicious_count"] = int(intel.get("malicious_count", 0)) + int(url_res.get("malicious_count", 0))
     intel_hits = intel.get("hits", []) + [{"type": "url", **h} for h in url_res.get("hits", [])]
     intel_hits += [{"type": "attachment", **f} for f in attach_res.get("findings", [])]
 
@@ -169,13 +196,16 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
                    "action": "Deliver", "breakdown": {}, "signals": []}
 
-    masked_body = mask_text(body, unmask=unmask)
+    masked_body = mask_text(body)
     email_row = EmailRecord(
         message_id=parsed.get("message_id", ""), sender_address=parsed.get("sender_address", ""),
         recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
-        raw_headers=headers, body_text=body, body_text_masked=masked_body,
+        # Step 3: raw body_text is NEVER persisted — only the masked version.
+        # The raw body lives in memory for this run (scoring/masking) and is dropped.
+        raw_headers=headers, body_text="", body_text_masked=masked_body,
         attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
         timestamp=parsed.get("timestamp") or datetime.now(timezone.utc),
+        organization_id=organization_id,
     )
     db.add(email_row)
     db.flush()
@@ -191,7 +221,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         threat_classification=scoring["threat_classification"],
         nlp_cues_detected=list(nlp.get("nlp_cues_detected", [])) + list(routing_flags) + list(hinfo.get("flags", [])),
         authentication_results=auth,
-        trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path)},
+        trace_summary={"origin_ip": origin_ip, "geo": geo, "relay_hops": len(path),
+                       "envelope_rcpt_tos": list(envelope_tos or [])},
         threat_intel_hits=intel_hits, action_taken=scoring["action"],
         score_breakdown=scoring.get("signals", []),
     )
@@ -205,9 +236,13 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         attribution = {"campaign": "unknown", "confidence": 0.0, "signals": []}
     try:
         from ..modules.search.elastic_sync import index_email
+        # Step 3: index masked/minimal fields only — never raw PII.
         index_email(email_row.id,
-                    {"subject": email_row.subject, "sender_address": email_row.sender_address,
-                     "recipient_address": email_row.recipient_address, "body_text_masked": masked_body},
+                    {"subject": mask_text(email_row.subject),
+                     "sender_address": mask_text(email_row.sender_address),
+                     "recipient_address": mask_text(email_row.recipient_address),
+                     "body_text_masked": masked_body,
+                     "organization_id": email_row.organization_id},
                     {"fraud_score": scoring["fraud_score"],
                      "threat_classification": scoring["threat_classification"]})
     except Exception as e:
@@ -222,6 +257,19 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("alert dispatch failed: %s", e)
         alert = {"severity": "Low", "action": scoring.get("action", "Deliver"), "sent": ["dashboard"]}
+    # Real-time push for high-risk mail (best-effort; never fails ingestion).
+    try:
+        if scoring["fraud_score"] >= 75:
+            from ..routers.ws import manager as _ws_manager
+            await _ws_manager.broadcast_alert(
+                {"event": "high-risk-alert", "email_id": email_row.id,
+                 "fraud_score": scoring["fraud_score"],
+                 "classification": scoring["threat_classification"],
+                 "subject": (email_row.subject or "")[:120]},
+                organization_id,
+            )
+    except Exception as e:
+        log.warning("ws broadcast failed: %s", e)
 
     return {
         "email_id": email_row.id, "fraud_score": scoring["fraud_score"],

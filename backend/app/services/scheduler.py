@@ -59,7 +59,7 @@ def start_scheduler():
     )
     minutes = getattr(settings, "mail_poll_minutes", 0) or 0
     if minutes > 0:
-        from ..routers.oauth import poll_all_mailboxes
+        from .mailbox_poll import poll_all_mailboxes
         scheduler.add_job(
             poll_all_mailboxes,
             "interval",

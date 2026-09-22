@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { clearTokens, getTokens, jget, jpost, setTokens } from './api';
+import { ApiError, clearTokens, getTokens, jget, jpost, setTokens } from './api';
 
 export type AuthUser = { id: string; username: string; role: string; organization_id: string | null };
 
@@ -27,8 +27,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       setUser(await jget('/auth/me'));
-    } catch {
-      clearTokens();
+    } catch (e) {
+      // Step 6: only an actual 401 drops the session — transient 500s or
+      // network blips keep tokens so the next attempt can still refresh.
+      if (e instanceof ApiError && e.status === 401) {
+        clearTokens();
+      }
       setUser(null);
     } finally {
       setLoading(false);

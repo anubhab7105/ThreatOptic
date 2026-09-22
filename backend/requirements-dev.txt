@@ -1,0 +1,7 @@
+# Dev/test tooling only — kept OUT of the production image (Step 8).
+-r requirements.txt
+pytest>=8.3.4
+pytest-asyncio>=0.25.0
+pytest-cov>=5.0
+ruff>=0.8.0
+pip-audit>=2.7.0

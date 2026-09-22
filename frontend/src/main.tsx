@@ -1,8 +1,9 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { BASE } from './api';
+import { BASE, getTokens } from './api';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -18,6 +19,12 @@ const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.Ter
 
 // Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
 const CANONICAL_BASE = 'https://socforensics.io';
+
+/** Serialize for <script> injection: escape `</` so crafted strings can
+ * never break out of the script tag (C14 stored-XSS). */
+function safeJsonLd(obj: unknown): string {
+  return JSON.stringify(obj).replace(/<\//g, '<\\/');
+}
 
 function setCanonical(path: string) {
   const href = `${CANONICAL_BASE}${path}`;
@@ -48,7 +55,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}${it.href.replace(/^#/, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}${it.href.replace(/^\//, '')}` : undefined,
     })),
   };
   return (
@@ -63,7 +70,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
           ))}
         </ol>
       </nav>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(jsonLd) }} />
     </>
   );
 }
@@ -107,12 +114,12 @@ function CookieConsent() {
   return (
     <div className="cookie-banner" role="dialog" aria-label="Cookie consent">
       <p>
-        We use essential cookies to keep you signed in and to remember your theme and privacy choice. Analytics cookies are off by default. See our <a href="#/privacy">Privacy Policy</a> and <a href="#/terms">Terms</a>.
+        We use essential cookies to keep you signed in and to remember your theme and privacy choice. Analytics cookies are off by default. See our <Link to="/privacy">Privacy Policy</Link> and <Link to="/terms">Terms</Link>.
       </p>
       <div className="cookie-actions">
         <button onClick={accept}>Accept essential</button>
         <button className="ghost" onClick={decline}>Decline</button>
-        <a href="#/privacy" className="ghost" style={{ padding: '8px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel-2)', textDecoration: 'none', color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>Learn more</a>
+        <Link to="/privacy" className="ghost" style={{ padding: '8px 14px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--panel-2)', textDecoration: 'none', color: 'var(--text)', fontWeight: 700, fontSize: 13 }}>Learn more</Link>
       </div>
     </div>
   );
@@ -128,7 +135,7 @@ function NotFoundPage() {
   }, []);
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: '404 Not Found' }]} />
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: '404 Not Found' }]} />
       <h1>404 - Page Not Found</h1>
       <p className="sub">The forensic resource you requested does not exist or has been moved. This incident has not been logged - it is a routing miss, not a threat.</p>
       <div className="card" style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -136,11 +143,11 @@ function NotFoundPage() {
         <div>
           <p style={{ marginTop: 0 }}>Try one of these instead:</p>
           <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
-            <li><a href="#/">Global Threat Dashboard</a> - ingest and score emails</li>
-            <li><a href="#/campaigns">Campaigns</a> - shared infrastructure clusters</li>
-            <li><a href="#/cases">Case Management</a> - triage to closure</li>
-            <li><a href="#/mailboxes">Mailboxes</a> - OAuth connectors</li>
-            <li><a href="#/model">Model Info</a> - transparency, metrics, confusion matrix</li>
+            <li><Link to="/">Global Threat Dashboard</Link> - ingest and score emails</li>
+            <li><Link to="/campaigns">Campaigns</Link> - shared infrastructure clusters</li>
+            <li><Link to="/cases">Case Management</Link> - triage to closure</li>
+            <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
+            <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
           <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@socforensics.io - Austin, TX SOC.</p>
         </div>
@@ -157,7 +164,7 @@ function NotFoundPage() {
           <a href="https://socforensics.io/" rel="canonical">socforensics.io</a>
         </div>
       </div>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - SOC Forensics Lab',
         description: 'Requested forensic resource not found', url: `${CANONICAL_BASE}/404`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
@@ -166,7 +173,59 @@ function NotFoundPage() {
   );
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; msg: string }> {
+function AlertBell() {
+  const [alerts, setAlerts] = React.useState<any[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const [live, setLive] = React.useState(false);
+  React.useEffect(() => {
+    let ws: WebSocket | null = null;
+    let closed = false;
+    try {
+      const pair = getTokens();
+      if (!pair?.access_token) return;
+      const base = BASE;
+      const wsBase = base
+        ? base.replace(/^http/, 'ws')
+        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+      ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?token=${encodeURIComponent(pair.access_token)}`);
+      ws.onopen = () => { if (!closed) setLive(true); };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.event === 'high-risk-alert') setAlerts((a) => [msg, ...a].slice(0, 20));
+        } catch { /* ignore malformed frames */ }
+      };
+      ws.onclose = () => { if (!closed) setLive(false); };
+    } catch { /* WS unavailable: bell stays dormant */ }
+    return () => { closed = true; try { ws?.close(); } catch { /* noop */ } };
+  }, []);
+  return (
+    <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
+      <button className="ghost" onClick={() => setOpen((o) => !o)} aria-label={`Alerts (${alerts.length} unread)`} title="High-risk alerts">
+        🔔{alerts.length > 0 && <b style={{ color: '#ef4444' }}> {alerts.length}</b>}
+        <span className="dot" style={{ background: live ? '#22c55e' : '#6b7280', marginLeft: 6 }} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
+          <h3>High-risk alerts {live ? '(live)' : '(offline)'}</h3>
+          {alerts.length === 0 ? <p className="sub">No alerts this session.</p> : (
+            <ul style={{ paddingLeft: 18, margin: 0 }}>
+              {alerts.map((a, i) => (
+                <li key={i}><Link to={`/email/${a.email_id}`}>{a.subject || a.email_id}</Link> <b>{a.fraud_score}</b></li>
+              ))}
+            </ul>
+          )}
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="ghost" onClick={() => { setAlerts([]); setOpen(false); }}>Clear</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; msg: string }>
+{
   constructor(props: any) { super(props); this.state = { hasError: false, msg: '' }; }
   static getDerivedStateFromError(err: any) { return { hasError: true, msg: err?.message || String(err) }; }
   componentDidCatch() { /* handled */ }
@@ -177,7 +236,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
           <h1>Something went wrong</h1>
           <p className="sub">An unexpected error occurred in the forensic UI. Reload or return to the dashboard.</p>
           <div className="toast">{this.state.msg.slice(0, 400)}</div>
-          <a href="#/">Back to Dashboard</a>
+          <Link to="/">Back to Dashboard</Link>
         </div>
       );
     }
@@ -185,46 +244,54 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
+function EmailRoute() {
+  const { id } = useParams();
+  return <EmailView id={id!} />;
+}
+
+function CampaignRoute() {
+  const { id } = useParams();
+  return <CampaignDetail id={id!} />;
+}
+
 function Shell() {
   const { user, loading, logout } = useAuth();
-  const [hash, setHash] = useState(window.location.hash || '#/');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [health, setHealth] = useState<'ok' | 'down' | 'unknown'>('unknown');
 
   useEffect(() => {
-    const f = () => setHash(window.location.hash || '#/');
-    window.addEventListener('hashchange', f);
-    return () => window.removeEventListener('hashchange', f);
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const code = params.get('code');
     const state = params.get('state');
     if (code) {
       const originPath = window.location.origin + window.location.pathname;
       const cid = localStorage.getItem('gmail_client_id') || localStorage.getItem('oauth_client_id') || '';
       const csec = localStorage.getItem('gmail_client_secret') || localStorage.getItem('oauth_client_secret') || '';
-      
+
       let target = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
       if (state) target += `&state=${encodeURIComponent(state)}`;
       if (cid) target += `&client_id=${encodeURIComponent(cid)}`;
       if (csec) target += `&client_secret=${encodeURIComponent(csec)}`;
-      
+
       window.location.href = target;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
   useEffect(() => {
     const ac = new AbortController();
     fetch(`${BASE}/health`, { signal: ac.signal })
       .then((r) => { if (!ac.signal.aborted) setHealth(r.ok ? 'ok' : 'down'); })
       .catch(() => { if (!ac.signal.aborted) setHealth('down'); });
     return () => ac.abort();
-  }, [hash]);
+  }, []);
 
   useEffect(() => {
-    if (!hash || hash === '#/') setCanonical('/');
-  }, [hash]);
+    setCanonical(location.pathname);
+  }, [location.pathname]);
 
+  const hash = window.location.hash;
   const getRoute = (): { name: string; id?: string } => {
     const rawPath = hash.split('?')[0] || '';
     const cleanPath = rawPath.replace(/^#\/?/, '').toLowerCase();
@@ -246,7 +313,7 @@ function Shell() {
     return (
       <div>
         <nav className="nav" aria-label="Primary">
-          <a href="#/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</a>
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
         </nav>
         <div className="page"><div className="skel" style={{ height: 120 }} aria-hidden="true" /></div>
       </div>
@@ -255,33 +322,19 @@ function Shell() {
 
   if (!user) {
     // Public pages like privacy/terms should be accessible without login
-    if (route.name === 'privacy' || route.name === 'terms') {
-      return (
-        <div>
-          <nav className="nav" aria-label="Primary">
-            <a href="#/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</a>
-            <a className="nl" href="#/">Dashboard</a>
-            <span className="spacer" />
-            <ThemeToggle />
-          </nav>
-          <ErrorBoundary>
-            <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-              {route.name === 'privacy' ? <PrivacyPolicy /> : <TermsConditions />}
-            </Suspense>
-          </ErrorBoundary>
-          <CookieConsent />
-        </div>
-      );
-    }
     return (
       <div>
         <nav className="nav" aria-label="Primary" style={{ justifyContent: 'space-between' }}>
-          <a href="#/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</a>
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
           <ThemeToggle />
         </nav>
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-            <LoginPage />
+            <Routes>
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsConditions />} />
+              <Route path="*" element={<LoginPage />} />
+            </Routes>
           </Suspense>
         </ErrorBoundary>
         <CookieConsent />
@@ -292,18 +345,19 @@ function Shell() {
   return (
     <div>
       <nav className="nav" aria-label="Primary">
-        <a href="#/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</a>
-        <a className={`nl${route.name === 'dash' ? ' active' : ''}`} href="#/" aria-current={route.name === 'dash' ? 'page' : undefined}>Dashboard</a>
-        <a className={`nl${route.name === 'campaigns' || route.name === 'campaign' ? ' active' : ''}`} href="#/campaigns">Campaigns</a>
-        <a className={`nl${route.name === 'cases' ? ' active' : ''}`} href="#/cases">Cases</a>
-        <a className={`nl${route.name === 'mailboxes' ? ' active' : ''}`} href="#/mailboxes">Mailboxes</a>
-        <a className={`nl${route.name === 'model' ? ' active' : ''}`} href="#/model">Model Info</a>
+        <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+        <Link to="/" className={`nl${on('/')}`} aria-current={on('/') ? 'page' : undefined}>Dashboard</Link>
+        <Link to="/campaigns" className={`nl${onCampaigns}`}>Campaigns</Link>
+        <Link to="/cases" className={`nl${on('/cases')}`}>Cases</Link>
+        <Link to="/mailboxes" className={`nl${on('/mailboxes')}`}>Mailboxes</Link>
+        <Link to="/model" className={`nl${on('/model')}`}>Model Info</Link>
         <span className="spacer" />
+        <AlertBell />
         <ThemeToggle />
         <span className="health" title={`${user.username} - ${user.role}`}>
           {user.username} ({user.role})
         </span>
-        <a className="nl" href="#/" onClick={(e) => { e.preventDefault(); logout(); window.location.hash = '#/'; }}>Sign out</a>
+        <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }}>Sign out</Link>
         <span className="health" title="backend reachability">
           <span className="dot" style={{ background: health === 'ok' ? '#22c55e' : health === 'down' ? '#ef4444' : '#eab308' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
@@ -312,35 +366,26 @@ function Shell() {
 
       <ErrorBoundary>
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-          {route.name === 'email' ? (
-            <EmailView id={route.id!} />
-          ) : route.name === 'campaign' ? (
-            <CampaignDetail id={route.id!} />
-          ) : route.name === 'campaigns' ? (
-            <Campaigns />
-          ) : route.name === 'model' ? (
-            <ModelInfo />
-          ) : route.name === 'mailboxes' ? (
-            <Mailboxes />
-          ) : route.name === 'cases' ? (
-            <Cases />
-          ) : route.name === 'privacy' ? (
-            <PrivacyPolicy />
-          ) : route.name === 'terms' ? (
-            <TermsConditions />
-          ) : route.name === 'dash' ? (
-            <Dashboard />
-          ) : (
-            <NotFoundPage />
-          )}
+          <Routes>
+            <Route path="/email/:id" element={<EmailRoute />} />
+            <Route path="/campaign/:id" element={<CampaignRoute />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/model" element={<ModelInfo />} />
+            <Route path="/mailboxes" element={<Mailboxes />} />
+            <Route path="/cases" element={<Cases />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsConditions />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
         </Suspense>
       </ErrorBoundary>
 
       <footer className="footer">
         <div>Email Threat Detection - GeoLocation - Forensic Intelligence - chain-of-custody reports via PDF/JSON</div>
         <div style={{ marginTop: 6 }}>
-          <a href="#/">Dashboard</a> - <a href="#/campaigns">Campaigns</a> - <a href="#/cases">Cases</a> - <a href="#/mailboxes">Mailboxes</a> - <a href="#/model">Model</a>
-          {' - '}<a href="#/privacy">Privacy Policy</a> - <a href="#/terms">Terms</a>
+          <Link to="/">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
+          {' - '}<Link to="/privacy">Privacy Policy</Link> - <Link to="/terms">Terms</Link>
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
           {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>
         </div>
@@ -352,7 +397,9 @@ function Shell() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <AuthProvider>
-    <Shell />
-  </AuthProvider>,
+  <BrowserRouter>
+    <AuthProvider>
+      <Shell />
+    </AuthProvider>
+  </BrowserRouter>,
 );

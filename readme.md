@@ -7,7 +7,6 @@ The platform is designed to move beyond static, signature-based email filtering 
 
 ## Documentation Index
 Please refer to the following markdown files in this repository to understand the system comprehensively:
-
 1. [Product Requirements Document (PRD)](PRD.md) - Problem statement, proposed solutions, and key components.
 2. [Technical Specification (Techspec)](Techspec.md) - Tech stack and core module breakdown.
 3. [Application Flow (AppFlow)](AppFlow.md) - Step-by-step data lifecycle from ingestion to alerting.
@@ -16,6 +15,7 @@ Please refer to the following markdown files in this repository to understand th
 6. [Implementation Plan](Implementationplan.md) - Phased roadmap for development and rollout.
 7. [Project Tracker (Tracker)](Tracker.md) - Actionable checklist of tasks.
 8. [System Rules (Rules)](Rules.md) - Detection thresholds, privacy safeguards, and compliance policies.
+9. [Security Runbook (SECURITY)](SECURITY.md) - compromise assumption, out-of-band secret rotation, verification.
 
 ## Getting Started (Developer Setup)
 
@@ -45,12 +45,12 @@ docker compose up --build
 - POST /api/v1/cases | PATCH /api/v1/cases/{id} | DELETE /api/v1/cases/{id} (Admin)
 
 Demo accounts (seeded): `admin / admin123` (Admin), `analyst / analyst123` (Analyst).
-Public self-registration creates Analyst accounts (first-ever account becomes Admin).
+Public self-registration creates **ReadOnly** accounts by default (Analyst also allowed); creating an Admin requires the out-of-band `SETUP_TOKEN`. Access tokens live 20 minutes with rotating single-use refresh tokens (reuse kills the whole token family). Roles: ReadOnly reads, Analyst ingests + edits cases, Admin deletes + retention + provisioning. Every account gets a personal workspace org; all email/case/dashboard/search queries are tenant-scoped (Admins see all).
 
 ### Gmail live demo
 1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
-2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env (or paste per-request in the UI; both must belong to the same OAuth client).
-3. Dashboard → "Gmail live import" → fill client ID + secret → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline.
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `backend/.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
+3. Dashboard → "Gmail live import" → fill client ID → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline. (The OAuth client secret lives server-side in `GOOGLE_CLIENT_SECRET` only — the UI never sends it.)
 
 Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
 
@@ -65,8 +65,11 @@ Without the download (offline), training falls back to the curated lists. No pub
 ### Attachment analysis
 Attachments are hash-checked against VirusTotal (skipped without `VIRUSTOTAL_API_KEY`) plus offline heuristics: macro-enabled Office docs, double extensions, executables, and magic-byte mismatches feed an `attachment_risk` score weight (0.10).
 
+### Privacy model
+Raw email bodies are **never persisted** — only the masked version is stored (cards/SSN/phones/email-localparts redacted; names/addresses/IPs are not masked). Forensic reports mask subject/sender/recipient as well. Search escapes LIKE wildcards and indexes masked fields only.
+
 ### Retention
-`services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Manual run: `POST /api/v1/admin/retention` (Admin).
+`services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Old clean mail is body-blanked (metadata kept); old malicious mail is fully deleted (email + analysis + trace + ES doc + graph node) in batches with per-batch rollback. Manual run: `POST /api/v1/admin/retention` (Admin).
 
 ### Secrets (compose / k8s)
 No credentials are committed. For compose: `cp backend/.env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
@@ -88,16 +91,23 @@ python3 backend/scripts/live_demo_check.py            # terminal 2 (uses admin/a
 The script checks env/keys, API health, login, an ingest roundtrip whose Why-breakdown must sum to the score, plus campaigns/model/oauth/gmail endpoints, and exits non-zero with FAIL lines for anything needing attention. For a fully live demo set `ENABLE_LIVE_LOOKUPS=1` with real keys (`VIRUSTOTAL_API_KEY`, MaxMind DB at `GeoLite2-City.mmdb`, `MISP_URL/KEY`) and `SECRET_KEY`/`CUSTODY_KEY` from your secrets manager — rehearse the script once with those set.
 
 ### Configuration
-- `ENABLE_LIVE_LOOKUPS=1` — opt into live enrichment (ip-api, WHOIS, DNS, DNSBL, URLhaus, SPF/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network.
+- `ENABLE_LIVE_LOOKUPS=1` — **recommended for any live deployment**: opt into live enrichment (ip-api over HTTPS, WHOIS, DNS, DNSBL, URLhaus, SPF/DKIM/DMARC DNS). Default `0` = fast offline mode with static GeoIP fallback, so ingestion takes <1s and works without network. Offline, auth checks report `unverifiable` (distinct from real failures) and score near-zero.
+- `TRUSTED_RELAY_HOSTS` / `TRUSTED_RELAY_IPS` (comma-separated) — your own relays, used as the trust boundary for origin-IP extraction.
+- `CELERY_BROKER_URL` (e.g. `redis://localhost:6379/0`) — enables the optional Celery async path (`?async_mode` + `GET /tasks/{id}`); unset keeps the synchronous pipeline. `CELERY_RESULT_BACKEND` defaults to in-memory cache.
+- `REDIS_URL` — shared cache for GeoIP (24h), WHOIS (24h), DNS (1h) and dashboard (5min, invalidated on writes); unset keeps an in-process dict cache with the same TTLs.
+- High-risk mail (score ≥75) is pushed over WebSocket `/api/v1/ws/alerts?token=<jwt>` to same-org clients (Admins get all); the nav bell shows the live stream.
+- `KNOWN_LEGIT_DOMAINS` (comma-separated) — extra brands for lookalike-domain detection, appended to the built-in list.
+- Operator blocklist lives in `backend/data/local_blocklist.txt` (one domain per line), not in code; hard-coded demo domains only fire in development.
 - `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
 - `CUSTODY_KEY` — HMAC key for chain-of-custody report signatures. **Must be provisioned from a secrets manager in any non-local deployment**; the app refuses to start when `APP_ENV` is not `development` and no key is set. (`APP_ENV=development` is the local default and keeps an explicit dev fallback.)
-- `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task.
+- `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task. Harden with `SMTP_REQUIRE_AUTH=1` + `SMTP_USERNAME`/`SMTP_PASSWORD`, `SMTP_TLS_CERT`/`SMTP_TLS_KEY` (STARTTLS), `SMTP_DATA_LIMIT_BYTES`.
+- Managed Postgres: `alembic upgrade head` from `backend/` (SQLite dev uses the fast built-in path). Ingest is idempotent per tenant (duplicate bytes return the stored verdict).
 - `VITE_API_URL` (frontend) — backend base URL for split hosting; same-origin by default. See `frontend/.env.example`.
 - Health: `GET /health` (liveness) and `GET /health/detailed` (DB + NLP status).
 
 ### Present-Stage Notes (September 2026)
 - "AI" scope: the running ML is TF-IDF + LogisticRegression (30% of fraud score) plus hand-written linguistic cues; transformer reranking is a dormant hook, not installed. See PRD § Present-Stage Scope Note.
-- Seed demo accounts when missing: `PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`).
+- Seed demo accounts when missing: `ALLOW_SEED=1 APP_ENV=development PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`; refuses to run otherwise).
 - Quirk: API returns transient 500s while `uvicorn --reload` restarts on file saves — wait ~10s and retry.
 - Sync speed: large real emails take tens of seconds each through the pipeline; multi-mail syncs complete but slowly (background-job fix queued).
 - Split deploy (Vercel + Render): set `VITE_API_URL` to the Render backend; register exactly `https://<app>.vercel.app/` as the Google OAuth redirect URI; mirror it in `GOOGLE_REDIRECT_URI`, `FRONTEND_URL`, `CORS_ORIGINS`.

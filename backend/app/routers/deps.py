@@ -8,7 +8,14 @@ from .. import models
 from ..config import get_settings
 from ..modules.auth.security import decode_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+def _oauth_scheme() -> OAuth2PasswordBearer:
+    # Derived from the configured api_prefix (Step 5) so a prefix change
+    # can't silently desync the documented token URL.
+    return OAuth2PasswordBearer(tokenUrl=f"{get_settings().api_prefix}/auth/login")
+
+
+oauth2_scheme = _oauth_scheme()
 
 
 def get_current_user(

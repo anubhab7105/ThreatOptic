@@ -1,11 +1,12 @@
 """Traceability module unit tests (F11): IP extraction, GeoIP, infra flags, WHOIS/DNS."""
-from app.modules.traceability.geoip import geolocate
+from app.modules.traceability.geoip import geolocate, has_coords, _geolocate_cached
 from app.modules.traceability.ip_extractor import extract_origin_ip
 from app.modules.traceability.vpn_tor import flag_infrastructure, is_tor_exit
 from app.modules.traceability.whois_dns import dns_lookup, domain_age_days, whois_lookup
 
 
-def test_origin_ip_public_first_then_private_fallback():
+def test_origin_ip_last_external_in_wire_order():
+    # chronological [private, public]: wire order puts public first -> it wins
     path = [{"ips": ["10.0.0.1"]}, {"ips": ["45.1.1.1"]}]
     assert extract_origin_ip(path) == "45.1.1.1"
     assert extract_origin_ip([{"ips": ["10.0.0.5"]}]) == "10.0.0.5"
@@ -13,15 +14,38 @@ def test_origin_ip_public_first_then_private_fallback():
     assert extract_origin_ip([{"ips": []}]) == ""
 
 
+def test_origin_ip_trust_boundary():
+    # our MX on top: origin is the nearest public IP below it, not spoofed lines above
+    wire = [
+        {"by_host": "mx.ours.test", "ips": ["8.8.8.8"]},
+        {"by_host": "evil.test", "ips": ["1.1.1.1"]},
+        {"by_host": "mx.ours.test", "ips": ["9.9.9.9"]},
+    ]
+    path = list(reversed(wire))  # chronological
+    import os
+    os.environ["TRUSTED_RELAY_HOSTS"] = "mx.ours.test"
+    try:
+        assert extract_origin_ip(path) == "1.1.1.1"
+    finally:
+        del os.environ["TRUSTED_RELAY_HOSTS"]
+
+
 def test_geolocate_offline_shapes(monkeypatch):
     monkeypatch.setattr("app.modules.traceability.geoip._live", lambda: False)
-    geolocate.cache_clear()
+    _geolocate_cached.cache_clear()
     assert geolocate("")["source"] == "none"
     static = geolocate("45.148.10.88")
     assert static["source"] == "static-fallback" and static["country"] == "DE"
-    # live lookups off by default -> unknown IP yields the offline stub, fast
+    # unknown IP yields honest unresolved (no 0,0/UNKNOWN), fast
     stub = geolocate("203.0.113.199")
-    assert stub["source"] == "offline-stub" and stub["lat"] == 0.0
+    assert stub["source"] == "unresolved" and stub["lat"] is None and stub["country"] == ""
+    assert not has_coords(stub) and has_coords(static)
+    # cache returns copies: mutating one result must not poison the next
+    a = geolocate("45.148.10.88")
+    a["country"] = "XX"
+    assert geolocate("45.148.10.88")["country"] == "DE"
+    # invalid IP never interpolated anywhere
+    assert geolocate("999.999.999.999")["source"] == "invalid-ip"
 
 
 def test_infrastructure_flags():

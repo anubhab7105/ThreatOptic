@@ -1,14 +1,48 @@
-"""Robust MIME parser: headers, body (text/html), attachments metadata, .eml hash."""
+"""Robust MIME parser: headers, body (text/html), attachments metadata, .eml hash.
+
+Step 4 (C9) hardening:
+- hard caps: max .eml bytes, max attachment count/size (ValueError over).
+- HTML is sanitized with bleach: <script>/<style> elements removed
+  entirely, then all remaining tags stripped. The stored/returned
+  body_html is the SANITIZED version — never raw markup — so downstream
+  rendering cannot execute stored scripts.
+- malformed MIME raises ValueError (API maps to 400), never a raw traceback.
+"""
 import email
 import email.policy
 import hashlib
+import re
 from email.message import Message
 from typing import Any
 
+MAX_EML_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENTS = 20
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def sanitize_html(html_text: str) -> str:
+    """Remove script/style elements, then strip all tags. Returns text."""
+    no_scripts = _SCRIPT_STYLE_RE.sub(" ", html_text or "")
+    try:
+        import bleach
+        cleaned = bleach.clean(no_scripts, tags=[], attributes={}, strip=True)
+    except Exception:
+        cleaned = re.sub(r"<[^>]+>", " ", no_scripts)
+    return re.sub(r"[ \t]+", " ", cleaned).strip()
+
 
 def parse_eml(raw: bytes) -> dict[str, Any]:
+    if not isinstance(raw, (bytes, bytearray)):
+        raise ValueError("email payload must be bytes")
+    if len(raw) > MAX_EML_BYTES:
+        raise ValueError(f"email exceeds {MAX_EML_BYTES} byte limit")
     sha = hashlib.sha256(raw).hexdigest()
-    msg: Message = email.message_from_bytes(raw, policy=email.policy.default)
+    try:
+        msg: Message = email.message_from_bytes(bytes(raw), policy=email.policy.default)
+    except Exception as e:
+        raise ValueError(f"malformed message: {e}")
 
     raw_headers: dict[str, str] = {}
     for k, v in msg.raw_items():
@@ -62,6 +96,8 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
             disp = part.get_content_disposition()
             if disp == "attachment":
                 payload = part.get_payload(decode=True) or b""
+                if len(payload) > MAX_ATTACHMENT_BYTES:
+                    raise ValueError(f"attachment exceeds {MAX_ATTACHMENT_BYTES} byte limit")
                 attachments.append({
                     "filename": part.get_filename() or "unnamed",
                     "content_type": ctype,
@@ -71,6 +107,8 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     # retaining the (possibly malicious) full payload.
                     "magic": payload[:8].hex(),
                 })
+                if len(attachments) > MAX_ATTACHMENTS:
+                    raise ValueError(f"email exceeds {MAX_ATTACHMENTS} attachments")
             elif ctype == "text/plain" and not body_text:
                 try:
                     body_text = part.get_content()
@@ -78,20 +116,24 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     body_text = ""
             elif ctype == "text/html" and not body_html:
                 try:
-                    body_html = part.get_content()
+                    body_html = sanitize_html(part.get_content())
                 except Exception:
                     body_html = ""
     else:
         try:
-            body_text = msg.get_content()
+            content = msg.get_content()
+            if isinstance(content, bytes):
+                content = content.decode("utf-8", errors="ignore")
+            body_text = sanitize_html(content) if msg.get_content_type() == "text/html" else content
+            if msg.get_content_type() == "text/html":
+                body_html = body_text
         except Exception:
             payload = msg.get_payload(decode=True)
             body_text = payload.decode("utf-8", errors="ignore") if payload else str(msg.get_payload())
 
     if not body_text and body_html:
-        # crude html strip fallback (full defang in url_analyzer)
-        import re
-        body_text = re.sub(r"<[^>]+>", " ", body_html)
+        # body_html is already bleach-sanitized text at this point.
+        body_text = re.sub(r"\s+", " ", body_html).strip()
 
     return {
         "message_id": message_id,

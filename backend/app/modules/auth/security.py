@@ -6,6 +6,7 @@ DBs keep working, but all new hashes are bcrypt.
 """
 import hashlib
 import hmac
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -63,10 +64,16 @@ def create_refresh_token(user_id: str, secret: str, expires_days: int = REFRESH_
     payload = {
         "sub": user_id,
         "type": "refresh",
+        "jti": uuid.uuid4().hex,
         "exp": _now() + timedelta(days=expires_days),
         "iat": _now(),
     }
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
+
+
+def refresh_token_fingerprint(token: str) -> str:
+    """SHA-256 of the token for DB lookup — the token itself is never stored."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def decode_token(token: str, secret: str) -> dict:

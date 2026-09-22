@@ -1,5 +1,21 @@
 """Seed demo org + users + 2 sample emails through the pipeline."""
 import asyncio
+import os
+
+
+def _seed_allowed() -> bool:
+    """Seed must never run outside an explicit dev-only flag.
+
+    Requires BOTH: APP_ENV=development AND ALLOW_SEED=1. Anything else
+    (staging/prod, or the flag unset) raises instead of creating the
+    well-known admin/admin123 + analyst/analyst123 credentials.
+    """
+    from .config import get_settings
+
+    return (
+        os.environ.get("ALLOW_SEED", "") == "1"
+        and get_settings().app_env.strip().lower() == "development"
+    )
 
 
 def _hash(pw: str) -> str:
@@ -34,6 +50,12 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.
 
 
 async def main():
+    if not _seed_allowed():
+        raise RuntimeError(
+            "Refusing to seed: set ALLOW_SEED=1 AND APP_ENV=development. "
+            "Seeding creates well-known demo credentials and must never run "
+            "against staging/production databases."
+        )
     from .database import SessionLocal, init_db
     from .models import Organization, User
     init_db()

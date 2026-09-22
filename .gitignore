@@ -2,7 +2,14 @@ __pycache__/
 *.pyc
 *.db
 .env
+.env.*
+!.env.example
 ml_models/
 node_modules/
 dist/
 .venv/
+*.log
+# Live secrets must never be committed (C13). Only *.example templates.
+k8s/secret.yaml
+k8s/*secret*.yaml
+!k8s/secret.yaml.example

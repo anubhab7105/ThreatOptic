@@ -35,10 +35,13 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
     if es is None:
         return {"indexed": False, "skipped": True}
     try:
+        # Store organization_id both nested and top-level for filtering robustness
+        org = email_doc.get("organization_id")
+        doc = {"email": email_doc, "analysis": analysis_doc, "organization_id": org}
         es.index(
             index=get_settings().elastic_index,
             id=email_id,
-            document={"email": email_doc, "analysis": analysis_doc},
+            document=doc,
         )
         return {"indexed": True}
     except Exception as e:
@@ -46,19 +49,50 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
         return {"indexed": False, "error": str(e)[:300]}
 
 
-def search_emails(query: str, limit: int = 50, db=None) -> dict:
+def _escape_like(raw: str) -> str:
+    """Escape LIKE wildcards so user input can't trigger full scans (Step 3)."""
+    return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def delete_email(email_id: str) -> dict:
+    """Best-effort ES doc deletion (retention cascade)."""
+    es = _client()
+    if es is None:
+        return {"deleted": False, "skipped": True}
+    try:
+        from ...config import get_settings
+        es.delete(index=get_settings().elastic_index, id=email_id, ignore=[404])
+        return {"deleted": True}
+    except Exception as e:
+        log.warning("elastic delete failed for %s: %s", email_id, e)
+        return {"deleted": False, "error": str(e)[:300]}
+
+
+def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
     from ...config import get_settings
 
     es = _client()
     if es is not None:
         try:
+            es_query: dict = {"multi_match": {
+                "query": query,
+                "fields": ["email.subject^3", "email.sender_address^2",
+                           "email.recipient_address", "email.body_text_masked"],
+            }}
+            if organization_id != "__all__":
+                # Tenant filter inside ES; docs without org match NULL-org tenants.
+                # Legacy docs may only have email.organization_id, so check both.
+                if organization_id is None:
+                    es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]}}
+                else:
+                    should = [
+                        {"term": {"organization_id": organization_id}},
+                        {"term": {"email.organization_id": organization_id}},
+                    ]
+                    es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"should": should, "minimum_should_match": 1}}]}}
             res = es.search(
                 index=get_settings().elastic_index,
-                query={"multi_match": {
-                    "query": query,
-                    "fields": ["email.subject^3", "email.sender_address^2",
-                               "email.recipient_address", "email.body_text_masked"],
-                }},
+                query=es_query,
                 size=min(max(limit, 1), 100),
             )
             hits = [{"id": h["_id"], **(h.get("_source") or {})} for h in res["hits"]["hits"]]
@@ -68,14 +102,17 @@ def search_emails(query: str, limit: int = 50, db=None) -> dict:
     # SQLite fallback (mirrors list_emails filtering)
     from sqlalchemy import desc, or_
     from ... import models
-    like = f"%{query}%"
-    rows = (db.query(models.EmailRecord)
-            .filter(or_(
-                models.EmailRecord.subject.ilike(like),
-                models.EmailRecord.sender_address.ilike(like),
-                models.EmailRecord.recipient_address.ilike(like),
-                models.EmailRecord.body_text_masked.ilike(like)))
-            .order_by(desc(models.EmailRecord.timestamp)).limit(limit).all())
+    if db is None:
+        return {"backend": "none", "hits": []}
+    like = f"%{_escape_like(query)}%"
+    q = db.query(models.EmailRecord).filter(or_(
+        models.EmailRecord.subject.ilike(like, escape="\\"),
+        models.EmailRecord.sender_address.ilike(like, escape="\\"),
+        models.EmailRecord.recipient_address.ilike(like, escape="\\"),
+        models.EmailRecord.body_text_masked.ilike(like, escape="\\")))
+    if organization_id != "__all__":
+        q = q.filter(models.EmailRecord.organization_id == organization_id)
+    rows = q.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
     return {"backend": "sqlite", "hits": [
         {"id": r.id, "email": {"subject": r.subject, "sender_address": r.sender_address,
                               "recipient_address": r.recipient_address}} for r in rows]}

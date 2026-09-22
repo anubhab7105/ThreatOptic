@@ -8,17 +8,47 @@ def _clamp(x: float) -> float:
     return max(0.0, min(100.0, x))
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    """float() that never raises on None/str garbage (Step 4)."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return default
+    if out != out or out in (float("inf"), float("-inf")):  # NaN / inf
+        return default
+    return out
+
+
+def _auth_part(status: str, detail: str) -> float:
+    """Per-mechanism risk. 'unverifiable' (not checked) scores near-zero —
+    it must never count the same as a real failure (Step 4)."""
+    s = (status or "").lower()
+    d = (detail or "").lower()
+    if s == "pass":
+        return 0.0
+    if s in ("fail", "softfail"):
+        return 45.0
+    if s == "unverifiable" or "not checked" in d or "live-lookups-disabled" in d:
+        return 5.0
+    if s == "none":
+        return 30.0
+    return 15.0  # temperror / unknown: checked, but inconclusive
+
+
 def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str], header_flags: list[str],
                     domain_age_days: int | None, contains_payment: bool,
                     attachment: dict | None = None) -> dict[str, Any]:
-    nlp_score = float(nlp.get("ml_score", 0.0)) * 100.0
-    # auth: pass=0 risk, fail/none partial
+    nlp_score = _safe_float(nlp.get("ml_score", 0.0)) * 100.0
+    # auth: pass=0 risk; real failures hurt; unverifiable (offline) barely counts
     spf = auth.get("spf", {}).get("status", "")
     dkim = auth.get("dkim", {}).get("status", "")
     dmarc = auth.get("dmarc", {}).get("status", "")
-    fails = sum(1 for s in [spf, dkim] if s in ("fail", "softfail", "none"))
-    auth_score = min(100.0, fails * 45.0 + (0 if auth.get("aligned") else 15.0))
-    intel_score = min(100.0, 40.0 * intel.get("count", 0) + 35.0 * intel.get("malicious_count", 0))
+    spf_detail = auth.get("spf", {}).get("detail", "")
+    dkim_detail = auth.get("dkim", {}).get("detail", "")
+    dmarc_detail = auth.get("dmarc", {}).get("detail", "")
+    auth_score = min(100.0, _auth_part(spf, spf_detail) + _auth_part(dkim, dkim_detail)
+                     + _auth_part(dmarc, dmarc_detail) + (0 if auth.get("aligned") else 10.0))
+    intel_score = min(100.0, 40.0 * _safe_float(intel.get("count", 0)) + 35.0 * _safe_float(intel.get("malicious_count", 0)))
     routing_score = min(100.0, 30.0 * len(routing_flags) + 20.0 * len(header_flags))
     attachment = attachment or {}
     attachment_score = min(100.0, max(0.0, float(attachment.get("risk", 0.0))))
@@ -28,15 +58,25 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
             + WEIGHTS["attachment"] * attachment_score)
 
     extras: list[str] = []
-    # Behavioral rule: new domain (<30d) + payment instructions => +30
+    # Behavioral rule: new domain (<30d) + payment instructions => +30.
+    # Negative/future ages are clock garbage, not youth — ignore them.
+    try:
+        age = None if domain_age_days is None else float(domain_age_days)
+        if age is not None and age < 0:
+            age = None
+    except (TypeError, ValueError):
+        age = None
     bonus = 0.0
-    if domain_age_days is not None and domain_age_days < 30 and contains_payment:
+    if age is not None and age < 30 and contains_payment:
         bonus = 30.0
         extras.append("new-domain+payment:+30")
-    # SPF/DKIM fail + C-level claim => auto-escalate High
+    # SPF/DKIM fail + C-level claim => auto-escalate High. A missing DKIM
+    # signature ("none") must NOT let spoofed mail slip past — most spoofed
+    # mail has no signature at all rather than a failing one.
     c_level = any(k in str(nlp.get("impersonation_cues", [])).lower() for k in ["ceo", "cfo", "chief", "president"])
     force_high = False
-    if spf in ("fail", "softfail") and dkim in ("fail",) and (c_level or "impersonation" in nlp.get("nlp_cues_detected", [])):
+    if spf in ("fail", "softfail") and dkim in ("fail", "softfail", "none") and (
+            c_level or "impersonation" in nlp.get("nlp_cues_detected", [])):
         force_high = True
         extras.append("exec-spoof-auth-fail:force-high")
 

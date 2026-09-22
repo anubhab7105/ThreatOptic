@@ -10,7 +10,21 @@ import networkx as nx
 
 G = nx.DiGraph()
 
+# Step 4: bound the ephemeral graph so one flood can't OOM the process.
+# Oldest nodes (insertion order) are evicted first.
+MAX_GRAPH_NODES = 20000
+
 _neo_driver = None
+
+
+def _touch() -> None:
+    overflow = G.number_of_nodes() - MAX_GRAPH_NODES
+    if overflow > 0:
+        for n in list(G.nodes)[:overflow]:
+            try:
+                G.remove_node(n)
+            except Exception:
+                pass
 
 
 def _neo():
@@ -25,6 +39,17 @@ def _neo():
         return _neo_driver
     except Exception:
         return None
+
+
+def close_neo() -> None:
+    """Release the Neo4j driver (called from lifespan shutdown)."""
+    global _neo_driver
+    drv, _neo_driver = _neo_driver, None
+    if drv is not None:
+        try:
+            drv.close()
+        except Exception:
+            pass
 
 
 def graph_consistency_note() -> str | None:
@@ -121,6 +146,23 @@ def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
         return None
 
 
+def remove_email_graph(email_addr: str) -> None:
+    """Best-effort removal of one email node (retention cascade)."""
+    key = f"email:{(email_addr or '').lower()[:320]}"
+    try:
+        if key in G:
+            G.remove_node(key)
+    except Exception:
+        pass
+    drv = _neo()
+    if drv:
+        try:
+            with drv.session() as s:
+                s.run("MATCH (e:Email_Address {address:$a}) DETACH DELETE e", a=(email_addr or "").lower()[:320])
+        except Exception:
+            pass
+
+
 def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: str = "") -> dict[str, Any]:
     email_addr = (email_addr or "").lower()[:320]
     ip = ip or ""
@@ -157,6 +199,7 @@ def upsert_email_graph(email_addr: str, ip: str, domains: list[str], campaign: s
                         s.run("MERGE (d:Domain {name:$d}) MERGE (c:Threat_Campaign {name:$c}) MERGE (d)-[:PART_OF]->(c)", d=d_clean, c=campaign)
         except Exception:
             pass
+    _touch()
     return {"nodes": G.number_of_nodes(), "edges": G.number_of_edges()}
 
 

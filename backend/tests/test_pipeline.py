@@ -90,7 +90,7 @@ def test_api_validation():
         assert c.post("/api/v1/cases", json={"title": ""}).status_code == 401
 
         uname = f"validator-{uuid.uuid4().hex[:8]}"
-        tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
+        tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         assert c.post("/api/v1/emails/ingest", headers=h, json={"raw": ""}).status_code == 422
         assert c.get("/api/v1/emails/does-not-exist", headers=h).status_code == 404

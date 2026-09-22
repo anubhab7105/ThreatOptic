@@ -1,18 +1,14 @@
 """Tests verifying the Phase 1 audit remediation fixes."""
-import html
 from fastapi.testclient import TestClient
-from app import models, schemas
-from app.database import SessionLocal
 from app.main import app
 from app.modules.forensics.received_chain import detect_routing_anomalies
 from app.modules.reporting.generator import build_report_pdf
-from app.modules.traceability.vpn_tor import TOR_DNS_SUFFIX
 
 
 def _auth(client: TestClient) -> dict:
     import uuid
     uname = f"audit-{uuid.uuid4().hex[:8]}"
-    tok = client.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPassword!"}).json()["access_token"]
+    tok = client.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPassword!", "role": "Analyst"}).json()["access_token"]
     return {"Authorization": f"Bearer {tok}"}
 
 
@@ -100,7 +96,6 @@ def test_case_status_validation():
         assert r1.status_code == 200
         assert r1.json()["status"] == "InProgress"
 
-        # Invalid status
+        # Invalid status (validated enum -> 422)
         r2 = c.patch(f"/api/v1/cases/{cid}", headers=headers, json={"status": "Exploded"})
-        assert r2.status_code == 400
-        assert "invalid status" in r2.json()["detail"]
+        assert r2.status_code == 422

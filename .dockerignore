@@ -1,0 +1,21 @@
+# Build context is the repo root (see docker-compose.yml).
+.git/
+.github/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+.env.*
+*.db
+*.log
+ml_models/raw/
+ml_models/dataset.csv
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+k8s/secret.yaml
+backend/email_forensics.db
+backend/retention_audit.log
+.pytest_cache/
