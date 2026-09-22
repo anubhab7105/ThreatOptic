@@ -45,13 +45,21 @@ def start_scheduler():
     Uses AsyncIOScheduler so async mailbox polling runs in the event loop.
     Retention job remains synchronous (runs in thread pool).
     """
+    import asyncio
     from ..config import get_settings
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
+    # Get or create event loop for AsyncIOScheduler
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     settings = get_settings()
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(event_loop=loop)
     scheduler.add_job(
         run_retention_job,
         CronTrigger(hour=getattr(settings, "retention_hour", 3), minute=0),

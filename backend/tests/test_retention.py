@@ -14,10 +14,7 @@ def test_retention_job_logs_audit(tmp_path, monkeypatch):
     assert line["purged_body"] == entry["purged_body"] and "timestamp" in line
 
 
-import pytest
-
-@pytest.mark.asyncio
-async def test_scheduler_starts_with_daily_job():
+def test_scheduler_starts_with_daily_job():
     import app.services.scheduler as sched
 
     s = sched.start_scheduler()
