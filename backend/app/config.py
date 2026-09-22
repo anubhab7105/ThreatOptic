@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Anchor environment file to backend/.env so cwd doesn't matter
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _env_path = os.path.join(_backend_dir, ".env")
-load_dotenv(_env_path, override=True)
+load_dotenv(_env_path, override=False)
 
 
 def _default_db_url() -> str:

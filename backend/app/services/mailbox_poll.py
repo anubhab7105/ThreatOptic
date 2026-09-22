@@ -39,16 +39,40 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
                     "errors": [f"{conn.account_email}: stored credential invalid — reconnect the mailbox"]}
         try:
             if provider == "google":
-                cid = settings.google_client_id
-                sec = settings.google_client_secret
+                cid = ""
+                if getattr(conn, "encrypted_client_id", None):
+                    try:
+                        cid = decrypt_secret(conn.encrypted_client_id)
+                    except Exception:
+                        pass
+                cid = cid or settings.google_client_id
+                sec = ""
+                if getattr(conn, "encrypted_client_secret", None):
+                    try:
+                        sec = decrypt_secret(conn.encrypted_client_secret)
+                    except Exception:
+                        pass
+                sec = sec or settings.google_client_secret
                 if not cid or not sec:
                     return {"synced": 0, "email_ids": [],
                             "errors": [f"{conn.account_email}: google OAuth not configured"]}
                 fresh = await connectors.refresh_gmail_token(refresh_token, cid, sec)
                 messages = await connectors.fetch_gmail_messages(fresh["access_token"], max_results=max_results)
             elif provider == "microsoft":
-                cid = settings.ms_client_id
-                sec = settings.ms_client_secret
+                cid = ""
+                if getattr(conn, "encrypted_client_id", None):
+                    try:
+                        cid = decrypt_secret(conn.encrypted_client_id)
+                    except Exception:
+                        pass
+                cid = cid or settings.ms_client_id
+                sec = ""
+                if getattr(conn, "encrypted_client_secret", None):
+                    try:
+                        sec = decrypt_secret(conn.encrypted_client_secret)
+                    except Exception:
+                        pass
+                sec = sec or settings.ms_client_secret
                 if not cid or not sec:
                     return {"synced": 0, "email_ids": [],
                             "errors": [f"{conn.account_email}: microsoft OAuth not configured"]}

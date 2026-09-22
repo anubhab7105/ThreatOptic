@@ -264,7 +264,7 @@ async def sync(
             from ..database import SessionLocal
             worker_db = SessionLocal()
             try:
-                res = await process_raw_email(worker_db, m["raw"], source="gmail")
+                res = await process_raw_email(worker_db, m["raw"], source="gmail", organization_id=user.organization_id)
                 return ("ok", res["email_id"])
             except Exception as e:
                 log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)

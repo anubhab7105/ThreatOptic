@@ -201,7 +201,6 @@ def authorize(
     p = _provider_or_400(provider)
     uri = _redirect_or_400(redirect_uri)
     cid = _resolve_client_id(p, client_id, db=db)
-    sec = client_secret or (_resolve_client_secret(p, None, db=db) if (client_id or get_settings().google_client_secret or get_settings().ms_client_secret) else "")
     state = secrets.token_urlsafe(32)
     verifier = connectors._new_verifier()
     db.add(models.OAuthState(

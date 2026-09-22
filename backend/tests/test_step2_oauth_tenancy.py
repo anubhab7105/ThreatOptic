@@ -296,6 +296,9 @@ def test_audit_log_emitted(caplog):
 
 def test_scheduler_uses_service_layer():
     import pathlib
-    src = pathlib.Path("backend/app/services/scheduler.py").read_text()
+    p = pathlib.Path("backend/app/services/scheduler.py")
+    if not p.exists():
+        p = pathlib.Path("app/services/scheduler.py")
+    src = p.read_text()
     assert "routers" not in src
     assert "mailbox_poll" in src
