@@ -116,9 +116,9 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
         db.close()
 
 
-async def poll_all_mailboxes_async(max_results: int = 25, provider: str | None = None,
-                                   organization_id: str | None | object = "__all__",
-                                   user_id: str | None = None) -> dict:
+async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None,
+                            organization_id: str | None | object = "__all__",
+                            user_id: str | None = None) -> dict:
     """Poll mailboxes on the SHARED event loop (no asyncio.run per mailbox).
 
     organization_id="__all__" polls everything (scheduler); otherwise only
@@ -150,6 +150,3 @@ async def poll_all_mailboxes_async(max_results: int = 25, provider: str | None =
         total["errors"] += r["errors"]
     log.info("mailbox poll: synced=%s errors=%s", total["synced"], len(total["errors"]))
     return total
-
-
-
