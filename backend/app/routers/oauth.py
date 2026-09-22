@@ -83,6 +83,20 @@ def _verify_state(state: str) -> dict | None:
         return None
 
 
+def _check_and_mark_state_used(sig: str) -> bool:
+    """Check if state signature was already used, mark it used if not.
+    Returns True if state is fresh (not used), False if already used."""
+    now = time.time()
+    # Clean expired entries
+    expired = [k for k, v in _used_state_cache.items() if v < now]
+    for k in expired:
+        _used_state_cache.pop(k, None)
+    if sig in _used_state_cache:
+        return False
+    _used_state_cache[sig] = now + STATE_TTL_MINUTES * 60
+    return True
+
+
 def _provider_or_400(provider: str) -> str:
     p = (provider or "").lower()
     if p not in PROVIDERS:
