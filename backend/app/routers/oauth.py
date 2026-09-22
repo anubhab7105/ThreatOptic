@@ -47,7 +47,7 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redirect_uri: str = "", flow: str = "oauth") -> str:
+def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redirect_uri: str = "", flow: str = "oauth", pkce_verifier: str = "") -> str:
     payload = {"sub": user_id, "t": int(time.time()), "flow": flow}
     if client_id:
         payload["cid"] = client_id
@@ -55,6 +55,8 @@ def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redi
         payload["csec"] = client_secret
     if redirect_uri:
         payload["ruri"] = redirect_uri
+    if pkce_verifier:
+        payload["pkv"] = pkce_verifier
     msg = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
     sig = hmac.new(get_settings().secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
     return f"{msg}.{sig}"
@@ -197,22 +199,12 @@ def authorize(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create a server-side state + PKCE pair, return the consent URL."""
+    """Create a signed state + PKCE pair, return the consent URL."""
     p = _provider_or_400(provider)
     uri = _redirect_or_400(redirect_uri)
     cid = _resolve_client_id(p, client_id, db=db)
-    state = secrets.token_urlsafe(32)
     verifier = connectors._new_verifier()
-    db.add(models.OAuthState(
-        state=state,
-        user_id=user.id,
-        provider=p,
-        redirect_uri=uri,
-        client_id=cid,
-        code_verifier=verifier,
-        expires_at=_utcnow() + timedelta(minutes=STATE_TTL_MINUTES),
-    ))
-    db.commit()
+    state = _make_state(user.id, client_id=cid, redirect_uri=uri, flow="oauth", pkce_verifier=verifier)
     challenge = connectors._pkce_challenge(verifier)
     if p == "google":
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
