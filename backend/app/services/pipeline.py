@@ -105,7 +105,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         routing_flags = []
 
     try:
-        origin_ip = extract_origin_ip(path) or ""
+        origin_ip = extract_origin_ip(path, raw_headers=headers) or ""
     except Exception:
         origin_ip = ""
 
@@ -125,27 +125,53 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
 
-    # If origin_ip gave no coordinates, try relay hops or sender domain IP for approximate geolocation
-    from ..modules.traceability.geoip import has_coords
+    # If origin_ip gave no coordinates, try relay hops, sender domain MX/A, or country centroids
+    from ..modules.traceability.geoip import has_coords, geolocate_country
     if not has_coords(geo):
         for hop in (path or []):
             for hop_ip in hop.get("ips", []):
                 g = geolocate(hop_ip)
                 if has_coords(g):
-                    geo = g
+                    geo = {**g, "source": f"relay-hop ({g.get('source', 'resolved')})"}
                     break
             if has_coords(geo):
                 break
-    if not has_coords(geo):
+
+    if not has_coords(geo) and dnsd.get("mx"):
         try:
             import socket
-            if domain:
-                dip = socket.gethostbyname(domain)
-                g = geolocate(dip)
-                if has_coords(g):
-                    geo = {**g, "source": "approx-domain-ip"}
+            for mx_host in dnsd.get("mx", [])[:3]:
+                clean_mx = str(mx_host).strip().rstrip(".")
+                if clean_mx:
+                    mx_ip = socket.gethostbyname(clean_mx)
+                    g = geolocate(mx_ip)
+                    if has_coords(g):
+                        geo = {**g, "source": "approx-mx-ip"}
+                        break
         except Exception:
             pass
+
+    if not has_coords(geo) and domain:
+        try:
+            import socket
+            dip = socket.gethostbyname(domain)
+            g = geolocate(dip)
+            if has_coords(g):
+                geo = {**g, "source": "approx-domain-ip"}
+        except Exception:
+            pass
+
+    # Country fallback from whois or domain TLD
+    if not has_coords(geo):
+        whois_country = str(whois.get("country", "") or "").strip().upper()
+        if whois_country and len(whois_country) == 2:
+            geo = geolocate_country(whois_country, source="whois-country-approx")
+        elif domain and "." in domain:
+            tld = domain.split(".")[-1].upper()
+            if len(tld) == 2:
+                cg = geolocate_country(tld, source="tld-country-approx")
+                if has_coords(cg):
+                    geo = cg
 
     # geo may lack isp/asn when offline — refresh infra flags with what we have
     try:

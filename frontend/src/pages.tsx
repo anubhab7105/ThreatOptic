@@ -922,12 +922,34 @@ export function EmailView({ id }: { id: string }) {
       {tab === 3 && (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
           <div className="card">
-            <h3>Origin</h3>
+            <h3>Origin & Infrastructure</h3>
             <dl className="kv">
-              <dt>Origin IP</dt><dd><span className="mono">{t.origin_ip || '-'}</span></dd>
+              <dt>Origin IP</dt>
+              <dd>
+                <span className="mono">{t.origin_ip || '-'}</span>
+                {t.geolocation?.is_private && (
+                  <span className="badge" style={{ marginLeft: 6, fontSize: 11, background: 'var(--muted)', color: '#fff', padding: '2px 6px', borderRadius: 4 }}>
+                    Private RFC1918
+                  </span>
+                )}
+              </dd>
+              <dt>Coordinates</dt>
+              <dd className="mono">
+                {t.geolocation?.lat != null && t.geolocation?.lon != null
+                  ? `${Number(t.geolocation.lat).toFixed(4)}, ${Number(t.geolocation.lon).toFixed(4)}`
+                  : '-'}
+              </dd>
               <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
-              <dt>ISP / ASN</dt><dd>{t.isp_asn || '-'}</dd>
-              <dt>Country / City</dt><dd>{t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({t.geolocation?.source})</span></dd>
+              <dt>ISP / ASN</dt><dd>{t.isp_asn || t.geolocation?.isp || '-'}</dd>
+              <dt>Country / City</dt>
+              <dd>
+                {t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'}
+                {t.geolocation?.source && (
+                  <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>
+                    ({t.geolocation.source})
+                  </span>
+                )}
+              </dd>
             </dl>
             <h3>WHOIS</h3>
             <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
@@ -935,9 +957,13 @@ export function EmailView({ id }: { id: string }) {
             <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
           </div>
           <div className="card">
-            <h3>Map</h3>
-            {t.geolocation?.lat ? (
+            <h3>Origin Geolocation Map</h3>
+            {t.geolocation?.lat != null && t.geolocation?.lon != null && !isNaN(Number(t.geolocation.lat)) && !isNaN(Number(t.geolocation.lon)) ? (
               <>
+                <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--muted)' }}>
+                  Target: <b>{t.geolocation.city || t.geolocation.country || 'Coordinates'}</b>
+                  {t.geolocation.source && <span> ({t.geolocation.source})</span>}
+                </div>
                 <iframe
                   title="Geolocation map of email origin"
                   width="100%"
@@ -946,11 +972,21 @@ export function EmailView({ id }: { id: string }) {
                   loading="lazy"
                   sandbox="allow-scripts allow-same-origin"
                   referrerPolicy="no-referrer"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${t.geolocation.lon - 10}%2C${t.geolocation.lat - 10}%2C${t.geolocation.lon + 10}%2C${t.geolocation.lat + 10}&layer=mapnik&marker=${t.geolocation.lat}%2C${t.geolocation.lon}`}
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
                 />
-                <p><a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=5/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map</a></p>
+                <p style={{ marginTop: 8 }}>
+                  <a
+                    target="_blank"
+                    rel="noreferrer"
+                    href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=7/${t.geolocation.lat}/${t.geolocation.lon}`}
+                  >
+                    Open full map (OSM)
+                  </a>
+                </p>
               </>
-            ) : <Empty msg="No coordinates - private, missing or unresolvable origin IP." />}
+            ) : (
+              <Empty msg="No coordinates available - sender origin IP is unresolvable or network lookups are offline." />
+            )}
           </div>
         </div>
       )}

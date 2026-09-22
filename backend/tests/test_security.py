@@ -22,7 +22,7 @@ def test_custody_key_gate():
     old_env, old_key = os.environ.get("APP_ENV"), os.environ.get("CUSTODY_KEY")
     try:
         os.environ["APP_ENV"] = "production"
-        os.environ.pop("CUSTODY_KEY", None)
+        os.environ["CUSTODY_KEY"] = ""
         get_settings.cache_clear()
         with pytest.raises(RuntimeError, match="CUSTODY_KEY"):
             coc.require_custody_key()
@@ -36,7 +36,7 @@ def test_custody_key_gate():
         assert m["algorithm"] == "HMAC-SHA256" and len(m["signature"]) == 64
         # development keeps the explicit dev fallback
         os.environ["APP_ENV"] = "development"
-        os.environ.pop("CUSTODY_KEY", None)
+        os.environ["CUSTODY_KEY"] = ""
         get_settings.cache_clear()
         coc.require_custody_key()
     finally:

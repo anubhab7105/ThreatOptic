@@ -61,7 +61,8 @@ def test_received_ip_validation_and_folding():
     assert [p["ips"] for p in reconstruct_path(folded)] == [["2.2.2.2"], ["1.1.1.1"]]
 
 
-def test_auth_validator_offline_shape():
+def test_auth_validator_offline_shape(monkeypatch):
+    monkeypatch.setattr("app.modules.forensics.auth_validator._live", lambda: False)
     from app.modules.forensics.auth_validator import validate_all
     out = validate_all(b"raw", {"From": "a@b.com"}, "127.0.0.1", "")
     assert {"spf", "dkim", "dmarc", "aligned"} <= set(out)

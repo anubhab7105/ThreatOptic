@@ -177,7 +177,15 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
     if t:
         modified = False
         geo = t.geolocation or {}
-        from ..modules.traceability.geoip import geolocate, has_coords
+        from ..modules.traceability.geoip import geolocate, has_coords, geolocate_country
+        from ..modules.traceability.ip_extractor import extract_origin_ip
+
+        if not t.origin_ip and e.raw_headers:
+            candidate_ip = extract_origin_ip(t.relay_chain or [], raw_headers=e.raw_headers)
+            if candidate_ip:
+                t.origin_ip = candidate_ip
+                modified = True
+
         if not has_coords(geo) or geo.get("source") in ("offline-stub", "fallback", "none", "unresolved"):
             new_geo = geolocate(t.origin_ip) if t.origin_ip else None
             if not has_coords(new_geo):
@@ -185,21 +193,52 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
                     for hop_ip in hop.get("ips", []):
                         g = geolocate(hop_ip)
                         if has_coords(g):
-                            new_geo = g
+                            new_geo = {**g, "source": f"relay-hop ({g.get('source', 'resolved')})"}
                             break
                     if has_coords(new_geo):
                         break
-            if (not new_geo or (new_geo.get("lat") == 0.0 and new_geo.get("lon") == 0.0)) and e.sender_address:
+
+            # Fallback to domain MX or A record
+            domain = e.sender_address.split("@")[-1].strip(" <>") if e.sender_address else ""
+            if not has_coords(new_geo) and domain:
                 try:
                     import socket
-                    domain = e.sender_address.split("@")[-1].strip(" <>")
-                    if domain:
-                        dip = socket.gethostbyname(domain)
-                        g = geolocate(dip)
-                        if has_coords(g):
-                            new_geo = {**g, "source": "approx-domain-ip"}
+                    # Try MX first
+                    dns_mx = (t.dns_data or {}).get("mx", [])
+                    for mx_host in dns_mx[:3]:
+                        clean_mx = str(mx_host).strip().rstrip(".")
+                        if clean_mx:
+                            mx_ip = socket.gethostbyname(clean_mx)
+                            g = geolocate(mx_ip)
+                            if has_coords(g):
+                                new_geo = {**g, "source": "approx-mx-ip"}
+                                break
                 except Exception:
                     pass
+
+            if not has_coords(new_geo) and domain:
+                try:
+                    import socket
+                    dip = socket.gethostbyname(domain)
+                    g = geolocate(dip)
+                    if has_coords(g):
+                        new_geo = {**g, "source": "approx-domain-ip"}
+                except Exception:
+                    pass
+
+            # Fallback to WHOIS country or TLD country centroid
+            if not has_coords(new_geo):
+                whois_c = str((t.whois_data or {}).get("country", "") or "").strip().upper()
+                if whois_c and len(whois_c) == 2:
+                    cg = geolocate_country(whois_c, source="whois-country-approx")
+                    if has_coords(cg):
+                        new_geo = cg
+                elif domain and "." in domain:
+                    tld = domain.split(".")[-1].upper()
+                    if len(tld) == 2:
+                        cg = geolocate_country(tld, source="tld-country-approx")
+                        if has_coords(cg):
+                            new_geo = cg
 
             if has_coords(new_geo) or (new_geo or {}).get("country"):
                 t.geolocation = new_geo

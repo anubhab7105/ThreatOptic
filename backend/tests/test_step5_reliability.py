@@ -191,15 +191,19 @@ def test_kafka_producer_singleton(monkeypatch):
 
 def test_alembic_upgrade_fresh_db(tmp_path):
     import sqlite3
+    import os
     from alembic.config import Config
     from alembic import command
 
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ini_path = os.path.join(backend_dir, "alembic.ini")
+    script_loc = os.path.join(backend_dir, "alembic")
+
     db = tmp_path / "fresh.db"
-    cfg = Config("backend/alembic.ini")
-    cfg.set_main_option("script_location", "backend/alembic")
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", script_loc)
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
     # env.py ignores sqlalchemy.url and uses settings; point settings at tmp db
-    import os
     os.environ["DATABASE_URL"] = f"sqlite:///{db}"
     from app.config import get_settings
     get_settings.cache_clear()

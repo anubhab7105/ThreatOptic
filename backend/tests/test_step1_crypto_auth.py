@@ -31,8 +31,8 @@ def _fresh_settings(monkeypatch, **overrides):
 def test_require_secrets_boot_gate(monkeypatch):
     from app.config import require_secrets
     # production-safe default posture
-    monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("SECRET_KEY", "")
     get_settings.cache_clear()
     assert get_settings().app_env == "production"
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
