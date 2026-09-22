@@ -353,7 +353,8 @@ async def sync_now(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result = await poll_all_mailboxes_async(
+    from ..services.mailbox_poll import poll_all_mailboxes
+    result = await poll_all_mailboxes(
         max_results=payload.max_results,
         provider=_provider_or_400(payload.provider) if payload.provider else None,
         organization_id=user.organization_id,
@@ -363,8 +364,3 @@ async def sync_now(
         raise HTTPException(404, "no mailbox connected")
     audit("oauth.sync", user=user.username, synced=result["synced"])
     return result
-
-
-async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None, organization_id: str | None = None, user_id: str | None = None) -> dict:
-    """Background-poller entrypoint (async; call from event loop)."""
-    return await poll_all_mailboxes_async(max_results=max_results, provider=provider, organization_id=organization_id, user_id=user_id)
