@@ -202,7 +202,15 @@ function Shell() {
     const state = params.get('state');
     if (code) {
       const originPath = window.location.origin + window.location.pathname;
-      window.location.href = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}${state ? `&state=${encodeURIComponent(state)}` : ''}`;
+      const cid = localStorage.getItem('gmail_client_id') || localStorage.getItem('oauth_client_id') || '';
+      const csec = localStorage.getItem('gmail_client_secret') || localStorage.getItem('oauth_client_secret') || '';
+      
+      let target = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
+      if (state) target += `&state=${encodeURIComponent(state)}`;
+      if (cid) target += `&client_id=${encodeURIComponent(cid)}`;
+      if (csec) target += `&client_secret=${encodeURIComponent(csec)}`;
+      
+      window.location.href = target;
     }
   }, []);
   useEffect(() => {
@@ -218,15 +226,18 @@ function Shell() {
   }, [hash]);
 
   const getRoute = (): { name: string; id?: string } => {
-    if (hash.startsWith('#/email/')) return { name: 'email', id: hash.replace('#/email/', '') };
-    if (hash.startsWith('#/campaign/') && !hash.startsWith('#/campaigns')) return { name: 'campaign', id: hash.replace('#/campaign/', '') };
-    if (hash === '#/campaigns' || hash.startsWith('#/campaigns?')) return { name: 'campaigns' };
-    if (hash.startsWith('#/model')) return { name: 'model' };
-    if (hash.startsWith('#/mailboxes')) return { name: 'mailboxes' };
-    if (hash.startsWith('#/cases')) return { name: 'cases' };
-    if (hash.startsWith('#/privacy')) return { name: 'privacy' };
-    if (hash.startsWith('#/terms')) return { name: 'terms' };
-    if (hash === '#/' || hash === '' || hash === '#/dashboard') return { name: 'dash' };
+    const rawPath = hash.split('?')[0] || '';
+    const cleanPath = rawPath.replace(/^#\/?/, '').toLowerCase();
+
+    if (cleanPath.startsWith('email/')) return { name: 'email', id: rawPath.replace(/^#\/?email\//, '') };
+    if (cleanPath.startsWith('campaign/') && !cleanPath.startsWith('campaigns')) return { name: 'campaign', id: rawPath.replace(/^#\/?campaign\//, '') };
+    if (cleanPath === 'campaigns') return { name: 'campaigns' };
+    if (cleanPath === 'model') return { name: 'model' };
+    if (cleanPath === 'mailboxes') return { name: 'mailboxes' };
+    if (cleanPath === 'cases') return { name: 'cases' };
+    if (cleanPath === 'privacy') return { name: 'privacy' };
+    if (cleanPath === 'terms') return { name: 'terms' };
+    if (cleanPath === '' || cleanPath === 'dashboard') return { name: 'dash' };
     return { name: 'notfound' };
   };
   const route = getRoute();

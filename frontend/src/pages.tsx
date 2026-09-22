@@ -196,17 +196,22 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(() => localStorage.getItem('gmail_client_id') || '');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const [code, setCode] = useState('');
-  const [secret, setSecret] = useState('');
+  const [secret, setSecret] = useState(() => localStorage.getItem('gmail_client_secret') || '');
   const [query, setQuery] = useState('is:unread');
   const [maxN, setMaxN] = useState('10');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
+  const [showCreds, setShowCreds] = useState(false);
+
+  // Persist credentials in localStorage so they survive page refreshes
+  const updateClientId = (v: string) => { setClientId(v); localStorage.setItem('gmail_client_id', v); };
+  const updateSecret = (v: string) => { setSecret(v); localStorage.setItem('gmail_client_secret', v); };
 
   const refresh = async () => {
     try {
@@ -223,9 +228,12 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const getUrl = async () => {
     setBusy(true); setErr(''); setNotice('');
     try {
-      const r = await jget(`/gmail/auth-url?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`);
-      window.open(r.auth_url, '_blank', 'noopener');
-      setNotice('Consent page opened — approve read-only access; you will return here and connect automatically.');
+      let url = `/gmail/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}`;
+      if (clientId.trim()) url += `&client_id=${encodeURIComponent(clientId.trim())}`;
+      if (secret.trim()) url += `&client_secret=${encodeURIComponent(secret.trim())}`;
+      const r = await jget(url);
+      window.location.href = r.auth_url;
+      setNotice('Redirecting to Google consent page…');
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
 
@@ -237,12 +245,10 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined, client_secret: secret || undefined });
       setStatus(r);
       setCode('');
-      setNotice(`Connected as ${r.gmail_address}. You can close this tab.`);
+      setNotice(`Connected as ${r.gmail_address}. Credentials saved securely on the server.`);
     } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
   };
 
-  // Google redirects back to this origin with ?code=... (new tab).
-  // Capture it automatically so no visible code field is needed.
   const autoTried = useRef(false);
   useEffect(() => {
     if (autoTried.current) return;
@@ -253,17 +259,25 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       window.history.replaceState({}, '', window.location.pathname + window.location.hash);
       void finish(q);
     }
+    const hashParams = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
+    const conn = hashParams.get('connected') || new URLSearchParams(window.location.search).get('connected');
+    if (conn && conn.startsWith('google:')) {
+      const addr = conn.replace('google:', '');
+      setNotice(`Successfully connected as ${addr}!`);
+      void refresh();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sync = async () => {
-    setBusy(true); setErr(''); setNotice('');
+    setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/gmail/sync', { max_results: num, query, client_secret: secret || undefined });
+      const r = await jpost('/gmail/sync', { max_results: num, query, client_id: clientId || undefined, client_secret: secret || undefined });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      void refresh();
-      onSynced();
+      await refresh();
+      await onSynced();
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
   };
 
@@ -271,7 +285,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     if (!confirm('Disconnect this Gmail mailbox?')) return;
     try {
       await jdel('/gmail/disconnect');
-      void refresh();
+      await refresh();
+      await onSynced();
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
@@ -288,24 +304,31 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           <div className="row">
             <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
             <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
-            <input type="password" style={{ maxWidth: 220 }} value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret (if not in env)" autoComplete="off" />
             <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
             <button className="ghost" onClick={disconnect}>Disconnect</button>
+            <button className="ghost small" onClick={() => setShowCreds(!showCreds)} title="Show/hide OAuth credentials">{showCreds ? '▲ Hide credentials' : '▼ Change credentials'}</button>
           </div>
+          {showCreds && (
+            <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
+              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
+              <input type="password" value={secret} onChange={(e) => updateSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
+              <p className="sub" style={{ marginBottom: 0, fontSize: 12 }}>Credentials are stored encrypted on the server per connection. Update here to use different credentials for the next sync.</p>
+            </div>
+          )}
         </div>
       ) : (
         <div>
           <p className="sub" style={{ marginTop: 0 }}>
-            1. Create a Google Cloud OAuth client (Web, redirect URI below) with the Gmail API enabled. 2. Open the consent URL and approve.
-            3. Google redirects back here and the connection finishes automatically. Tokens stay server-side, per user.
+            1. Create a Google Cloud OAuth client (Web, redirect URI below) with the Gmail API enabled. 2. Enter your Client ID and Secret below.
+            3. Open the consent URL and approve. Google redirects back here and the connection finishes automatically. Credentials are encrypted and stored on the server.
           </p>
           <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-            <input type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Google OAuth client ID (*.apps.googleusercontent.com)" />
+            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (*.apps.googleusercontent.com)" />
+            <input type="password" value={secret} onChange={(e) => updateSecret(e.target.value)} placeholder="Client secret (from Google Cloud Console)" autoComplete="off" />
             <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" />
             <div className="row">
               <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !redirectUri.trim()}>Connect Gmail</button>
             </div>
-            <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
             <div className="row">
               <button onClick={() => finish()} disabled={busy || !code.trim() || !secret}>Finish connection</button>
             </div>
@@ -354,8 +377,8 @@ export function Dashboard() {
     }
   };
 
-  const load = async (query = q) => {
-    setLoading(true);
+  const load = async (query = q, silent = false) => {
+    if (!silent) setLoading(true);
     setErr('');
     try {
       const [s, list] = await Promise.all([
@@ -374,15 +397,22 @@ export function Dashboard() {
       }
       setScores(scoreMap);
     } catch (e) {
-      setErr(e instanceof ApiError ? `Backend error (${e.status}): ${e.message}` : String(e));
+      if (!silent) setErr(e instanceof ApiError ? `Backend error (${e.status}): ${e.message}` : String(e));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void load('');
-  }, []);
+    void load('', false);
+    const onUpdate = () => { void load(q, true); };
+    window.addEventListener('soc:emails-updated', onUpdate);
+    const timer = setInterval(() => { void load(q, true); }, 6000);
+    return () => {
+      window.removeEventListener('soc:emails-updated', onUpdate);
+      clearInterval(timer);
+    };
+  }, [q]);
 
   const submit = async () => {
     if (!raw.trim()) return;
@@ -393,7 +423,8 @@ export function Dashboard() {
       const r = await jpost('/emails/ingest', { raw });
       setNotice(`Analyzed - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
       setRaw('');
-      await load();
+      await load(q, false);
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) {
       setErr(e instanceof ApiError ? `Ingest failed (${e.status}): ${e.message}` : String(e));
     } finally {
@@ -408,7 +439,8 @@ export function Dashboard() {
     try {
       const r = await uploadEmFile(f);
       setNotice(`Uploaded ${f.name} - score ${r.fraud_score} (${r.classification})`);
-      await load();
+      await load(q, false);
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) {
       setErr(e instanceof ApiError ? `Upload failed (${e.status}): ${e.message}` : String(e));
     } finally {
@@ -1063,10 +1095,15 @@ export function Mailboxes() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(() => localStorage.getItem('oauth_client_id') || '');
+  const [clientSecret, setClientSecret] = useState(() => localStorage.getItem('oauth_client_secret') || '');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
+
+  const updateClientId = (v: string) => { setClientId(v); localStorage.setItem('oauth_client_id', v); };
+  const updateClientSecret = (v: string) => { setClientSecret(v); localStorage.setItem('oauth_client_secret', v); };
+
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
 
@@ -1081,19 +1118,23 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      const r = await jget(`/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}${clientId.trim() ? `&client_id=${encodeURIComponent(clientId.trim())}` : ''}`);
+      let url = `/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
+      if (clientId.trim()) url += `&client_id=${encodeURIComponent(clientId.trim())}`;
+      if (clientSecret.trim()) url += `&client_secret=${encodeURIComponent(clientSecret.trim())}`;
+      const r = await jget(url);
       window.location.href = r.auth_url;
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
 
   const [maxN, setMaxN] = useState('25');
   const syncNow = async () => {
-    setBusy(true); setErr(''); setNotice('');
+    setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/oauth/sync-now', { max_results: num });
+      const r = await jpost('/oauth/sync-now', { max_results: num, client_id: clientId || undefined, client_secret: clientSecret || undefined });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      void load();
+      await load();
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
   };
 
@@ -1101,7 +1142,8 @@ export function Mailboxes() {
     if (!confirm(`Disconnect ${provider} mailbox?`)) return;
     try {
       await jdel(`/oauth/${provider}`);
-      void load();
+      await load();
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
@@ -1109,7 +1151,7 @@ export function Mailboxes() {
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '#/' }, { label: 'Mailboxes' }]} />
       <h1>Mailboxes</h1>
-      <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. Refresh tokens are encrypted server-side.</p>
+      <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. All credentials and refresh tokens are encrypted server-side.</p>
       <img src="/favicon.svg" alt="Mailbox connectors - secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
       <Toast msg={err} />
       {notice && <Toast msg={notice} kind="info" />}
@@ -1147,13 +1189,14 @@ export function Mailboxes() {
       <div className="card">
         <h3>Connect Mailbox</h3>
         <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-          <input type="text" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="OAuth client ID (or set server-side)" />
+          <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID (from Google / Microsoft console)" />
+          <input type="password" value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="OAuth client secret" autoComplete="off" />
           <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" />
           <div className="row">
-            <button className="ghost" onClick={() => connect('google')} disabled={busy}>Connect Google</button>
-            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy}>Connect Microsoft</button>
+            <button className="ghost" onClick={() => connect('google')} disabled={busy || !clientId.trim() || !clientSecret.trim()}>Connect Google</button>
+            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !clientId.trim() || !clientSecret.trim()}>Connect Microsoft</button>
           </div>
-          <p className="sub" style={{ marginBottom: 0 }}>After consent you return here automatically. Polling interval: server `MAIL_POLL_MINUTES` (0 = manual sync only).</p>
+          <p className="sub" style={{ marginBottom: 0 }}>Enter your OAuth credentials above — they are encrypted and stored on the server per connection. No .env configuration needed. After consent you return here automatically.</p>
         </div>
       </div>
       <InternalLinks current="#/mailboxes" />

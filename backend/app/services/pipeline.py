@@ -49,11 +49,11 @@ def _url_domains(urls: list[str]) -> list[str]:
     return out
 
 
-async def _to_thread(fn, *args, **kwargs):
+async def _to_thread(fn, *args, timeout: float = 3.0, **kwargs):
     try:
-        return await asyncio.to_thread(fn, *args, **kwargs)
+        return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), timeout=timeout)
     except Exception as e:
-        log.warning("enrichment %s failed: %s", getattr(fn, "__name__", fn), e)
+        log.warning("enrichment %s timed out or failed: %s", getattr(fn, "__name__", fn), e)
         return None
 
 
@@ -140,9 +140,9 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
 
     nlp_res, url_res, attach_res = await asyncio.gather(
-        _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", "")),
-        _to_thread(analyze_urls, urls, vt_key),
-        _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key),
+        _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", ""), timeout=5.0),
+        _to_thread(analyze_urls, urls, vt_key, timeout=3.0),
+        _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key, timeout=3.0),
         return_exceptions=True,
     )
     nlp = nlp_res if isinstance(nlp_res, dict) else {"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []}
@@ -150,7 +150,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     attach_res = attach_res if isinstance(attach_res, dict) else {"findings": [], "risk": 0.0, "malicious_count": 0}
 
     try:
-        intel = await _to_thread(aggregate_threat_intel, [domain] if domain else [], [origin_ip] if origin_ip else [], urls)
+        intel_res = await _to_thread(aggregate_threat_intel, [domain] if domain else [], [origin_ip] if origin_ip else [], urls, timeout=3.0)
+        intel = intel_res if isinstance(intel_res, dict) else {"hits": [], "count": 0}
     except Exception as e:
         log.warning("threat intel failed: %s", e)
         intel = {"hits": [], "count": 0}

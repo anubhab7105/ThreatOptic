@@ -98,6 +98,8 @@ class GmailAccount(Base):
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, unique=True, index=True)
     gmail_address: Mapped[str] = mapped_column(String(320), default="")
     refresh_token: Mapped[str] = mapped_column(Text, default="")
+    encrypted_client_id: Mapped[str] = mapped_column(Text, default="")
+    encrypted_client_secret: Mapped[str] = mapped_column(Text, default="")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -115,6 +117,8 @@ class MailboxConnection(Base):
     provider: Mapped[str] = mapped_column(String(32), default="google")  # google | microsoft
     account_email: Mapped[str] = mapped_column(String(320), default="")
     encrypted_refresh_token: Mapped[str] = mapped_column(Text, default="")
+    encrypted_client_id: Mapped[str] = mapped_column(Text, default="")
+    encrypted_client_secret: Mapped[str] = mapped_column(Text, default="")
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

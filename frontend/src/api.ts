@@ -6,21 +6,39 @@ export const API = `${BASE}/api/v1`;
 
 export type TokenPair = { access_token: string; refresh_token: string; token_type: string };
 
-// In-memory only (deliberately NOT localStorage): a stored XSS payload must
-// not be able to exfiltrate a long-lived token from disk. The tradeoff is
-// that a full page reload drops the session and returns to the login page.
-let _tokens: TokenPair | null = null;
+let _tokens: TokenPair | null = (() => {
+  try {
+    const s = sessionStorage.getItem('soc_tokens') || localStorage.getItem('soc_tokens');
+    return s ? JSON.parse(s) : null;
+  } catch {
+    return null;
+  }
+})();
 
 export function getTokens(): TokenPair | null {
+  if (!_tokens) {
+    try {
+      const s = sessionStorage.getItem('soc_tokens') || localStorage.getItem('soc_tokens');
+      if (s) _tokens = JSON.parse(s);
+    } catch { /* storage unavailable */ }
+  }
   return _tokens;
 }
 
 export function setTokens(pair: TokenPair) {
   _tokens = pair;
+  try {
+    sessionStorage.setItem('soc_tokens', JSON.stringify(pair));
+    localStorage.setItem('soc_tokens', JSON.stringify(pair));
+  } catch { /* storage unavailable */ }
 }
 
 export function clearTokens() {
   _tokens = null;
+  try {
+    sessionStorage.removeItem('soc_tokens');
+    localStorage.removeItem('soc_tokens');
+  } catch { /* storage unavailable */ }
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {

@@ -17,24 +17,86 @@ log = logging.getLogger("gmail")
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
 
-def _client_id(explicit: str | None) -> str:
-    cid = explicit or get_settings().google_client_id
+def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = None, db: Session | None = None) -> str:
+    """Return client_id from: explicit param > acct in DB > other GmailAccount / MailboxConnection > env fallback."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    if acct and acct.encrypted_client_id:
+        try:
+            val = vault.decrypt_secret(acct.encrypted_client_id)
+            if val.strip():
+                return val.strip()
+        except Exception:
+            pass
+    if db:
+        other_acct = db.query(models.GmailAccount).filter(
+            models.GmailAccount.encrypted_client_id != ""
+        ).order_by(models.GmailAccount.updated_at.desc()).first()
+        if other_acct and other_acct.encrypted_client_id:
+            try:
+                val = vault.decrypt_secret(other_acct.encrypted_client_id)
+                if val.strip():
+                    return val.strip()
+            except Exception:
+                pass
+        conn = db.query(models.MailboxConnection).filter(
+            models.MailboxConnection.provider == "google",
+            models.MailboxConnection.encrypted_client_id != ""
+        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        if conn and conn.encrypted_client_id:
+            try:
+                val = vault.decrypt_secret(conn.encrypted_client_id)
+                if val.strip():
+                    return val.strip()
+            except Exception:
+                pass
+    cid = get_settings().google_client_id
     if not cid:
-        raise HTTPException(400, "Google OAuth client_id not configured (env GOOGLE_CLIENT_ID or request field)")
+        raise HTTPException(400, "Google OAuth client_id not configured (enter in UI or set env GOOGLE_CLIENT_ID)")
     return cid
 
 
-def _client_secret(explicit: str | None) -> str:
-    secret = explicit or get_settings().google_client_secret
+def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | None = None, db: Session | None = None) -> str:
+    """Return client_secret from: explicit param > acct in DB > other GmailAccount / MailboxConnection > env fallback."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    if acct and acct.encrypted_client_secret:
+        try:
+            val = vault.decrypt_secret(acct.encrypted_client_secret)
+            if val.strip():
+                return val.strip()
+        except Exception:
+            pass
+    if db:
+        other_acct = db.query(models.GmailAccount).filter(
+            models.GmailAccount.encrypted_client_secret != ""
+        ).order_by(models.GmailAccount.updated_at.desc()).first()
+        if other_acct and other_acct.encrypted_client_secret:
+            try:
+                val = vault.decrypt_secret(other_acct.encrypted_client_secret)
+                if val.strip():
+                    return val.strip()
+            except Exception:
+                pass
+        conn = db.query(models.MailboxConnection).filter(
+            models.MailboxConnection.provider == "google",
+            models.MailboxConnection.encrypted_client_secret != ""
+        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        if conn and conn.encrypted_client_secret:
+            try:
+                val = vault.decrypt_secret(conn.encrypted_client_secret)
+                if val.strip():
+                    return val.strip()
+            except Exception:
+                pass
+    secret = get_settings().google_client_secret
     if not secret:
-        raise HTTPException(400, "Google OAuth client_secret not configured (env GOOGLE_CLIENT_SECRET or request field)")
+        raise HTTPException(400, "Google OAuth client_secret not configured (enter in UI or set env GOOGLE_CLIENT_SECRET)")
     return secret
 
 
 def _redirect_uri(explicit: str | None) -> str:
-    uri = explicit or get_settings().google_redirect_uri
-    if not uri:
-        raise HTTPException(400, "redirect_uri required (must match the URI registered in Google Cloud console)")
+    uri = explicit or get_settings().google_redirect_uri or "http://localhost:5173/"
     return uri
 
 
@@ -45,21 +107,37 @@ def status(user: models.User = Depends(get_current_user), db: Session = Depends(
 
 def _status_payload(user: models.User, db: Session) -> dict:
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+    has_stored = bool(acct and acct.encrypted_client_id)
+    if not has_stored:
+        # Check any MailboxConnection
+        has_stored = bool(db.query(models.MailboxConnection).filter(
+            models.MailboxConnection.provider == "google",
+            models.MailboxConnection.encrypted_client_id != ""
+        ).first())
+    has_env = bool(get_settings().google_client_id)
     return {
         "connected": acct is not None,
         "gmail_address": acct.gmail_address if acct else "",
         "last_sync_at": acct.last_sync_at.isoformat() if acct and acct.last_sync_at else None,
-        "client_configured": bool(get_settings().google_client_id),
+        "client_configured": has_stored or has_env,
     }
 
 
 @router.get("/auth-url", response_model=schemas.GmailAuthUrlOut)
 def auth_url(
     client_id: str | None = Query(None),
+    client_secret: str | None = Query(None),
     redirect_uri: str | None = Query(None),
     user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    return {"auth_url": connectors.build_gmail_auth_url(_client_id(client_id), _redirect_uri(redirect_uri))}
+    from .oauth import _make_state
+    acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+    cid = _resolve_client_id(client_id, acct, db=db)
+    sec = client_secret or (_resolve_client_secret(None, acct, db=db) if (acct and acct.encrypted_client_secret) else "")
+    uri = _redirect_uri(redirect_uri)
+    state = _make_state(user.id, client_id=cid, client_secret=sec, redirect_uri=uri, flow="gmail")
+    return {"auth_url": connectors.build_gmail_auth_url(cid, uri, state=state)}
 
 
 @router.post("/callback", response_model=schemas.GmailStatus)
@@ -68,7 +146,10 @@ async def callback(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cid, secret, uri = _client_id(payload.client_id), _client_secret(payload.client_secret), _redirect_uri(payload.redirect_uri)
+    acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+    cid = _resolve_client_id(payload.client_id, acct, db=db)
+    secret = _resolve_client_secret(payload.client_secret, acct, db=db)
+    uri = _redirect_uri(payload.redirect_uri)
     try:
         tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri)
     except httpx.HTTPError as e:
@@ -79,14 +160,42 @@ async def callback(
         address = await connectors.get_gmail_profile_email(tokens["access_token"])
     except httpx.HTTPError as e:
         raise HTTPException(400, f"could not read Gmail profile: {e}")
-    acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+
     encrypted_refresh = vault.encrypt_secret(tokens["refresh_token"])
+    encrypted_cid = vault.encrypt_secret(cid) if cid else ""
+    encrypted_sec = vault.encrypt_secret(secret) if secret else ""
+
     if acct:
-        acct.gmail_address, acct.refresh_token = address, encrypted_refresh
-        db.commit()
+        acct.gmail_address = address
+        acct.refresh_token = encrypted_refresh
+        acct.encrypted_client_id = encrypted_cid
+        acct.encrypted_client_secret = encrypted_sec
     else:
-        db.add(models.GmailAccount(user_id=user.id, gmail_address=address, refresh_token=encrypted_refresh))
-        db.commit()
+        acct = models.GmailAccount(
+            user_id=user.id, gmail_address=address,
+            refresh_token=encrypted_refresh,
+            encrypted_client_id=encrypted_cid,
+            encrypted_client_secret=encrypted_sec,
+        )
+        db.add(acct)
+
+    # Also keep MailboxConnection in sync
+    conn = db.query(models.MailboxConnection).filter(
+        models.MailboxConnection.provider == "google",
+        models.MailboxConnection.account_email == address).first()
+    if conn:
+        conn.encrypted_refresh_token = encrypted_refresh
+        conn.encrypted_client_id = encrypted_cid
+        conn.encrypted_client_secret = encrypted_sec
+        conn.user_id = user.id
+        conn.organization_id = user.organization_id
+    else:
+        db.add(models.MailboxConnection(
+            user_id=user.id, organization_id=user.organization_id, provider="google",
+            account_email=address, encrypted_refresh_token=encrypted_refresh,
+            encrypted_client_id=encrypted_cid, encrypted_client_secret=encrypted_sec))
+
+    db.commit()
     return _status_payload(user, db)
 
 
@@ -99,15 +208,22 @@ async def sync(
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     if not acct:
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
-    settings = get_settings()
+    # Resolve credentials: request body > stored in DB > env fallback
+    cid = _resolve_client_id(payload.client_id, acct, db=db)
+    secret = _resolve_client_secret(payload.client_secret, acct, db=db)
+    # Persist explicit credentials so future syncs don't need them again
+    if payload.client_id:
+        acct.encrypted_client_id = vault.encrypt_secret(cid)
+    if payload.client_secret:
+        acct.encrypted_client_secret = vault.encrypt_secret(secret)
+    db.commit()
+
     try:
         raw_token = vault.decrypt_secret(acct.refresh_token)
     except Exception:
         raw_token = acct.refresh_token
     try:
-        fresh = await connectors.refresh_gmail_token(
-            raw_token, settings.google_client_id or "", _client_secret(payload.client_secret)
-        )
+        fresh = await connectors.refresh_gmail_token(raw_token, cid, secret)
     except httpx.HTTPError as e:
         raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {e}")
     try:
@@ -116,16 +232,36 @@ async def sync(
         )
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Gmail fetch failed: {e}")
-    out = schemas.GmailSyncResult()
-    for m in messages:
-        try:
-            res = await process_raw_email(db, m["raw"], source="gmail")
-            out.email_ids.append(res["email_id"])
-        except Exception as e:
-            log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)
-            out.errors.append(f"{m.get('id')}: {e}"[:200])
-        await asyncio.sleep(0)
-    out.synced = len(out.email_ids)
+    # Process emails concurrently with bounded concurrency for fast ingestion
+    email_ids: list[str] = []
+    errors: list[str] = []
+    sem = asyncio.Semaphore(8)
+
+    async def _worker(m: dict):
+        async with sem:
+            from ..database import SessionLocal
+            worker_db = SessionLocal()
+            try:
+                res = await process_raw_email(worker_db, m["raw"], source="gmail")
+                return ("ok", res["email_id"])
+            except Exception as e:
+                log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)
+                return ("err", f"{m.get('id')}: {e}"[:200])
+            finally:
+                worker_db.close()
+
+    results = await asyncio.gather(*[_worker(m) for m in messages])
+    for status_str, val in results:
+        if status_str == "ok":
+            email_ids.append(val)
+        else:
+            errors.append(val)
+
+    out = schemas.GmailSyncResult(
+        synced=len(email_ids),
+        email_ids=email_ids,
+        errors=errors,
+    )
     acct.last_sync_at = datetime.utcnow()
     db.commit()
     return out
