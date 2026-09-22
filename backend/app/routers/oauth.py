@@ -42,6 +42,10 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 PROVIDERS = ("google", "microsoft")
 STATE_TTL_MINUTES = 10
 
+# In-memory cache for used state signatures (prevents replay attacks)
+# Key: state signature (the HMAC part), Value: expiry timestamp
+_used_state_cache: dict[str, float] = {}
+
 
 def _utcnow():
     return datetime.now(timezone.utc)
