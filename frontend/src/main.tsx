@@ -291,23 +291,8 @@ function Shell() {
     setCanonical(location.pathname);
   }, [location.pathname]);
 
-  const hash = window.location.hash;
-  const getRoute = (): { name: string; id?: string } => {
-    const rawPath = hash.split('?')[0] || '';
-    const cleanPath = rawPath.replace(/^#\/?/, '').toLowerCase();
-
-    if (cleanPath.startsWith('email/')) return { name: 'email', id: rawPath.replace(/^#\/?email\//, '') };
-    if (cleanPath.startsWith('campaign/') && !cleanPath.startsWith('campaigns')) return { name: 'campaign', id: rawPath.replace(/^#\/?campaign\//, '') };
-    if (cleanPath === 'campaigns') return { name: 'campaigns' };
-    if (cleanPath === 'model') return { name: 'model' };
-    if (cleanPath === 'mailboxes') return { name: 'mailboxes' };
-    if (cleanPath === 'cases') return { name: 'cases' };
-    if (cleanPath === 'privacy') return { name: 'privacy' };
-    if (cleanPath === 'terms') return { name: 'terms' };
-    if (cleanPath === '' || cleanPath === 'dashboard') return { name: 'dash' };
-    return { name: 'notfound' };
-  };
-  const route = getRoute();
+  const on = (path: string) => (location.pathname === path ? ' active' : '');
+  const onCampaigns = location.pathname.startsWith('/campaign') ? ' active' : '';
 
   if (loading) {
     return (
