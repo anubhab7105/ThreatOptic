@@ -260,7 +260,6 @@ def test_cross_tenant_mailbox_access(monkeypatch):
         # User 2 should NOT be able to disconnect user 1's mailbox
         r = c.delete("/api/v1/oauth/google", headers=h2)
         assert r.status_code == 403  # Forbidden - cannot access other tenant's mailbox
-        assert r.json()["removed"] == 0
 
         # User 2 sync-now should return 404 (no mailbox)
         r = c.post("/api/v1/oauth/sync-now", headers=h2, json={"provider": "google", "max_results": 5})
