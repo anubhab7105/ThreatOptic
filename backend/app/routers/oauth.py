@@ -226,35 +226,46 @@ async def callback(
     client_secret: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Provider redirects here (no auth header possible): verify state, exchange, store."""
+    """Provider redirects here (no auth header possible): verify signed state, exchange, store."""
     p = _provider_or_400(provider)
-    row = db.query(models.OAuthState).filter(
-        models.OAuthState.state == (state or ""),
-        models.OAuthState.provider == p,
-        models.OAuthState.used == False,  # noqa: E712
-    ).first()
-    now = _utcnow()
-    expires = row.expires_at.replace(tzinfo=timezone.utc) if row and row.expires_at.tzinfo is None else (row.expires_at if row else None)
-    if not row or not expires or expires < now:
+    payload = _verify_state(state)
+    if not payload or payload.get("flow") != "oauth":
         raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
-    row.used = True
-    db.commit()
-    owner = db.query(models.User).filter(models.User.id == row.user_id).first()
+    if int(time.time()) - payload.get("t", 0) > STATE_TTL_MINUTES * 60:
+        raise HTTPException(400, "OAuth state expired — restart the connect flow")
+    
+    owner_id = payload.get("sub")
+    if not owner_id:
+        raise HTTPException(400, "invalid OAuth state: missing user")
+    
+    owner = db.query(models.User).filter(models.User.id == owner_id).first()
     if not owner:
         raise HTTPException(400, "state owner no longer exists")
 
-    cid = (client_id or row.client_id or "").strip() or _resolve_client_id(p, None, db=db)
-    sec = (client_secret or "").strip() or _resolve_client_secret(p, None, db=db)
-    r_uri = redirect_uri or row.redirect_uri or (get_settings().google_redirect_uri if p == "google" else get_settings().frontend_url) or "http://localhost:5173/"
-    if row.client_id and client_id and row.client_id != client_id:
+    # Extract PKCE verifier from state
+    verifier = payload.get("pkv", "")
+    if not verifier:
+        raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
+
+    # Verify redirect_uri matches what's in state
+    state_redirect_uri = payload.get("ruri", "")
+    if redirect_uri and redirect_uri != state_redirect_uri:
+        raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
+    r_uri = redirect_uri or state_redirect_uri or (get_settings().google_redirect_uri if p == "google" else get_settings().frontend_url) or "http://localhost:5173/"
+    
+    # Verify client_id matches what's in state
+    state_client_id = payload.get("cid", "")
+    if client_id and state_client_id and client_id != state_client_id:
         raise HTTPException(400, "OAuth client mismatch — restart the connect flow")
+    cid = (client_id or state_client_id or "").strip() or _resolve_client_id(p, None, db=db)
+    sec = (client_secret or "").strip() or _resolve_client_secret(p, None, db=db)
 
     try:
         if p == "google":
-            tokens = await connectors.exchange_gmail_code(code, cid, sec, r_uri, code_verifier=row.code_verifier)
+            tokens = await connectors.exchange_gmail_code(code, cid, sec, r_uri, code_verifier=verifier)
             address = await connectors.get_gmail_profile_email(tokens["access_token"])
         else:
-            tokens = await connectors.exchange_microsoft_code(code, cid, sec, r_uri, code_verifier=row.code_verifier)
+            tokens = await connectors.exchange_microsoft_code(code, cid, sec, r_uri, code_verifier=verifier)
             address = await connectors.get_microsoft_profile_email(tokens["access_token"])
     except httpx.HTTPError as e:
         raise HTTPException(400, f"{p} token exchange failed: {e}")
@@ -308,14 +319,14 @@ async def callback(
             ))
 
     db.commit()
-    db.query(models.OAuthState).filter(
-        or_(models.OAuthState.used == True, models.OAuthState.expires_at < _utcnow())
-    ).delete(synchronize_session=False)
-    db.commit()
     audit("oauth.callback", provider=p, account=address)
+    
+    # URL-encode the redirect address
+    from urllib.parse import quote
     raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
     base = raw_front or "https://socforensics.io"
-    return RedirectResponse(f"{base}/mailboxes?connected={p}:{address}", status_code=302)
+    encoded_address = quote(address, safe="")
+    return RedirectResponse(f"{base}/mailboxes?connected={p}:{encoded_address}", status_code=302)
 
 
 @router.get("/status")
@@ -354,8 +365,6 @@ async def sync_now(
     return result
 
 
-def poll_all_mailboxes(max_results: int = 25) -> dict:
-    """Background-poller entrypoint (scheduler thread: no running loop here)."""
-    import asyncio
-
-    return asyncio.run(poll_all_mailboxes_async(max_results=max_results))
+async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None, organization_id: str | None = None, user_id: str | None = None) -> dict:
+    """Background-poller entrypoint (async; call from event loop)."""
+    return await poll_all_mailboxes_async(max_results=max_results, provider=provider, organization_id=organization_id, user_id=user_id)
