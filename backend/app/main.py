@@ -77,6 +77,12 @@ async def lifespan(app: FastAPI):
         log.info("NLP model warmed up")
     except Exception as ex:
         log.warning("NLP warmup deferred: %s", ex)
+    try:
+        from .modules.threat_intel.url_ml import warmup as url_ml_warmup
+        url_ml_warmup()
+        log.info("URL ML model warmed up")
+    except Exception as ex:
+        log.warning("URL ML warmup deferred: %s", ex)
     require_custody_key()
     from .modules.graph.store import graph_consistency_note
     note = graph_consistency_note()
@@ -173,7 +179,12 @@ def health_detailed():
         nlp_ok = "ml_score" in r
     except Exception:
         nlp_ok = False
-    return {"status": "ok" if db_ok else "degraded", "db": db_ok, "nlp": nlp_ok,
+    try:
+        from .modules.threat_intel.url_ml import is_available as url_ml_available
+        url_ml_ok = url_ml_available()
+    except Exception:
+        url_ml_ok = False
+    return {"status": "ok" if db_ok else "degraded", "db": db_ok, "nlp": nlp_ok, "url_ml": url_ml_ok,
             "live_lookups": settings.live_lookups}
 
 

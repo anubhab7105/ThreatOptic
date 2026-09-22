@@ -129,6 +129,7 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
 
     hits: list[dict] = []
     vt_checked = 0
+    ml_phishing_count = 0
     for u in urls[:50]:
         dom = domain_of(u)
         entry: dict[str, Any] = {"url": u[:500], "domain": dom, "defanged": defang(u)}
@@ -153,6 +154,36 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
             entry["reasons"] = reasons
             hits.append(entry)
             continue
+        # ML-based URL phishing detection (offline, no API key needed)
+        # Runs before live checks so zero-day phishing is caught even offline.
+        # NOTE: This model was trained with 48 features, many requiring page content.
+        # URL-only mode uses imputed medians for content features → lower accuracy.
+        # Thresholds tuned for URL-only mode (legit ~0.08, phishing ~0.25-0.45).
+        try:
+            from .url_ml import predict_url
+            ml_result = predict_url(u)
+            entry["ml_url_score"] = ml_result["risk_score"]
+            entry["ml_url_confidence"] = ml_result["confidence"]
+            entry["ml_url_label"] = "phishing" if ml_result["is_phishing"] else "legitimate"
+            # URL-only mode: top content features are imputed → max risk ~0.45.
+            # Use lower threshold than full-page mode (0.70 → 0.35).
+            if ml_result["risk_score"] >= 0.35:
+                entry["ml_phishing"] = True
+                entry["reasons"] = [f"ml-phishing:{ml_result['confidence']}%"]
+                hits.append(entry)
+                ml_phishing_count += 1
+                continue
+            elif ml_result["risk_score"] >= 0.25:
+                # Suspicious range: keep signal but don't auto-count as malicious
+                entry["ml_suspicious"] = True
+                # Still add to hits as suspicious (not malicious_count) for UI visibility
+                # Don't count toward malicious_count but preserve for analyst review
+                entry["reasons"] = [f"ml-suspicious:{ml_result['confidence']}%"]
+                hits.append(entry)
+                continue
+        except Exception:
+            # Model unavailable or scoring failed → graceful fallback, continue without ML
+            pass
         # live checks best-effort (capped to avoid rate limits / slow pipelines)
         if _live() and len(hits) < 3:
             uh = check_urlhaus(u)
@@ -166,5 +197,5 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
             if vt.get("malicious"):
                 entry["virustotal_hit"] = vt
                 hits.append(entry)
-    return {"urls": urls[:50], "hits": hits, "malicious_count": sum(
-        1 for h in hits if h.get("blocklisted") or h.get("urlhaus_hit") or h.get("virustotal_hit"))}
+    return {"urls": urls[:50], "hits": hits, "ml_phishing_count": ml_phishing_count, "malicious_count": sum(
+        1 for h in hits if h.get("blocklisted") or h.get("urlhaus_hit") or h.get("virustotal_hit") or h.get("ml_phishing"))}

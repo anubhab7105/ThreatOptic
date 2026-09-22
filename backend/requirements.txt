@@ -24,6 +24,7 @@ requests>=2.32.3
 httpx>=0.28.1
 scikit-learn>=1.6.0
 numpy>=1.26
+pandas>=2.0
 joblib>=1.4.2
 networkx>=3.4.2
 neo4j>=5.26.0
