@@ -152,10 +152,4 @@ async def poll_all_mailboxes_async(max_results: int = 25, provider: str | None =
     return total
 
 
-# Legacy sync wrapper removed — use async poll_all_mailboxes directly from event loop.
-# Kept for backward compatibility if needed, but scheduler now uses async version.
-def poll_all_mailboxes(max_results: int = 25) -> dict:
-    """Background-poller entrypoint (scheduler thread: no running loop here)."""
-    import asyncio
 
-    return asyncio.run(poll_all_mailboxes(max_results=max_results))
