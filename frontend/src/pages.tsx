@@ -607,33 +607,103 @@ export function GraphSvg({ graph }: { graph: any }) {
   const nodes: any[] = graph?.nodes ?? [];
   const edges: any[] = graph?.edges ?? [];
   if (!nodes.length) return <Empty msg="No related entities yet - graph grows as more mail shares IPs/domains." />;
-  const w = 640, h = 300;
-  const pos = nodes.map((_, i) => ({
-    x: 70 + (i * (w - 140)) / Math.max(1, nodes.length - 1),
-    y: h / 2 + (i % 2 === 0 ? -62 : 62),
-  }));
-  const idx = new Map(nodes.map((n, i) => [n.id, i]));
+  const w = 700, h = 340;
+  const cx = w / 2, cy = h / 2;
+
+  // Degree calculation to find focal / center node
+  const degreeMap = new Map<string, number>();
+  edges.forEach((e) => {
+    degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+    degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+  });
+
+  // Pick central node if one has high connectivity
+  let centerId: string | null = null;
+  if (nodes.length >= 3) {
+    const sorted = [...nodes].sort((a, b) => (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0));
+    if ((degreeMap.get(sorted[0].id) || 0) >= 2) {
+      centerId = sorted[0].id;
+    }
+  }
+
+  const otherNodes = centerId ? nodes.filter((n) => n.id !== centerId) : nodes;
+  const radius = Math.min(w, h) * 0.36;
+
+  const posMap = new Map<string, { x: number; y: number }>();
+  if (centerId) {
+    posMap.set(centerId, { x: cx, y: cy });
+    otherNodes.forEach((n, i) => {
+      const angle = (i / otherNodes.length) * 2 * Math.PI - Math.PI / 2;
+      posMap.set(n.id, {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+      });
+    });
+  } else if (nodes.length === 1) {
+    posMap.set(nodes[0].id, { x: cx, y: cy });
+  } else if (nodes.length === 2) {
+    posMap.set(nodes[0].id, { x: cx - 130, y: cy });
+    posMap.set(nodes[1].id, { x: cx + 130, y: cy });
+  } else {
+    nodes.forEach((n, i) => {
+      const angle = (i / nodes.length) * 2 * Math.PI - Math.PI / 2;
+      posMap.set(n.id, {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+      });
+    });
+  }
+
   const color = (k: string) => (k === 'Domain' ? '#f97316' : k === 'IP_Address' ? '#ef4444' : k === 'Threat_Campaign' ? '#38bdf8' : '#22c55e');
+  const label = (id: string) => String(id).replace(/^(email|ip|domain|campaign):/, '');
+
   return (
     <svg width="100%" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Identity correlation graph showing sender infrastructure relationships" style={{ background: '#0a0f1f', borderRadius: 8, border: '1px solid var(--border)' }}>
       <title>Attribution graph</title>
       <desc>Nodes represent domains, IPs and campaigns linked by shared infrastructure</desc>
+      <defs>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#38bdf8" floodOpacity="0.3" />
+        </filter>
+      </defs>
       {edges.map((e, i) => {
-        const a = pos[idx.get(e.source) ?? -1], b = pos[idx.get(e.target) ?? -1];
-        return a && b ? (
+        const a = posMap.get(e.source), b = posMap.get(e.target);
+        if (!a || !b) return null;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        return (
           <g key={i}>
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#60a5fa" strokeWidth={1.5} />
-            {e.rel && <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 4} fill="#93a1bd" fontSize={9} textAnchor="middle">{e.rel}</text>}
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#3b82f6" strokeWidth={2} strokeOpacity={0.7} />
+            {e.rel && (
+              <g transform={`translate(${mx}, ${my})`}>
+                <rect x={-e.rel.length * 3.2 - 4} y={-8} width={e.rel.length * 6.4 + 8} height={14} rx={4} fill="#0d1528" stroke="var(--border)" strokeWidth={0.8} />
+                <text x={0} y={2.5} fill="#93a1bd" fontSize={8} fontWeight={700} textAnchor="middle">{e.rel}</text>
+              </g>
+            )}
           </g>
-        ) : null;
+        );
       })}
-      {nodes.map((n, i) => (
-        <g key={n.id}>
-          <circle cx={pos[i].x} cy={pos[i].y} r={17} fill={color(n.kind)} />
-          <text x={pos[i].x} y={pos[i].y + 4} fill="#060a14" fontSize={9} fontWeight={800} textAnchor="middle">{(n.kind || '?')[0]}</text>
-          <text x={pos[i].x} y={pos[i].y + 32} fill="#e5e7eb" fontSize={10} textAnchor="middle">{String(n.id).slice(0, 26)}</text>
-        </g>
-      ))}
+      {nodes.map((n) => {
+        const p = posMap.get(n.id) || { x: cx, y: cy };
+        const lbl = label(n.id);
+        const isCenter = n.id === centerId;
+        const r = isCenter ? 22 : 18;
+        return (
+          <g key={n.id} style={{ cursor: 'pointer' }}>
+            <title>{`${n.kind || 'Entity'}: ${lbl}`}</title>
+            <circle cx={p.x} cy={p.y} r={r} fill={color(n.kind)} stroke="#0f172a" strokeWidth={2.5} filter="url(#glow)" />
+            <text x={p.x} y={p.y + 4} fill="#060a14" fontSize={isCenter ? 11 : 9} fontWeight={900} textAnchor="middle">
+              {(n.kind || '?')[0]}
+            </text>
+            <text x={p.x} y={p.y + (isCenter ? 36 : 30)} fill="#e5e7eb" fontSize={11} fontWeight={600} textAnchor="middle" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
+              {lbl.length > 24 ? lbl.slice(0, 22) + '…' : lbl}
+            </text>
+            <text x={p.x} y={p.y + (isCenter ? 48 : 42)} fill="#93a1bd" fontSize={9} textAnchor="middle">
+              {n.kind || ''}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -725,10 +795,13 @@ export function EmailView({ id }: { id: string }) {
   };
 
   useEffect(() => {
-    if (d?.email?.sender_address) {
-      jget(`/graph/related?value=${encodeURIComponent(d.email.sender_address)}`).then(setGraph).catch(() => { /* non-fatal */ });
+    if (d?.email) {
+      const val = d.email.sender_address || d.email.id;
+      jget(`/graph/related?value=${encodeURIComponent(val)}&email_id=${encodeURIComponent(d.email.id || id || '')}`)
+        .then(setGraph)
+        .catch(() => { /* non-fatal */ });
     }
-  }, [d]);
+  }, [d, id]);
 
   if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><Toast msg={err} /></div>;
   if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><SkeletonList /></div>;

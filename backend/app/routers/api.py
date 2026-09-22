@@ -314,12 +314,9 @@ def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query
 
 @router.get("/graph/related")
 def graph_related(value: str = Query(..., min_length=1, max_length=320),
+                 email_id: str | None = Query(None),
                  db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    import re
-    # Accept full "Name <addr>" headers — extract bare email for lookup.
-    m = re.search(r"[\w.\-+]+@[\w.\-]+\.\w+", value or "")
-    key = m.group(0) if m else value
-    return related_entities(key)
+    return related_entities(value, db=db, email_id=email_id)
 
 
 @router.get("/graph/campaigns")

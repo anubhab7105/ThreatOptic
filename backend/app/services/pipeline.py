@@ -248,8 +248,13 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("elastic mirror failed: %s", e)
     try:
-        upsert_email_graph(hinfo.get("from_addr", ""), origin_ip, [domain] if domain else [],
-                           campaign=str(attribution.get("campaign", "")))
+        upsert_email_graph(
+            hinfo.get("from_addr", ""),
+            origin_ip,
+            [domain] if domain else [],
+            campaign=str(attribution.get("campaign", "")),
+            recipient=email_row.recipient_address or "",
+        )
     except Exception as e:
         log.warning("graph upsert failed: %s", e)
     try:
