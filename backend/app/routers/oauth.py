@@ -33,7 +33,7 @@ from ..database import get_db
 from ..modules.auth.rate_limit import audit, limiter
 from ..modules.auth.vault import decrypt_secret, encrypt_secret
 from ..modules.ingestion import connectors
-from ..services.mailbox_poll import poll_all_mailboxes_async
+from ..services.mailbox_poll import poll_all_mailboxes
 from .deps import get_current_user, require_roles
 
 log = logging.getLogger("oauth")
