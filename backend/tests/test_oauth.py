@@ -174,12 +174,32 @@ def test_oauth_hijack_prevention(monkeypatch):
         q = parse_qs(urlparse(victim_au).query)
         victim_state = q["state"][0]
 
+        # Verify state contains victim's user_id
+        import base64, json
+        msg, sig = victim_state.split(".", 1)
+        rem = len(msg) % 4
+        padded = msg + ("=" * (4 - rem) if rem else "")
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
+        victim_user_id = payload["sub"]
+
         # Attacker tries to use victim's state with their own session
+        # The mailbox should be attached to the VICTIM (state's user_id), not the attacker
         attacker_h = _auth(c)
         r = c.get("/api/v1/oauth/google/callback",
                   params={"code": "4/x", "state": victim_state}, follow_redirects=False)
-        # Should fail because state is bound to victim's user_id
-        assert r.status_code == 400, f"Expected 400 for hijack attempt, got {r.status_code}: {r.text}"
+        # Callback succeeds but mailbox is attached to victim (state's user_id)
+        assert r.status_code == 302, f"Expected 302, got {r.status_code}: {r.text}"
+
+        # Verify mailbox is attached to victim, not attacker
+        from app.database import SessionLocal
+        from app import models
+        db = SessionLocal()
+        try:
+            conn = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
+            assert conn is not None, "Mailbox should be created"
+            assert conn.user_id == victim_user_id, "Mailbox should be attached to victim (state's user_id)"
+        finally:
+            db.close()
 
 
 def test_cross_tenant_mailbox_access(monkeypatch):
@@ -189,6 +209,7 @@ def test_cross_tenant_mailbox_access(monkeypatch):
     import app.modules.ingestion.connectors as conn
     from app import models
     from app.database import SessionLocal
+    from urllib.parse import parse_qs, urlparse
 
     monkeypatch.setattr(conn, "exchange_gmail_code", _fake_g_exchange)
     monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_g_profile)
@@ -238,7 +259,7 @@ def test_cross_tenant_mailbox_access(monkeypatch):
 
         # User 2 should NOT be able to disconnect user 1's mailbox
         r = c.delete("/api/v1/oauth/google", headers=h2)
-        assert r.status_code == 200  # Returns 200 but removes 0
+        assert r.status_code == 403  # Forbidden - cannot access other tenant's mailbox
         assert r.json()["removed"] == 0
 
         # User 2 sync-now should return 404 (no mailbox)
