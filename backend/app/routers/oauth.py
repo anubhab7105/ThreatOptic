@@ -252,6 +252,14 @@ async def callback(
     if int(time.time()) - payload.get("t", 0) > STATE_TTL_MINUTES * 60:
         raise HTTPException(400, "OAuth state expired — restart the connect flow")
     
+    # Prevent replay attacks: check if state signature was already used
+    try:
+        msg, sig = (state or "").split(".", 1)
+    except ValueError:
+        raise HTTPException(400, "invalid OAuth state format")
+    if not _check_and_mark_state_used(sig):
+        raise HTTPException(400, "OAuth state already used — restart the connect flow")
+    
     owner_id = payload.get("sub")
     if not owner_id:
         raise HTTPException(400, "invalid OAuth state: missing user")
