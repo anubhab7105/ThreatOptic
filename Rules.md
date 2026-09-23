@@ -25,7 +25,7 @@
 ## 2. Privacy & Compliance Safeguards (GDPR/CCPA)
 
 ### PII Masking
-- All raw email body content must pass through a sanitization filter that masks credit cards, SSNs, and identifiable personal names before being rendered on the analyst dashboard, unless the analyst has specific `Unmask_Privileges`.
+- All email fields (`subject/sender/recipient/body` via `modules/privacy/masking.py:50-59` + `reporting/generator.py:12-15`) are masked (card Luhn, SSN, phone, `***@domain`) before rendering or indexing; masking is **unconditional** — no `Unmask_Privileges` bypass exists in the request path (Step 3). The legacy `Unmask_Privileges` role in earlier drafts does not exist; only `Admin/Analyst/ReadOnly` (see `Shema.md:10`).
 
 ### Data Retention
 - **Clean Traffic:** Metadata retained for 7 days; body content dropped immediately.

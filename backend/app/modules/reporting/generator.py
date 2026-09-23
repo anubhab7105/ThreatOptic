@@ -360,5 +360,13 @@ def build_full_report(email: dict, analysis: dict, trace: dict, attribution: dic
     j = build_report_json(email, analysis, trace, attribution)
     j_bytes = json.dumps(j, indent=2, default=str).encode()
     pdf = build_report_pdf(email, analysis, trace, attribution)
-    manifest = custody_manifest(email.get("raw_eml_hash", ""), pdf)
+    # Sign both artifacts: manifest binds eml_hash + pdf_hash + json_hash together
+    import hashlib
+    pdf_hash = hashlib.sha256(pdf).hexdigest()
+    json_hash = hashlib.sha256(j_bytes).hexdigest()
+    # Use custody_manifest for pdf, then extend with json hash and combined signature
+    manifest = custody_manifest(email.get("raw_eml_hash", ""), pdf + j_bytes)
+    manifest["pdf_sha256"] = pdf_hash
+    manifest["json_sha256"] = json_hash
+    manifest["combined_report_hash"] = hashlib.sha256(pdf + j_bytes).hexdigest()
     return pdf, j_bytes, manifest

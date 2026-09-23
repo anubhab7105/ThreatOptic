@@ -87,4 +87,23 @@ def _clear_global_state():
                 pass
     except Exception:
         pass
+    try:
+        import app.modules.nlp.engine as nlp_eng
+        nlp_eng._classifier = None
+        nlp_eng._transformer_pipe = None
+    except Exception:
+        pass
+    try:
+        import app.modules.threat_intel.url_ml as url_ml
+        if hasattr(url_ml, "_model"):
+            url_ml._model = None
+    except Exception:
+        pass
+    try:
+        from app.modules.threat_intel import feeds as feeds_mod
+        if hasattr(feeds_mod, "_feeds_cache"):
+            feeds_mod._feeds_cache.clear()
+        feeds_mod.aggregate_threat_intel.cache_clear() if hasattr(feeds_mod.aggregate_threat_intel, "cache_clear") else None
+    except Exception:
+        pass
 
