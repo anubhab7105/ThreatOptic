@@ -23,7 +23,7 @@
 3. **Fraud Score Calculation:** The engine calculates a final Confidence Score (0-100) based on weighted findings.
 
 ## 4. Alerting & Action
-1. **Policy Evaluation:** The score is evaluated against organizational rules (e.g., Score > 85 triggers Quarantine).
+1. **Policy Evaluation:** The score is evaluated against organizational rules (Critical 90-100 Quarantine, High 75-89 Junk/Hold, Medium 50-74 Banner, per `Rules.md` + `scoring.py:91-100` / `components.tsx:3-8`; legacy >85 text was superseded).
 2. **User/Admin Alert:** High-risk notifications are dispatched to SOC analysts or end-users via UI, Email, or Slack/Teams.
 
 ## 5. Analyst Review & Forensic Reporting

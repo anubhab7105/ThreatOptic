@@ -218,9 +218,11 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         scoring = compute_scores(nlp, auth, intel, routing_flags, hinfo.get("flags", []), age, contains_payment,
                                  attachment=attach_res)
     except Exception as e:
-        log.warning("scoring failed: %s", e)
-        scoring = {"fraud_score": 0.0, "classification": "Clean", "threat_classification": "Clean",
-                   "action": "Deliver", "breakdown": {}, "signals": []}
+        log.warning("scoring failed, fail-closed to Quarantine: %s", e)
+        scoring = {"fraud_score": 90.0, "classification": "Critical", "threat_classification": "Critical",
+                   "action": "Quarantine", "breakdown": {"error": "scoring-exception"}, "signals": [
+                       {"signal_name": "scoring_error", "weight": 1.0, "value": "exception", "contribution_to_score": 90.0, "detail": f"scoring exception fail-closed: {type(e).__name__}"}
+                   ]}
 
     masked_body = mask_text(body)
     email_row = EmailRecord(

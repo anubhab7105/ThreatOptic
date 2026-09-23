@@ -33,11 +33,12 @@ graph TD;
 
 ### Key Screens
 1. **Global Threat Dashboard:** High-level metrics (Emails processed, blocked threats, active campaigns).
-2. **Email Analysis View (Detailed):** 
+2. **Email Analysis View (Detailed — 5 tabs as implemented `frontend/src/pages.tsx:641`):** 
    - Tab 1: Executive Summary (Fraud Score, Classification).
-   - Tab 2: Header Forensics (Parsed received chain).
-   - Tab 3: GeoLocation Map (Interactive world map showing IP origin).
-   - Tab 4: Graph View (Node-link diagram of related domains/IPs).
+   - Tab 2: Why this score? (Explainable weighted breakdown).
+   - Tab 3: Header Forensics (Parsed received chain + SPF/DKIM/DMARC).
+   - Tab 4: GeoLocation Map (Interactive world map showing IP origin).
+   - Tab 5: Graph View (Node-link diagram of related domains/IPs).
 3. **Case Management:** Kanban or list view of ongoing investigations.
 4. **Mailboxes (present stage):** Organization-level Google/Microsoft OAuth connectors with background polling and manual Sync now.
 5. **Model Info (present stage):** Live classifier metrics, per-class precision/recall/F1, and confusion matrix.
