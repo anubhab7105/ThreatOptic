@@ -4,7 +4,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
-
+dataset.csv 
 node_modules/
 dist/
 .venv/
