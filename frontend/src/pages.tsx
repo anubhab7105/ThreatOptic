@@ -135,41 +135,140 @@ export function LoginPage() {
     }
   };
 
+  const fillSeed = (u: string, p: string) => {
+    setUsername(u);
+    setPassword(p);
+    setErr('');
+  };
+
   return (
-    <div className="page" style={{ maxWidth: 440 }}>
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Sign In' }]} />
-      <h1>SOC Sign in</h1>
-      <p className="sub">JWT-secured access to the forensic intelligence platform.</p>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-        <img src="/favicon.svg" alt="SOC Forensics Lab shield logo - secure access" width={72} height={72} loading="eager" />
-      </div>
-      <div className="card">
-        <div className="tabs">
-          {(['login', 'register'] as const).map((m) => (
-            <button key={m} className={mode === m ? 'active' : ''} onClick={() => { setMode(m); setErr(''); }}>
-              {m === 'login' ? 'Sign in' : 'Register'}
+    <div className="login-page-wrapper">
+      <div className="login-card">
+        {/* Left Side: Gradient Hero */}
+        <div className="login-hero-pane">
+          <div>
+            <div className="login-hero-badge">
+              <span style={{ fontSize: 13, marginRight: 4 }}>✦</span> SIH 2026 · LIVE DEMO READY
+            </div>
+            <h1 className="login-hero-title">Catch phishing before it catches you.</h1>
+            <p className="login-hero-desc">
+              Sentinel scores every email 0-100 with SPF/DKIM/DMARC, URL + attachment intel, geolocation and identity graphs — with chain-of-custody PDF/JSON.
+            </p>
+            <div className="login-hero-features">
+              <div className="login-hero-pill">
+                <span className="login-hero-icon">⚡</span>
+                <span>Paste RFC822 or upload .eml → verdict in seconds</span>
+              </div>
+              <div className="login-hero-pill">
+                <span className="login-hero-icon">◉</span>
+                <span>Explainable breakdown — every point accounted for</span>
+              </div>
+              <div className="login-hero-pill">
+                <span className="login-hero-icon">⬡</span>
+                <span>Campaign clustering across shared IPs & domains</span>
+              </div>
+            </div>
+          </div>
+          <div className="login-hero-watermark" aria-hidden="true">
+            <svg width="120" height="120" viewBox="0 0 100 100" fill="none">
+              <rect x="50" y="8" width="46" height="46" rx="4" transform="rotate(45 50 8)" stroke="rgba(255,255,255,0.2)" strokeWidth="5" />
+              <rect x="50" y="24" width="24" height="24" rx="3" transform="rotate(45 50 24)" stroke="rgba(255,255,255,0.28)" strokeWidth="3.5" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Right Side: Form */}
+        <div className="login-form-pane">
+          <div className="login-breadcrumb">
+            <Link to="/">Home</Link>
+            <span className="sep">›</span>
+            <span>{mode === 'login' ? 'Sign in' : 'Register'}</span>
+          </div>
+
+          <h2 className="login-form-title">SOC Sign in</h2>
+          <p className="login-form-sub">JWT-secured analyst access. First-ever account becomes Admin.</p>
+
+          <div className="login-tabs">
+            <button
+              type="button"
+              className={`login-tab-btn ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => { setMode('login'); setErr(''); }}
+            >
+              Sign in
             </button>
-          ))}
-        </div>
-        <Toast msg={err} />
-        <div className="grid" style={{ gap: 10 }}>
-          <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} autoComplete="username" />
-          <input type="password" placeholder={mode === 'register' ? 'Password (min 8 chars)' : 'Password'} value={password}
-            onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
-          <button onClick={submit} disabled={busy || !username.trim() || !password}>
-            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create analyst account'}
+            <button
+              type="button"
+              className={`login-tab-btn ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => { setMode('register'); setErr(''); }}
+            >
+              Register
+            </button>
+          </div>
+
+          <Toast msg={err} />
+
+          <div className="login-field-group">
+            <label htmlFor="login-username" className="login-field-label">Username</label>
+            <input
+              id="login-username"
+              type="text"
+              placeholder="e.g. analyst"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              autoComplete="username"
+              className="login-input"
+            />
+          </div>
+
+          <div className="login-field-group">
+            <label htmlFor="login-password" className="login-field-label">Password</label>
+            <input
+              id="login-password"
+              type="password"
+              placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              className="login-input"
+            />
+          </div>
+
+          <button
+            type="button"
+            className="login-submit-btn"
+            onClick={submit}
+            disabled={busy || !username.trim() || !password}
+          >
+            {busy ? 'Please wait…' : mode === 'login' ? '→ Sign in to console' : '→ Create analyst account'}
           </button>
+
+          <div className="login-seed-container">
+            <span>Demo seed:</span>
+            <span
+              className="login-seed-pill"
+              onClick={() => fillSeed('admin', 'admin123')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('admin', 'admin123'); }}
+            >
+              admin / admin123
+            </span>
+            <span style={{ color: 'var(--muted)' }}>·</span>
+            <span
+              className="login-seed-pill"
+              onClick={() => fillSeed('analyst', 'analyst123')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('analyst', 'analyst123'); }}
+            >
+              analyst / analyst123
+            </span>
+          </div>
         </div>
-        <p className="sub" style={{ marginTop: 12, marginBottom: 0 }}>
-          {mode === 'register'
-            ? 'New accounts join as ReadOnly; an Analyst seat can be requested after signup.'
-            : import.meta.env.DEV
-              ? 'Demo seed: admin / admin123, analyst / analyst123.'
-              : 'Use your provisioned analyst credentials.'}
-        </p>
       </div>
-      <InternalLinks current="/" />
+
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
@@ -184,6 +283,11 @@ To: finance@company.com
 Subject: Urgent: Confidential wire transfer needed ASAP
 Message-ID: <abc123@xn--paypa1-secure.top>
 Return-Path: <bounce@evil-relay.test>
+Authentication-Results: mx.company.com;
+  spf=fail (evil-relay.test: domain of bounce@evil-relay.test does not designate 45.148.10.88 as permitted sender) smtp.mailfrom=bounce@evil-relay.test;
+  dkim=fail (bad signature) header.i=@xn--paypa1-secure.top;
+  dmarc=fail (p=REJECT) header.from=xn--paypa1-secure.top
+Received-SPF: fail (evil-relay.test: domain of bounce@evil-relay.test does not designate 45.148.10.88 as permitted sender) client-ip=45.148.10.88;
 Received: from evil-relay.test (evil-relay.test [45.148.10.88]) by mx.company.com with ESMTPS id x1
 Received: from internal ([10.0.0.5]) by evil-relay.test with SMTP id y2
 Content-Type: text/plain
@@ -195,6 +299,12 @@ To: bob@company.com
 Subject: Lunch tomorrow?
 Message-ID: <lunch1@company.com>
 Return-Path: <alice@company.com>
+Authentication-Results: mx.company.com;
+  spf=pass (mail.company.com: domain of alice@company.com designates 93.184.216.34 as permitted sender) smtp.mailfrom=alice@company.com;
+  dkim=pass (signature verified) header.i=@company.com header.s=s1;
+  dmarc=pass (p=REJECT) header.from=company.com
+Received-SPF: pass (company.com: domain of alice@company.com designates 93.184.216.34 as permitted sender) client-ip=93.184.216.34;
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=company.com; s=s1; bh=abc; b=xyz
 Received: from mail.company.com (mail.company.com [93.184.216.34]) by mx.company.com with ESMTPS id z9
 Content-Type: text/plain
 
@@ -1187,13 +1297,20 @@ export function EmailView({ id }: { id: string }) {
           </div>
           <div className="card">
             <h3>Authentication</h3>
-            <div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
               <AuthPill name="SPF" status={auth.spf?.status} />
               <AuthPill name="DKIM" status={auth.dkim?.status} />
               <AuthPill name="DMARC" status={auth.dmarc?.status} />
               <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
             </div>
-            <h3 style={{ marginTop: 12 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
+            {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) && (
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, lineHeight: 1.45 }}>
+                {auth.spf?.detail && <div><b>SPF:</b> {auth.spf.detail}</div>}
+                {auth.dkim?.detail && <div><b>DKIM:</b> {auth.dkim.detail}</div>}
+                {auth.dmarc?.detail && <div><b>DMARC:</b> {auth.dmarc.detail}</div>}
+              </div>
+            )}
+            <h3 style={{ marginTop: 14 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
             {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits</p> : (
               <table className="tbl">
                 <thead><tr><th>Type</th><th>Value</th><th>Reason</th></tr></thead>

@@ -44,8 +44,21 @@ def _clean_domain(raw: str) -> str:
     return m.group(1).strip("<> \t").rstrip(".") if m else ""
 
 
+def _get_header(raw_headers: dict, name: str) -> str:
+    """Case-insensitive header retrieval from raw headers dictionary."""
+    if not isinstance(raw_headers, dict):
+        return ""
+    if name in raw_headers:
+        return str(raw_headers[name] or "")
+    target = name.lower()
+    for k, v in raw_headers.items():
+        if str(k).lower() == target:
+            return str(v or "")
+    return ""
+
+
 def _return_path_domain(raw_headers: dict) -> str:
-    return _clean_domain(str(raw_headers.get("Return-Path", "") or ""))
+    return _clean_domain(_get_header(raw_headers, "Return-Path"))
 
 
 def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
@@ -55,13 +68,12 @@ def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
         return results
 
     # 1. Received-SPF header
-    recv_spf = str(raw_headers.get("Received-SPF", "") or "")
+    recv_spf = _get_header(raw_headers, "Received-SPF")
     if recv_spf:
-        m = re.match(r"^\s*([a-zA-Z]+)", recv_spf)
+        m = re.search(r"\b(pass|fail|softfail|neutral|none|temperror|permerror)\b", recv_spf, re.IGNORECASE)
         if m:
             st = m.group(1).lower()
-            if st in ("pass", "fail", "softfail", "neutral", "none", "temperror", "permerror"):
-                results["spf"] = {"status": st, "detail": f"upstream-received-spf: {recv_spf[:120]}"}
+            results["spf"] = {"status": st, "detail": f"upstream-received-spf: {recv_spf[:120].strip()}"}
 
     # 2. Authentication-Results / ARC-Authentication-Results headers
     auth_lines: list[str] = []
@@ -129,7 +141,8 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "", upstream: d
 def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None, upstream: dict[str, Any] | None = None) -> dict[str, Any]:
     upstream_dkim = (upstream or {}).get("dkim")
     headers = raw_headers or {}
-    has_sig = bool(str(headers.get("DKIM-Signature", "") or "").strip())
+    dkim_sig = _get_header(headers, "DKIM-Signature")
+    has_sig = bool(dkim_sig.strip())
 
     if not has_sig and not upstream_dkim:
         return {"status": "none", "detail": "no-dkim-signature-header"}
@@ -151,7 +164,7 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None, upstream: d
 
 def dkim_signing_domain(raw_headers: dict) -> str:
     """The d= domain from DKIM-Signature ("" when absent/unparseable)."""
-    m = re.search(r"\bd\s*=\s*([\w.\-]+)", str(raw_headers.get("DKIM-Signature", "") or ""), re.IGNORECASE)
+    m = re.search(r"\bd\s*=\s*([\w.\-]+)", _get_header(raw_headers, "DKIM-Signature"), re.IGNORECASE)
     return (m.group(1).lower().rstrip(".") if m else "")
 
 
@@ -230,9 +243,9 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
 
 
 def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_from: str = "") -> dict[str, Any]:
-    from_domain = _clean_domain(str(raw_headers.get("From", "") or ""))
+    from_domain = _clean_domain(_get_header(raw_headers, "From"))
     # SPF authenticates the ENVELOPE sender (Return-Path), never display From.
-    env_from = (envelope_from or "").strip() or str(raw_headers.get("Return-Path", "") or "") or from_domain
+    env_from = (envelope_from or "").strip() or _get_header(raw_headers, "Return-Path") or from_domain
     
     # Extract upstream headers as authoritative context or graceful fallback
     upstream_auth = parse_auth_headers(raw_headers)
