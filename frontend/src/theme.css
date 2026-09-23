@@ -164,7 +164,12 @@ pre.dump {
 .auth-pill { display: inline-block; margin: 2px 6px 2px 0; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .auth-pass { background: #052e1b; color: #4ade80; border: 1px solid #14532d; }
 .auth-fail { background: #3b0a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+.auth-warn { background: #3a2503; color: #fcd34d; border: 1px solid #78350f; }
 .auth-none { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+[data-theme="light"] .auth-pass { background: #dcfce7; color: #15803d; border-color: #86efac; }
+[data-theme="light"] .auth-fail { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+[data-theme="light"] .auth-warn { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+[data-theme="light"] .auth-none { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
 
 /* toast + states */
 .toast {

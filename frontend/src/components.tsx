@@ -58,11 +58,23 @@ export function SkeletonList({ rows = 4 }: { rows?: number }) {
 }
 
 export function AuthPill({ name, status }: { name: string; status: string }) {
-  const s = (status || '').toLowerCase();
-  const cls = s === 'pass' || s === 'found' ? 'auth-pass' : s === 'fail' || s === 'softfail' ? 'auth-fail' : 'auth-none';
+  const s = (status || '').toLowerCase().trim();
+  let cls = 'auth-none';
+  let label = (status || 'NONE').toUpperCase();
+
+  if (s === 'pass' || s === 'found' || s === 'aligned') {
+    cls = 'auth-pass';
+  } else if (s === 'fail' || s === 'reject' || s === 'unaligned') {
+    cls = 'auth-fail';
+  } else if (s === 'softfail' || s === 'neutral' || s === 'temperror' || s === 'permerror') {
+    cls = 'auth-warn';
+  } else {
+    cls = 'auth-none';
+  }
+
   return (
     <span className={`auth-pill ${cls}`} title={status}>
-      {name}: {status || 'n/a'}
+      {name}: {label}
     </span>
   );
 }

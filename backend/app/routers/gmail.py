@@ -143,8 +143,10 @@ def auth_url(
     cid = _resolve_client_id(client_id, acct, db=db)
     sec = client_secret or (_resolve_client_secret(None, acct, db=db) if (acct and acct.encrypted_client_secret) else "")
     uri = _redirect_uri(redirect_uri)
-    state = _make_state(user.id, client_id=cid, client_secret=sec, redirect_uri=uri, flow="gmail")
-    return {"auth_url": connectors.build_gmail_auth_url(cid, uri, state=state)}
+    verifier = connectors._new_verifier()
+    challenge = connectors._pkce_challenge(verifier)
+    state = _make_state(user.id, client_id=cid, client_secret=sec, redirect_uri=uri, flow="gmail", pkce_verifier=verifier, provider="google")
+    return {"auth_url": connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)}
 
 
 @router.post("/callback", response_model=schemas.GmailStatus)

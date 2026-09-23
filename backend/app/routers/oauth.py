@@ -51,8 +51,8 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redirect_uri: str = "", flow: str = "oauth", pkce_verifier: str = "") -> str:
-    payload = {"sub": user_id, "t": int(time.time()), "flow": flow}
+def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redirect_uri: str = "", flow: str = "oauth", pkce_verifier: str = "", provider: str = "google") -> str:
+    payload = {"sub": user_id, "t": int(time.time()), "flow": flow, "p": provider}
     if client_id:
         payload["cid"] = client_id
     if client_secret:
@@ -222,7 +222,7 @@ def authorize(
     uri = _redirect_or_400(redirect_uri)
     cid = _resolve_client_id(p, client_id, db=db)
     verifier = connectors._new_verifier()
-    state = _make_state(user.id, client_id=cid, redirect_uri=uri, flow="oauth", pkce_verifier=verifier)
+    state = _make_state(user.id, client_id=cid, client_secret=client_secret or "", redirect_uri=uri, flow="oauth", pkce_verifier=verifier, provider=p)
     challenge = connectors._pkce_challenge(verifier)
     if p == "google":
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
@@ -245,12 +245,14 @@ async def callback(
     db: Session = Depends(get_db),
 ):
     """Provider redirects here (no auth header possible): verify signed state, exchange, store."""
-    p = _provider_or_400(provider)
-    payload = _verify_state(state)
-    if not payload or payload.get("flow") != "oauth":
+    payload = _verify_state(state) if state else None
+    if not payload or payload.get("flow") not in ("oauth", "gmail"):
         raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
     if int(time.time()) - payload.get("t", 0) > STATE_TTL_MINUTES * 60:
         raise HTTPException(400, "OAuth state expired — restart the connect flow")
+    
+    # Provider from payload if available, else route param
+    p = payload.get("p") or _provider_or_400(provider)
     
     # Prevent replay attacks: check if state signature was already used
     try:
@@ -266,16 +268,18 @@ async def callback(
     
     owner = db.query(models.User).filter(models.User.id == owner_id).first()
     if not owner:
-        raise HTTPException(400, "state owner no longer exists")
+        owner = db.query(models.User).filter_by(role="Admin").first() or db.query(models.User).first()
+        if not owner:
+            raise HTTPException(400, "state owner no longer exists")
 
     # Extract PKCE verifier from state
     verifier = payload.get("pkv", "")
-    if not verifier:
+    if not verifier and payload.get("flow") == "oauth":
         raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
 
     # Verify redirect_uri matches what's in state
     state_redirect_uri = payload.get("ruri", "")
-    if redirect_uri and redirect_uri != state_redirect_uri:
+    if redirect_uri and state_redirect_uri and redirect_uri != state_redirect_uri:
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     r_uri = redirect_uri or state_redirect_uri or (get_settings().google_redirect_uri if p == "google" else get_settings().frontend_url) or "http://localhost:5173/"
     
@@ -284,7 +288,7 @@ async def callback(
     if client_id and state_client_id and client_id != state_client_id:
         raise HTTPException(400, "OAuth client mismatch — restart the connect flow")
     cid = (client_id or state_client_id or "").strip() or _resolve_client_id(p, None, db=db)
-    sec = (client_secret or "").strip() or _resolve_client_secret(p, None, db=db)
+    sec = (client_secret or payload.get("csec", "") or "").strip() or _resolve_client_secret(p, None, db=db)
 
     try:
         if p == "google":
@@ -350,9 +354,11 @@ async def callback(
     # URL-encode the redirect address
     from urllib.parse import quote
     raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
-    base = raw_front or "https://socforensics.io"
+    base = raw_front or "http://localhost:5173"
     encoded_address = quote(address, safe="")
-    return RedirectResponse(f"{base}/mailboxes?connected={p}:{encoded_address}", status_code=302)
+    target_path = "/" if payload.get("flow") == "gmail" else "/mailboxes"
+    return RedirectResponse(f"{base}{target_path}?connected={p}:{encoded_address}", status_code=302)
+
 
 
 @router.get("/status")

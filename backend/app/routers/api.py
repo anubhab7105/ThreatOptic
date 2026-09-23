@@ -526,7 +526,7 @@ def _load_model_metrics(metrics_path: str | None = None, model_path: str | None 
     if not os.path.exists(metrics_path):
         raise HTTPException(404, "metrics not computed yet (run: python backend/scripts/train_nlp.py)")
     try:
-        with open(metrics_path) as f:
+        with open(metrics_path, encoding="utf-8") as f:
             metrics = json.load(f)
     except (OSError, ValueError) as e:
         log.warning("metrics.json unreadable: %s", type(e).__name__)

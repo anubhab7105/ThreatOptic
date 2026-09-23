@@ -314,9 +314,6 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             domain = clean_val.split("@")[-1].strip(" <>")
             upsert_email_graph(clean_val, "", [domain] if domain else [])
             key = f"email:{clean_val}"
-        else:
-            return {"nodes": [], "edges": []}
-
     sub = nx.ego_graph(G.to_undirected(), key, radius=depth)
     edges = []
     seen_edges = set()
@@ -326,8 +323,24 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
         if pair not in seen_edges:
             seen_edges.add(pair)
             edges.append({"source": u, "target": v, "rel": data.get("rel", "")})
+
+    def _enrich_node(n: str, data: dict) -> dict:
+        kind = data.get("kind")
+        if not kind or kind == "Unknown":
+            if str(n).startswith("email:"):
+                kind = "Email_Address"
+            elif str(n).startswith("ip:"):
+                kind = "IP_Address"
+            elif str(n).startswith("domain:"):
+                kind = "Domain"
+            elif str(n).startswith("campaign:"):
+                kind = "Threat_Campaign"
+            else:
+                kind = "Entity"
+        return {"id": n, **data, "kind": kind}
+
     return {
-        "nodes": [{"id": n, **G.nodes[n]} for n in sub.nodes],
+        "nodes": [_enrich_node(n, G.nodes[n]) for n in sub.nodes],
         "edges": edges,
     }
 

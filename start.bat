@@ -5,7 +5,7 @@ echo   Starting Email Threat & Forensics Platform
 echo ===================================================
 
 echo Starting Backend API (FastAPI)...
-start "SOC Backend - Port 8000" cmd /k "cd /d "%~dp0backend" && call ..\.venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+start "SOC Backend - Port 8000" cmd /k "cd /d "%~dp0backend" && (if exist ..\.venv\Scripts\activate.bat call ..\.venv\Scripts\activate.bat) && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
 
 echo Starting Frontend UI (Vite / React)...
 start "SOC Frontend - Port 5173" cmd /k "cd /d "%~dp0frontend" && npm run dev"

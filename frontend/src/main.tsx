@@ -274,6 +274,7 @@ function Shell() {
       if (cid) target += `&client_id=${encodeURIComponent(cid)}`;
       if (csec) target += `&client_secret=${encodeURIComponent(csec)}`;
 
+      window.history.replaceState({}, '', window.location.pathname);
       window.location.href = target;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

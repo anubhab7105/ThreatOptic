@@ -601,112 +601,440 @@ export function Dashboard() {
   );
 }
 
-/* ---------------- Graph SVG ---------------- */
+/* ---------------- Graph SVG (Identity & Threat Correlation) ---------------- */
 
 export function GraphSvg({ graph }: { graph: any }) {
-  const nodes: any[] = graph?.nodes ?? [];
-  const edges: any[] = graph?.edges ?? [];
-  if (!nodes.length) return <Empty msg="No related entities yet - graph grows as more mail shares IPs/domains." />;
-  const w = 700, h = 340;
-  const cx = w / 2, cy = h / 2;
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filterKind, setFilterKind] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
-  // Degree calculation to find focal / center node
+  const rawNodes: any[] = graph?.nodes ?? [];
+  const edges: any[] = graph?.edges ?? [];
+
+  if (!rawNodes.length) {
+    return <Empty msg="No related entities yet — graph correlation links shared sender IPs, domains, and campaigns as emails are ingested." />;
+  }
+
+  // Deduplicate and normalize nodes
+  const nodeMap = new Map<string, any>();
+  rawNodes.forEach((n) => {
+    const id = String(n.id || n);
+    let kind = n.kind;
+    if (!kind || kind === 'Unknown') {
+      if (id.startsWith('email:')) kind = 'Email_Address';
+      else if (id.startsWith('ip:')) kind = 'IP_Address';
+      else if (id.startsWith('domain:')) kind = 'Domain';
+      else if (id.startsWith('campaign:')) kind = 'Threat_Campaign';
+      else kind = 'Entity';
+    }
+    nodeMap.set(id, { ...n, id, kind });
+  });
+  const nodes = Array.from(nodeMap.values());
+
+  const w = 760;
+  const h = 400;
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // Build adjacency map and degree count
   const degreeMap = new Map<string, number>();
+  const neighborsMap = new Map<string, Set<string>>();
+  nodes.forEach((n) => neighborsMap.set(n.id, new Set()));
+
   edges.forEach((e) => {
     degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
     degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+    if (neighborsMap.has(e.source)) neighborsMap.get(e.source)!.add(e.target);
+    if (neighborsMap.has(e.target)) neighborsMap.get(e.target)!.add(e.source);
   });
 
-  // Pick central node if one has high connectivity
-  let centerId: string | null = null;
-  if (nodes.length >= 3) {
-    const sorted = [...nodes].sort((a, b) => (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0));
-    if ((degreeMap.get(sorted[0].id) || 0) >= 2) {
-      centerId = sorted[0].id;
-    }
-  }
+  // Identify central focal node (highest degree or primary email)
+  const sortedByDegree = [...nodes].sort((a, b) => (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0));
+  const centerId = sortedByDegree.length > 0 && (degreeMap.get(sortedByDegree[0].id) || 0) >= 1 ? sortedByDegree[0].id : nodes[0]?.id;
 
-  const otherNodes = centerId ? nodes.filter((n) => n.id !== centerId) : nodes;
-  const radius = Math.min(w, h) * 0.36;
-
+  // Position calculation with multi-ring topology
   const posMap = new Map<string, { x: number; y: number }>();
-  if (centerId) {
-    posMap.set(centerId, { x: cx, y: cy });
-    otherNodes.forEach((n, i) => {
-      const angle = (i / otherNodes.length) * 2 * Math.PI - Math.PI / 2;
-      posMap.set(n.id, {
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
-      });
-    });
-  } else if (nodes.length === 1) {
+  if (nodes.length === 1) {
     posMap.set(nodes[0].id, { x: cx, y: cy });
   } else if (nodes.length === 2) {
-    posMap.set(nodes[0].id, { x: cx - 130, y: cy });
-    posMap.set(nodes[1].id, { x: cx + 130, y: cy });
+    posMap.set(nodes[0].id, { x: cx - 140, y: cy });
+    posMap.set(nodes[1].id, { x: cx + 140, y: cy });
   } else {
-    nodes.forEach((n, i) => {
-      const angle = (i / nodes.length) * 2 * Math.PI - Math.PI / 2;
+    // Center focal entity at the center
+    posMap.set(centerId, { x: cx, y: cy });
+    const otherNodes = nodes.filter((n) => n.id !== centerId);
+
+    // Group remaining nodes by kind for cohesive cluster distribution
+    const domains = otherNodes.filter((n) => n.kind === 'Domain');
+    const ips = otherNodes.filter((n) => n.kind === 'IP_Address');
+    const emails = otherNodes.filter((n) => n.kind === 'Email_Address');
+    const campaigns = otherNodes.filter((n) => n.kind === 'Threat_Campaign');
+    const others = otherNodes.filter((n) => !['Domain', 'IP_Address', 'Email_Address', 'Threat_Campaign'].includes(n.kind));
+
+    const orderedSatellites = [...domains, ...ips, ...campaigns, ...emails, ...others];
+    const baseRadius = Math.min(w, h) * 0.38;
+
+    orderedSatellites.forEach((n, idx) => {
+      // Alternate radial distance slightly to prevent dense cluster label collisions
+      const rOffset = (idx % 2 === 0 ? 0 : 25) + (n.kind === 'Threat_Campaign' ? 20 : 0);
+      const rad = baseRadius + rOffset;
+      const angle = (idx / orderedSatellites.length) * 2 * Math.PI - Math.PI / 2;
       posMap.set(n.id, {
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
+        x: cx + rad * Math.cos(angle),
+        y: cy + rad * Math.sin(angle),
       });
     });
   }
 
-  const color = (k: string) => (k === 'Domain' ? '#f97316' : k === 'IP_Address' ? '#ef4444' : k === 'Threat_Campaign' ? '#38bdf8' : '#22c55e');
-  const label = (id: string) => String(id).replace(/^(email|ip|domain|campaign):/, '');
+  // Active focus calculation
+  const activeFocusId = hoveredId || selectedId;
+  const connectedToActive = activeFocusId ? neighborsMap.get(activeFocusId) || new Set() : null;
+
+  const getColor = (k: string) => {
+    switch (k) {
+      case 'Domain': return '#f59e0b'; // Amber
+      case 'IP_Address': return '#ef4444'; // Crimson
+      case 'Threat_Campaign': return '#a855f7'; // Purple
+      case 'Email_Address': return '#10b981'; // Emerald
+      default: return '#38bdf8'; // Sky
+    }
+  };
+
+  const getIcon = (k: string) => {
+    switch (k) {
+      case 'Domain': return 'D';
+      case 'IP_Address': return 'IP';
+      case 'Threat_Campaign': return '⚡';
+      case 'Email_Address': return '@';
+      default: return '◈';
+    }
+  };
+
+  const getCleanLabel = (id: string) => String(id).replace(/^(email|ip|domain|campaign):/, '');
+
+  // Filter kinds summary
+  const availableKinds = Array.from(new Set(nodes.map((n) => n.kind)));
+
+  const selectedNodeData = selectedId ? nodeMap.get(selectedId) : null;
+  const selectedEdges = selectedId ? edges.filter((e) => e.source === selectedId || e.target === selectedId) : [];
+
+  const handleCopy = (text: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Identity correlation graph showing sender infrastructure relationships" style={{ background: '#0a0f1f', borderRadius: 8, border: '1px solid var(--border)' }}>
-      <title>Attribution graph</title>
-      <desc>Nodes represent domains, IPs and campaigns linked by shared infrastructure</desc>
-      <defs>
-        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#38bdf8" floodOpacity="0.3" />
-        </filter>
-      </defs>
-      {edges.map((e, i) => {
-        const a = posMap.get(e.source), b = posMap.get(e.target);
-        if (!a || !b) return null;
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
-        return (
-          <g key={i}>
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#3b82f6" strokeWidth={2} strokeOpacity={0.7} />
-            {e.rel && (
-              <g transform={`translate(${mx}, ${my})`}>
-                <rect x={-e.rel.length * 3.2 - 4} y={-8} width={e.rel.length * 6.4 + 8} height={14} rx={4} fill="#0d1528" stroke="var(--border)" strokeWidth={0.8} />
-                <text x={0} y={2.5} fill="#93a1bd" fontSize={8} fontWeight={700} textAnchor="middle">{e.rel}</text>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Top Controls & Legend Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '4px 2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginRight: 4 }}>
+            {nodes.length} Nodes · {edges.length} Edges
+          </span>
+          {availableKinds.map((k) => (
+            <button
+              key={k}
+              type="button"
+              className="ghost small"
+              onClick={() => setFilterKind(filterKind === k ? null : k)}
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 12,
+                border: `1px solid ${getColor(k)}`,
+                color: filterKind === k ? '#060a14' : getColor(k),
+                background: filterKind === k ? getColor(k) : 'transparent',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              ● {k.replace('_', ' ')}
+            </button>
+          ))}
+          {filterKind && (
+            <button type="button" className="ghost small" onClick={() => setFilterKind(null)} style={{ fontSize: 11 }}>
+              Clear Filter
+            </button>
+          )}
+        </div>
+
+        {/* Zoom Controls */}
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} title="Zoom Out" style={{ padding: '2px 8px' }}>−</button>
+          <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 38, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))} title="Zoom In" style={{ padding: '2px 8px' }}>+</button>
+          {zoom !== 1 && (
+            <button type="button" className="ghost small" onClick={() => setZoom(1)} style={{ fontSize: 11, padding: '2px 6px' }}>Reset</button>
+          )}
+        </div>
+      </div>
+
+      {/* SVG Visualization Canvas */}
+      <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)', background: 'radial-gradient(circle at center, #111a33 0%, #080c18 100%)' }}>
+        <svg
+          width="100%"
+          viewBox={`0 0 ${w} ${h}`}
+          role="img"
+          aria-label="Identity and threat infrastructure correlation graph"
+          style={{
+            display: 'block',
+            transform: `scale(${zoom})`,
+            transformOrigin: 'center center',
+            transition: 'transform 0.15s ease-out',
+          }}
+        >
+          <title>Identity correlation & threat attribution graph</title>
+          <desc>Interactive graph showing relationships between senders, domains, IPs and threat campaigns.</desc>
+          <defs>
+            <filter id="glow-strong" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#38bdf8" floodOpacity="0.6" />
+            </filter>
+            <filter id="glow-node" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#ffffff" floodOpacity="0.3" />
+            </filter>
+            <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" fillOpacity="0.8" />
+            </marker>
+            <marker id="arrow-highlight" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0.5 L 10 5 L 0 9.5 z" fill="#38bdf8" />
+            </marker>
+          </defs>
+
+          {/* Grid background lines */}
+          <g opacity={0.12}>
+            {Array.from({ length: 11 }).map((_, i) => (
+              <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+            ))}
+            {Array.from({ length: 6 }).map((_, i) => (
+              <line key={`gy-${i}`} x1={0} y1={i * 80} x2={w} y2={i * 80} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+            ))}
+          </g>
+
+          {/* Edges */}
+          {edges.map((e, i) => {
+            const a = posMap.get(e.source);
+            const b = posMap.get(e.target);
+            if (!a || !b) return null;
+
+            const isHighlighted = activeFocusId ? (e.source === activeFocusId || e.target === activeFocusId) : true;
+            const isDimmed = activeFocusId ? !isHighlighted : filterKind ? (nodeMap.get(e.source)?.kind !== filterKind && nodeMap.get(e.target)?.kind !== filterKind) : false;
+
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+
+            return (
+              <g key={`edge-${i}`} opacity={isDimmed ? 0.15 : 1} style={{ transition: 'opacity 0.2s' }}>
+                <line
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={isHighlighted && activeFocusId ? '#38bdf8' : '#3b82f6'}
+                  strokeWidth={isHighlighted && activeFocusId ? 2.8 : 1.8}
+                  strokeOpacity={isHighlighted && activeFocusId ? 1 : 0.65}
+                  markerEnd={isHighlighted && activeFocusId ? 'url(#arrow-highlight)' : 'url(#arrow)'}
+                />
+                {e.rel && (
+                  <g transform={`translate(${mx}, ${my})`}>
+                    <rect
+                      x={-e.rel.length * 3.4 - 5}
+                      y={-9}
+                      width={e.rel.length * 6.8 + 10}
+                      height={16}
+                      rx={4}
+                      fill="#0b1329"
+                      stroke={isHighlighted && activeFocusId ? '#38bdf8' : 'var(--border)'}
+                      strokeWidth={0.9}
+                    />
+                    <text x={0} y={2.8} fill={isHighlighted && activeFocusId ? '#e0f2fe' : '#94a3b8'} fontSize={8} fontWeight={700} textAnchor="middle">
+                      {e.rel}
+                    </text>
+                  </g>
+                )}
               </g>
-            )}
-          </g>
-        );
-      })}
-      {nodes.map((n) => {
-        const p = posMap.get(n.id) || { x: cx, y: cy };
-        const lbl = label(n.id);
-        const isCenter = n.id === centerId;
-        const r = isCenter ? 22 : 18;
-        return (
-          <g key={n.id} style={{ cursor: 'pointer' }}>
-            <title>{`${n.kind || 'Entity'}: ${lbl}`}</title>
-            <circle cx={p.x} cy={p.y} r={r} fill={color(n.kind)} stroke="#0f172a" strokeWidth={2.5} filter="url(#glow)" />
-            <text x={p.x} y={p.y + 4} fill="#060a14" fontSize={isCenter ? 11 : 9} fontWeight={900} textAnchor="middle">
-              {(n.kind || '?')[0]}
-            </text>
-            <text x={p.x} y={p.y + (isCenter ? 36 : 30)} fill="#e5e7eb" fontSize={11} fontWeight={600} textAnchor="middle" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
-              {lbl.length > 24 ? lbl.slice(0, 22) + '…' : lbl}
-            </text>
-            <text x={p.x} y={p.y + (isCenter ? 48 : 42)} fill="#93a1bd" fontSize={9} textAnchor="middle">
-              {n.kind || ''}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
+            );
+          })}
+
+          {/* Nodes */}
+          {nodes.map((n) => {
+            const p = posMap.get(n.id) || { x: cx, y: cy };
+            const lbl = getCleanLabel(n.id);
+            const isCenter = n.id === centerId;
+            const isSelected = n.id === selectedId;
+            const isHovered = n.id === hoveredId;
+            const isConnected = connectedToActive ? (n.id === activeFocusId || connectedToActive.has(n.id)) : true;
+            const isKindFiltered = filterKind ? n.kind === filterKind : true;
+
+            const isDimmed = (activeFocusId && !isConnected) || (!activeFocusId && !isKindFiltered);
+            const baseR = isCenter ? 22 : 17;
+            const r = (isSelected || isHovered) ? baseR + 3 : baseR;
+            const nodeColor = getColor(n.kind);
+
+            return (
+              <g
+                key={n.id}
+                transform={`translate(${p.x}, ${p.y})`}
+                opacity={isDimmed ? 0.25 : 1}
+                style={{ cursor: 'pointer', transition: 'opacity 0.2s, transform 0.15s' }}
+                onMouseEnter={() => setHoveredId(n.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                onClick={() => setSelectedId(selectedId === n.id ? null : n.id)}
+              >
+                <title>{`${n.kind.replace('_', ' ')}: ${lbl}\nClick to inspect details`}</title>
+
+                {/* Selection or Center pulse ring */}
+                {(isCenter || isSelected || isHovered) && (
+                  <circle
+                    r={r + 6}
+                    fill="none"
+                    stroke={nodeColor}
+                    strokeWidth={isSelected ? 2.5 : 1.5}
+                    strokeDasharray={isCenter ? '3,3' : undefined}
+                    opacity={isSelected ? 0.9 : 0.5}
+                  />
+                )}
+
+                {/* Main Node Circle */}
+                <circle
+                  r={r}
+                  fill={nodeColor}
+                  stroke="#070d1d"
+                  strokeWidth={2.5}
+                  filter={isSelected || isHovered ? 'url(#glow-strong)' : 'url(#glow-node)'}
+                />
+
+                {/* Node Icon / Letter */}
+                <text y={4} fill="#060a14" fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
+                  {getIcon(n.kind)}
+                </text>
+
+                {/* Primary Entity Label */}
+                <g transform={`translate(0, ${r + 14})`}>
+                  <rect
+                    x={-Math.min(lbl.length * 3.4, 60) - 4}
+                    y={-7}
+                    width={Math.min(lbl.length * 6.8, 120) + 8}
+                    height={15}
+                    rx={3}
+                    fill="rgba(8, 12, 24, 0.85)"
+                  />
+                  <text
+                    y={3.5}
+                    fill={isSelected || isHovered ? '#ffffff' : '#e2e8f0'}
+                    fontSize={10.5}
+                    fontWeight={isSelected || isHovered ? 700 : 600}
+                    textAnchor="middle"
+                  >
+                    {lbl.length > 20 ? lbl.slice(0, 18) + '…' : lbl}
+                  </text>
+                </g>
+
+                {/* Node Kind Badge */}
+                <text y={r + 28} fill="#94a3b8" fontSize={8.5} fontWeight={500} textAnchor="middle">
+                  {n.kind.replace('_', ' ')}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Selected Entity Details Card */}
+      {selectedNodeData && (
+        <div className="card" style={{ background: '#0b1329', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span
+                  style={{
+                    background: getColor(selectedNodeData.kind),
+                    color: '#060a14',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                  }}
+                >
+                  {selectedNodeData.kind.replace('_', ' ')}
+                </span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+                  {getCleanLabel(selectedNodeData.id)}
+                </span>
+              </div>
+              <p style={{ margin: '2px 0 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                Degree: <b>{degreeMap.get(selectedNodeData.id) || 0}</b> connected entities
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => handleCopy(getCleanLabel(selectedNodeData.id))}
+                style={{ fontSize: 11 }}
+              >
+                {copied ? '✓ Copied' : 'Copy Value'}
+              </button>
+              <button
+                type="button"
+                className="ghost small"
+                onClick={() => setSelectedId(null)}
+                style={{ fontSize: 11 }}
+              >
+                ✕ Close
+              </button>
+            </div>
+          </div>
+
+          {/* Connected Links Breakdown */}
+          {selectedEdges.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
+                Direct Relationships ({selectedEdges.length}):
+              </span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {selectedEdges.map((e, idx) => {
+                  const targetId = e.source === selectedNodeData.id ? e.target : e.source;
+                  const isOutgoing = e.source === selectedNodeData.id;
+                  const targetNode = nodeMap.get(targetId);
+                  const targetKind = targetNode?.kind || 'Entity';
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => setSelectedId(targetId)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: '#131e3d',
+                        border: '1px solid var(--border)',
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        cursor: 'pointer',
+                      }}
+                      title="Click to jump to this entity"
+                    >
+                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                        {isOutgoing ? `→ ${e.rel || 'LINKS'}` : `← ${e.rel || 'LINKS'}`}
+                      </span>
+                      <span style={{ color: getColor(targetKind), fontWeight: 600 }}>
+                        {getCleanLabel(targetId)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
+
 
 /* ---------------- Email detail ---------------- */
 
@@ -863,6 +1191,7 @@ export function EmailView({ id }: { id: string }) {
               <AuthPill name="SPF" status={auth.spf?.status} />
               <AuthPill name="DKIM" status={auth.dkim?.status} />
               <AuthPill name="DMARC" status={auth.dmarc?.status} />
+              <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
             </div>
             <h3 style={{ marginTop: 12 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
             {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits</p> : (

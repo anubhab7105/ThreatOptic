@@ -160,7 +160,7 @@ def load_training_data() -> tuple[list[str], list[str], str]:
     if os.path.exists(path):
         import csv
         X, y = [], []
-        with open(path, newline="") as f:
+        with open(path, newline="", encoding="utf-8", errors="replace") as f:
             for row in csv.DictReader(f):
                 text, label = (row.get("text") or "").strip(), (row.get("label") or "").strip()
                 if text and label in LABELS:
@@ -231,9 +231,9 @@ def main() -> dict:
     with open(model_path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
-    with open(model_path + ".sha256", "w") as f:
+    with open(model_path + ".sha256", "w", encoding="utf-8") as f:
         f.write(h.hexdigest())
-    with open(metrics_path, "w") as f:
+    with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
     print(f"saved model to {model_path}, classes={pipe.classes_}")
     print(f"saved metrics to {metrics_path}: accuracy={metrics['accuracy']} macro_f1={metrics['macro_f1']}")
