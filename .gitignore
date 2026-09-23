@@ -4,8 +4,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
-# ML models are tracked; raw datasets and large csv are ignored
-**/ml_models/*.csv
 
 node_modules/
 dist/
