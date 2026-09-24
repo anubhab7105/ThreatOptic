@@ -2,6 +2,7 @@
 import enum
 import logging
 import re
+import threading
 from datetime import timezone
 from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
@@ -18,6 +19,31 @@ from .deps import get_current_user, require_roles
 
 log = logging.getLogger("api")
 router = APIRouter()
+
+# P0 singleflight for expensive cached endpoints (dashboard): concurrent
+# cache misses for one scope compute once; waiters read the winner's
+# entry instead of stampeding the DB. Plain threading primitives — these
+# are sync (threadpool) endpoints.
+_sf_lock = threading.Lock()
+_sf_inflight: dict[str, threading.Event] = {}
+
+
+def _singleflight_begin(key: str) -> tuple[bool, threading.Event]:
+    """Returns (is_owner, event). Non-owners wait on the owner's event."""
+    with _sf_lock:
+        existing = _sf_inflight.get(key)
+        if existing is not None:
+            return False, existing
+        event = threading.Event()
+        _sf_inflight[key] = event
+        return True, event
+
+
+def _singleflight_end(key: str, event: threading.Event) -> None:
+    with _sf_lock:
+        if _sf_inflight.get(key) is event:
+            _sf_inflight.pop(key, None)
+    event.set()
 
 MAX_RAW_BYTES = 5 * 1024 * 1024
 
@@ -174,7 +200,12 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
-    if t:
+    # P0: re-enrichment below issues system-resolver DNS (gethostbyname,
+    # no timeout) plus live lookups — the offline switch gates ALL of it.
+    # Offline returns the stored trace as-is (no network, no GET writes).
+    from ..config import get_settings as _get_settings
+    _detail_live = bool(_get_settings().live_lookups)
+    if t and _detail_live:
         modified = False
         geo = t.geolocation or {}
         from ..modules.traceability.geoip import geolocate, has_coords, geolocate_country
@@ -286,19 +317,54 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
 def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..modules.cache import cache_get, cache_set
     scope = "admin" if user.role == "Admin" else (user.organization_id or "none")
-    hit = cache_get(f"dash:{scope}")
+    key = f"dash:{scope}"
+    hit = cache_get(key)
     if isinstance(hit, dict):
         return hit
+    # P0 singleflight: concurrent cache misses for one scope compute once;
+    # waiters read the winner's cache entry instead of stampeding the DB.
+    owner, event = _singleflight_begin(key)
+    if not owner:
+        event.wait(timeout=30)
+        hit = cache_get(key)
+        if isinstance(hit, dict):
+            return hit
+        # Winner failed: fall through and compute (never propagate its error).
+    try:
+        stats = _compute_dashboard(db, user)
+        cache_set(key, stats, 300)
+        return stats
+    finally:
+        _singleflight_end(key, event)
+
+
+def _compute_dashboard(db: Session, user: models.User) -> dict:
+    """Dashboard stats via SQL aggregates (P0): COUNT/GROUP BY only — the
+    full analysis set is never loaded into Python."""
+    from sqlalchemy import case, func
     from ..services.campaigns import _ensure_graph
     _ensure_graph(db)
     email_q = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
     total = email_q.count()
-    email_ids = [r[0] for r in email_q.with_entities(models.EmailRecord.id).all()]
-    analyses = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id.in_(email_ids)).all() if email_ids else []
-    blocked = sum(1 for a in analyses if (a.fraud_score or 0) >= 75)
+    aq = (db.query(models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification)
+          .join(models.EmailRecord, models.AnalysisResult.email_id == models.EmailRecord.id))
+    if user.role != "Admin":
+        aq = aq.filter(models.EmailRecord.organization_id == user.organization_id)
+    blocked = aq.filter(models.AnalysisResult.fraud_score >= 75).count()
     by: dict[str, int] = {}
-    for a in analyses:
-        by[a.threat_classification or "Unknown"] = by.get(a.threat_classification or "Unknown", 0) + 1
+    for cls, n in aq.with_entities(
+            models.AnalysisResult.threat_classification, func.count()).group_by(
+            models.AnalysisResult.threat_classification).all():
+        by[cls or "Unknown"] = int(n)
+    bucket = case(
+        (models.AnalysisResult.fraud_score >= 90, "critical"),
+        (models.AnalysisResult.fraud_score >= 75, "high"),
+        (models.AnalysisResult.fraud_score >= 50, "medium"),
+        else_="low")
+    dist = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for b, n in aq.with_entities(bucket, func.count()).group_by(bucket).all():
+        if b in dist:
+            dist[b] = int(n)
     recent_rows = (
         _org_filter(db.query(
             models.EmailRecord.id,
@@ -315,21 +381,6 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
          "ts": (ts.replace(tzinfo=timezone.utc) if ts and ts.tzinfo is None else ts).isoformat() if ts else ""}
         for rid, subj, sender, ts in recent_rows
     ]
-    # score histogram for the UI distribution chart (tenant-scoped analyses)
-    dist = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    for a in analyses:
-        try:
-            v = float(a.fraud_score or 0)
-        except Exception:
-            v = 0
-        if v >= 90:
-            dist["critical"] += 1
-        elif v >= 75:
-            dist["high"] += 1
-        elif v >= 50:
-            dist["medium"] += 1
-        else:
-            dist["low"] += 1
     from ..services.campaigns import campaign_cards as _campaign_cards
     scope_org = None if user.role == "Admin" else user.organization_id
     try:
@@ -339,7 +390,6 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
     stats = {"total_emails": total, "blocked_threats": blocked,
              "active_campaigns": active, "by_classification": by,
              "recent": recent, "score_distribution": dist}
-    cache_set(f"dash:{scope}", stats, 300)
     return stats
 
 
