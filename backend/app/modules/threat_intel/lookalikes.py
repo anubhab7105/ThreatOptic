@@ -49,9 +49,13 @@ def known_legit_domains() -> list[str]:
 
 
 def registrable(domain: str) -> str:
-    """Naive registrable domain (last two labels). No publicsuffix dep."""
-    parts = (domain or "").lower().strip(".").split(".")
-    return ".".join(parts[-2:]) if len(parts) >= 2 else (domain or "").lower()
+    """PSL-aware registrable domain (shared helper; kept here for compat).
+
+    evil.co.uk vs bank.co.uk stay DISTINCT (naive last-two-labels
+    collapsed both to co.uk and missed cross-org spoofs).
+    """
+    from ..forensics.psl import registrable_domain
+    return registrable_domain(domain)
 
 
 def normalize_homoglyphs(domain: str) -> str:

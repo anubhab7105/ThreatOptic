@@ -61,12 +61,8 @@ def reconstruct_path(raw_headers: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _registrable(domain: str) -> str:
-    try:
-        from ..threat_intel.lookalikes import registrable
-        return registrable(domain)
-    except Exception:
-        parts = (domain or "").lower().strip(".").split(".")
-        return ".".join(parts[-2:]) if len(parts) >= 2 else (domain or "").lower()
+    from .psl import registrable_domain
+    return registrable_domain(domain)
 
 
 def _clean_domain(raw: str) -> str:
