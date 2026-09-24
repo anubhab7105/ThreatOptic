@@ -86,18 +86,17 @@ def _get_classifier():
     if _classifier is not None:
         return _classifier
     path = _model_path()
+    # P0: EVERY path (pinned or dev override) passes the trust gate first.
+    if not _verify_checksum(path):
+        return None
     try:
-        if path == PINNED_MODEL_PATH and not _verify_checksum(path):
-            import logging
-            logging.getLogger("nlp").error("model checksum mismatch — refusing to load, using rule fallback")
-            return None
-        if os.path.exists(path):
-            import joblib
-            _classifier = joblib.load(path)
-            return _classifier
-    except Exception:
-        pass
-    return None
+        import joblib
+        _classifier = joblib.load(path)
+        return _classifier
+    except Exception as e:
+        import logging
+        logging.getLogger("nlp").warning("nlp model load failed, using rule fallback: %s", e)
+        return None
 
 
 def _find(patterns: list[str], text: str) -> list[str]:
@@ -160,9 +159,15 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
     }
 
 
+_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
 def _get_transformer():
     """Cached transformer rerank. Env model names honored in dev only (C10);
-    built once, never per-request."""
+    built once, never per-request. P0: the model revision MUST be pinned
+    by commit hash (TRANSFORMERS_REVISION) — unpinned pulls silently move.
+    Production refuses unpinned/badly-pinned transformers (falls back to
+    the sklearn classifier); development warns and proceeds."""
     global _transformer_pipe
     if _transformer_pipe is not None:
         return _transformer_pipe
@@ -174,13 +179,27 @@ def _get_transformer():
         dev = get_settings().is_development()
     except Exception:
         dev = True
-    if not dev:
+    t_rev = os.environ.get("TRANSFORMERS_REVISION", "").strip()
+    if t_rev and not _REVISION_RE.match(t_rev):
         import logging
-        logging.getLogger("nlp").warning("ignoring TRANSFORMERS_MODEL outside development")
+        logging.getLogger("nlp").error(
+            "TRANSFORMERS_REVISION is not a 40-char commit hash — refusing transformer")
         return None
+    if not t_rev:
+        import logging
+        if not dev:
+            logging.getLogger("nlp").error(
+                "TRANSFORMERS_MODEL without pinned TRANSFORMERS_REVISION — "
+                "refusing transformer outside development")
+            return None
+        logging.getLogger("nlp").warning(
+            "TRANSFORMERS_MODEL without pinned revision (development only)")
     try:
         from transformers import pipeline
-        _transformer_pipe = pipeline("text-classification", model=t_model)
+        kwargs: dict[str, Any] = {"model": t_model}
+        if t_rev:
+            kwargs["revision"] = t_rev
+        _transformer_pipe = pipeline("text-classification", **kwargs)
         return _transformer_pipe
     except Exception:
         return None
