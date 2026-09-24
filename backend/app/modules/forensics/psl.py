@@ -140,7 +140,7 @@ def public_suffix(host: str) -> str:
     Returns "" for empty/hostnames without a dot.
     """
     parts = _labels(host)
-    if len(parts) < 2:
+    if len(parts) < 2 or _is_ip_literal(host):
         return ""
     # Longest match: try 3-label, then 2-label suffixes.
     for width in (3, 2):
