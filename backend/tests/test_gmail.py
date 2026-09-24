@@ -48,10 +48,10 @@ def test_gmail_unauth_and_auth_url_validation():
         assert c.get("/api/v1/gmail/status").status_code == 401
         h, _ = _auth(c)
         # no client_id anywhere -> helpful 400
-        r = c.get("/api/v1/gmail/auth-url", headers=h, params={"redirect_uri": "http://localhost:5173/"})
+        r = c.post("/api/v1/gmail/auth-url", headers=h, json={"redirect_uri": "http://localhost:5173/"})
         assert r.status_code == 400
-        r = c.get("/api/v1/gmail/auth-url", headers=h,
-                  params={"client_id": "demo-id.apps.googleusercontent.com", "redirect_uri": "http://localhost:5173/"})
+        r = c.post("/api/v1/gmail/auth-url", headers=h,
+                   json={"client_id": "demo-id.apps.googleusercontent.com", "redirect_uri": "http://localhost:5173/"})
         assert r.status_code == 200, r.text
         url = r.json()["auth_url"]
         assert "accounts.google.com" in url and "gmail.readonly" in url and "demo-id" in url
