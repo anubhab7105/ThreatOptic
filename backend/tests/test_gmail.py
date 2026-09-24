@@ -57,6 +57,22 @@ def test_gmail_unauth_and_auth_url_validation():
         assert "accounts.google.com" in url and "gmail.readonly" in url and "demo-id" in url
 
 
+def test_gmail_auth_url_redirect_allowlisted(monkeypatch):
+    """P0: gmail auth-url enforces the server-side redirect allowlist."""
+    from app.main import app
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+
+    with TestClient(app) as c:
+        h, _ = _auth(c)
+        r = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "https://evil.test/cb", "client_id": "demo-id"})
+        assert r.status_code == 400, r.text
+        assert "allowlisted" in r.text
+
+
 def test_gmail_callback_requires_state(monkeypatch):
     """P0: Gmail callback verifies the opaque state (CSRF hole closed)."""
     from app.main import app

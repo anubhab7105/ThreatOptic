@@ -91,8 +91,15 @@ def _client_secret() -> str:
 
 
 def _redirect_uri(explicit: str | None) -> str:
-    uri = explicit or get_settings().google_redirect_uri or "http://localhost:5173/"
-    return uri
+    """Resolve + enforce the redirect URI allowlist (P0).
+
+    Fail closed: any supplied or defaulted URI must be allowlisted via
+    FRONTEND_URL / GOOGLE_REDIRECT_URI / OAUTH_REDIRECT_ALLOWLIST —
+    never passed through unchecked (open-redirect / code-leak risk).
+    """
+    from .oauth import _redirect_or_400
+    uri = (explicit or "").strip() or get_settings().google_redirect_uri or "http://localhost:5173/"
+    return _redirect_or_400(uri)
 
 
 @router.get("/status", response_model=schemas.GmailStatus)
