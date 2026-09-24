@@ -1,35 +1,50 @@
 """Inline SMTP relay (aiosmtpd) -> enqueue raw bytes for pipeline.
 
-Step 5 (C8) hardening:
-- Binds localhost by default; 0.0.0.0 only with explicit SMTP_HOST.
-- Optional SMTP AUTH (LOGIN/PLAIN) via SMTP_USERNAME/PASSWORD; required
-  when SMTP_REQUIRE_AUTH=1. TLS via SMTP_TLS_CERT/KEY (STARTTLS enforced
-  for AUTH when a cert is configured).
+P0 relay hardening (fail closed at startup):
+- Loopback binds (127.0.0.0/8, ::1, localhost) may run without AUTH/TLS
+  (localhost injection for dev/tests).
+- NON-LOOPBACK binds REFUSE to start without AUTH (open relay) and
+  refuse AUTH without STARTTLS configured (credential leak). Both raise
+  RuntimeError before any socket is bound — fix config, don't silently
+  run insecure.
 - DATA size cap (SMTP_DATA_LIMIT_BYTES, default 10MB) enforced by the
   server itself (552 on overflow).
-- Envelope RCPT TO is preserved into the queued payload (was discarded).
-- Per-IP intake bucket (30/min) from Step 2 is unchanged.
+- Envelope RCPT TO is preserved into the queued payload.
+- Per-IP intake bucket (30/min) is LRU-bounded (4096 IPs) with expiry
+  so the table cannot grow without bound.
 """
 import hmac
 import logging
 import time
+from collections import OrderedDict
 from aiosmtpd.controller import Controller
 from .queue import enqueue_email
 
 log = logging.getLogger("smtp")
 
 SMTP_INTAKE_PER_MINUTE = 30
-_intake_hits: dict[str, list[float]] = {}
+# Bound on tracked peer IPs; oldest-evicted first + amortized expiry sweep.
+INTAKE_MAX_IPS = 4096
+_intake_hits: OrderedDict[str, list[float]] = OrderedDict()
 
 
 def _intake_allowed(peer_ip: str) -> bool:
     now = time.time()
-    hits = [t for t in _intake_hits.get(peer_ip, []) if now - t < 60.0]
-    _intake_hits[peer_ip] = hits
-    if len(hits) >= SMTP_INTAKE_PER_MINUTE:
-        return False
-    hits.append(now)
-    return True
+    hits = _intake_hits.pop(peer_ip, None) or []
+    hits = [t for t in hits if now - t < 60.0]
+    if len(hits) > SMTP_INTAKE_PER_MINUTE * 2:
+        hits = hits[-(SMTP_INTAKE_PER_MINUTE * 2):]
+    allowed = len(hits) < SMTP_INTAKE_PER_MINUTE
+    if allowed:
+        hits.append(now)
+    _intake_hits[peer_ip] = hits  # re-insert as most-recently-seen
+    while len(_intake_hits) > INTAKE_MAX_IPS:
+        _intake_hits.popitem(last=False)
+    if len(_intake_hits) % 128 == 0:  # amortized O(1) expiry sweep
+        cutoff = now - 60.0
+        for key in [k for k, v in _intake_hits.items() if not v or v[-1] < cutoff]:
+            _intake_hits.pop(key, None)
+    return allowed
 
 
 class IngestHandler:
@@ -74,22 +89,52 @@ def _tls_context():
     return ctx
 
 
-def start_smtp(host: str = "127.0.0.1", port: int = 1025) -> Controller:
-    """Start the relay. Localhost bind unless SMTP_HOST says otherwise.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
-    Controller forwards extra kwargs straight to the SMTP server, so auth,
-    TLS and size limits land on the protocol handler itself.
+
+def _is_loopback(host: str) -> bool:
+    """True only for loopback binds. Unknown hostnames fail closed to
+    non-loopback (they may resolve externally)."""
+    h = (host or "").strip().lower()
+    return h in _LOOPBACK_HOSTS or h.startswith("127.")
+
+
+def _auth_required() -> bool:
+    from ...config import get_settings
+    return str(get_settings().smtp_require_auth).lower() not in ("", "0", "false", "no")
+
+
+def start_smtp(host: str = "127.0.0.1", port: int = 1025) -> Controller:
+    """Start the relay. Validates the security posture BEFORE binding.
+
+    - Non-loopback + AUTH off => RuntimeError (would be an open relay).
+    - Non-loopback + AUTH on + no TLS cert => RuntimeError (AUTH would
+      cross the network in plaintext).
+    Loopback keeps working without AUTH/TLS for local dev and tests.
     """
     from ...config import get_settings
     settings = get_settings()
+    loopback = _is_loopback(host)
+    need_auth = _auth_required()
+    tls = _tls_context()
+    if not loopback and not need_auth:
+        raise RuntimeError(
+            f"Refusing SMTP bind to non-loopback {host!r} without authentication "
+            "(open relay). Set SMTP_REQUIRE_AUTH=1 with SMTP_USERNAME/PASSWORD, "
+            "or bind a loopback address."
+        )
+    if not loopback and need_auth and tls is None:
+        raise RuntimeError(
+            f"Refusing SMTP AUTH over plaintext on non-loopback {host!r}. "
+            "Configure SMTP_TLS_CERT/SMTP_TLS_KEY."
+        )
     server_kwargs: dict = {
         "data_size_limit": max(1024, int(settings.smtp_data_limit_bytes or 10 * 1024 * 1024)),
     }
-    if str(settings.smtp_require_auth).lower() not in ("", "0", "false", "no"):
-        server_kwargs.update(auth_required=True, auth_require_tls=bool(_tls_context()),
+    if need_auth:
+        server_kwargs.update(auth_required=True, auth_require_tls=bool(tls),
                              auth_callback=_auth_callback)
         log.info("SMTP AUTH required")
-    tls = _tls_context()
     if tls is not None:
         server_kwargs.update(tls_context=tls, require_starttls=True)
         log.info("SMTP STARTTLS enforced")

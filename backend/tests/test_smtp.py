@@ -70,3 +70,47 @@ def test_smtp_ingest_creates_record(monkeypatch):
         asyncio.run(run())
     finally:
         controller.stop()
+
+
+def test_smtp_refuses_open_relay_and_plaintext_auth(monkeypatch):
+    """P0: non-loopback binds fail fast instead of running insecure."""
+    from app.config import get_settings
+    from app.modules.ingestion import smtp_server
+    from app.modules.ingestion.smtp_server import _is_loopback, start_smtp
+
+    assert _is_loopback("127.0.0.1") and _is_loopback("::1") and _is_loopback("localhost")
+    assert _is_loopback("127.0.0.9") and not _is_loopback("0.0.0.0")
+    assert not _is_loopback("mail.example.com")  # unknown => non-loopback (fail closed)
+
+    # open relay: non-loopback without auth
+    monkeypatch.setattr(get_settings(), "smtp_require_auth", "0")
+    try:
+        start_smtp("0.0.0.0", 10029)
+        raise SystemExit("should have refused open relay")
+    except RuntimeError as e:
+        assert "open relay" in str(e)
+    # plaintext auth: non-loopback + auth but no TLS cert
+    monkeypatch.setattr(get_settings(), "smtp_require_auth", "1")
+    monkeypatch.setattr(get_settings(), "smtp_tls_cert", "")
+    monkeypatch.setattr(get_settings(), "smtp_tls_key", "")
+    try:
+        start_smtp("0.0.0.0", 10029)
+        raise SystemExit("should have refused plaintext auth")
+    except RuntimeError as e:
+        assert "plaintext" in str(e)
+
+
+def test_smtp_intake_table_bounded():
+    """P0: per-IP intake table cannot grow without bound."""
+    from app.modules.ingestion import smtp_server
+    from app.modules.ingestion.smtp_server import INTAKE_MAX_IPS, _intake_allowed
+    smtp_server._intake_hits.clear()
+    for i in range(INTAKE_MAX_IPS + 500):
+        assert _intake_allowed(f"10.9.{i // 256}.{i % 256}") is True
+    assert len(smtp_server._intake_hits) <= INTAKE_MAX_IPS
+    # earliest IPs were evicted LRU-style
+    assert "10.9.0.0" not in smtp_server._intake_hits
+    # per-IP rate limit still enforced (fresh IP outside the fill range)
+    assert all(_intake_allowed("10.9.200.200") for _ in range(30))
+    assert _intake_allowed("10.9.200.200") is False
+    smtp_server._intake_hits.clear()
