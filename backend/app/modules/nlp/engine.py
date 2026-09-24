@@ -53,21 +53,21 @@ def _model_path() -> str:
 
 
 def _verify_checksum(path: str) -> bool:
-    """Refuse to unpickle a model whose pinned checksum doesn't match (C10)."""
-    import hashlib
-    sha_path = path + ".sha256"
-    if path != PINNED_MODEL_PATH or not os.path.exists(sha_path):
-        # Dev overrides / missing sidecar: fail closed to rule fallback.
-        return False if path != PINNED_MODEL_PATH else True
+    """Trust gate before unpickling (P0, fail closed).
+
+    Delegates to the shared model_trust helper: Ed25519 signature when
+    MODEL_VERIFY_KEY is provisioned, else the .sha256 sidecar. Missing or
+    mismatched trust metadata => False (refuse to load) in every
+    environment except an explicit, logged MODEL_TRUST_INSECURE=1 dev
+    bypass. Previously a missing sidecar returned True — fail-open.
+    """
+    import logging
+    from ..model_trust import verify_model_artifact, ModelTrustError
     try:
-        with open(sha_path) as f:
-            expected = f.read().strip().split()[0]
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(65536), b""):
-                h.update(chunk)
-        return h.hexdigest() == expected
-    except Exception:
+        verify_model_artifact(path, purpose="nlp")
+        return True
+    except ModelTrustError as e:
+        logging.getLogger("nlp").error("model trust failed — refusing to load: %s", e)
         return False
 
 
