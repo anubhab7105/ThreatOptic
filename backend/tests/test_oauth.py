@@ -31,16 +31,16 @@ def test_authorize_urls():
 
     with TestClient(app) as c:
         h = _auth(c)
-        assert c.get("/api/v1/oauth/google/authorize", headers=h).status_code == 422  # redirect_uri required
-        r = c.get("/api/v1/oauth/google/authorize", headers=h,
-                  params={"redirect_uri": "http://localhost:5173/", "client_id": "gid"})
+        assert c.post("/api/v1/oauth/google/authorize", headers=h, json={}).status_code == 422  # redirect_uri required
+        r = c.post("/api/v1/oauth/google/authorize", headers=h,
+                   json={"redirect_uri": "http://localhost:5173/", "client_id": "gid"})
         assert r.status_code == 200, r.text
         assert "accounts.google.com" in r.json()["auth_url"]
-        r = c.get("/api/v1/oauth/microsoft/authorize", headers=h,
-                  params={"redirect_uri": "http://localhost:5173/", "client_id": "mid"})
+        r = c.post("/api/v1/oauth/microsoft/authorize", headers=h,
+                   json={"redirect_uri": "http://localhost:5173/", "client_id": "mid"})
         assert r.status_code == 200, r.text
         assert "login.microsoftonline.com" in r.json()["auth_url"]
-        assert c.get("/api/v1/oauth/yahoo/authorize", headers=h).status_code in (400, 422)
+        assert c.post("/api/v1/oauth/yahoo/authorize", headers=h, json={"redirect_uri": "http://localhost:5173/"}).status_code in (400, 422)
         assert c.get("/api/v1/oauth/status").status_code == 401
 
 
@@ -97,7 +97,7 @@ def test_callback_sync_disconnect(monkeypatch):
         try:
             assert c.get("/api/v1/oauth/status", headers=h).json() == []
             # full flow: authorize mints server-side state + PKCE, callback consumes it
-            au = c.get("/api/v1/oauth/google/authorize", headers=h, params={
+            au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
                 "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(au).query)
@@ -168,7 +168,7 @@ def test_oauth_hijack_prevention(monkeypatch):
     with TestClient(app) as c:
         # Victim starts OAuth flow
         victim_h = _auth(c)
-        victim_au = c.get("/api/v1/oauth/google/authorize", headers=victim_h, params={
+        victim_au = c.post("/api/v1/oauth/google/authorize", headers=victim_h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         from urllib.parse import parse_qs, urlparse
         q = parse_qs(urlparse(victim_au).query)
@@ -245,7 +245,7 @@ def test_cross_tenant_mailbox_access(monkeypatch):
             db.close()
 
         # User 1 connects a mailbox
-        au1 = c.get("/api/v1/oauth/google/authorize", headers=h1, params={
+        au1 = c.post("/api/v1/oauth/google/authorize", headers=h1, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         q1 = parse_qs(urlparse(au1).query)
         state1 = q1["state"][0]
@@ -315,7 +315,7 @@ def test_tampered_redirect_uri(monkeypatch):
     with TestClient(app) as c:
         h = _auth(c)
         # Start flow with allowed redirect_uri
-        au = c.get("/api/v1/oauth/google/authorize", headers=h, params={
+        au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         from urllib.parse import parse_qs, urlparse
         q = parse_qs(urlparse(au).query)
