@@ -21,24 +21,18 @@ import pytest
 def _isolated_db(monkeypatch, tmp_path):
     """Every test gets a FRESH temp SQLite DB — prod/dev DBs are never touched.
 
-    Rebinds the module-global engine + sessionmakers (all app code resolves
-    SessionLocal lazily at call time, except app.main which is patched too),
-    creates the schema, and deletes the file afterwards.
+    P1: isolation rides on TEST_DATABASE_URL + rebuild_engine(), i.e. the
+    same fresh-settings path production uses — no object patching that a
+    lifespan rebuild could silently clobber back to the dev database.
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
     import app.database as dbmod
-    import app.main as mainmod
 
     url = f"sqlite:///{tmp_path}/test.db"
-    engine = create_engine(url, connect_args={"check_same_thread": False}, future=True)
-    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-    monkeypatch.setattr(dbmod, "engine", engine)
-    monkeypatch.setattr(dbmod, "SessionLocal", session_factory)
-    monkeypatch.setattr(mainmod, "SessionLocal", session_factory)
-    dbmod.Base.metadata.create_all(bind=engine)
-    yield session_factory
-    engine.dispose()
+    monkeypatch.setenv("TEST_DATABASE_URL", url)
+    dbmod.rebuild_engine()
+    dbmod.Base.metadata.create_all(bind=dbmod.engine)
+    yield dbmod.SessionLocal
+    dbmod.engine.dispose()
 
 
 @pytest.fixture(autouse=True)

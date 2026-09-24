@@ -23,6 +23,7 @@ settings = get_settings()
 
 async def _smtp_consumer() -> None:
     """Background loop: SMTP queue -> forensic pipeline (F3)."""
+    from .database import SessionLocal
     from .modules.ingestion.queue import ack_email, dequeue_email
     from .services.pipeline import process_raw_email
     log.info("SMTP consumer started")
