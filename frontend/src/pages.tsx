@@ -1785,14 +1785,13 @@ export function Mailboxes() {
       <div className="card">
         <h3>Connect Mailbox</h3>
         <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-          <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID (from Google / Microsoft console)" />
-          <input type="password" value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="OAuth client secret" autoComplete="off" />
+          <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID (optional if server-configured)" />
           <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" />
           <div className="row">
-            <button className="ghost" onClick={() => connect('google')} disabled={busy || !clientId.trim() || !clientSecret.trim()}>Connect Google</button>
-            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !clientId.trim() || !clientSecret.trim()}>Connect Microsoft</button>
+            <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim()}>Connect Google</button>
+            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim()}>Connect Microsoft</button>
           </div>
-          <p className="sub" style={{ marginBottom: 0 }}>Enter your OAuth credentials above — they are encrypted and stored on the server per connection. No .env configuration needed. After consent you return here automatically.</p>
+          <p className="sub" style={{ marginBottom: 0 }}>Client secrets never leave the server — configure them via env. After consent you return here automatically.</p>
         </div>
       </div>
       <InternalLinks current="/mailboxes" />
