@@ -220,12 +220,13 @@ def authorize(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create a signed state + PKCE pair, return the consent URL."""
+    """Create an opaque server-side state + PKCE pair, return the consent URL."""
     p = _provider_or_400(provider)
     uri = _redirect_or_400(payload.redirect_uri)
     cid = _resolve_client_id(p, payload.client_id, db=db)
-    verifier = connectors._new_verifier()
-    state = _make_state(user.id, client_id=cid, client_secret=payload.client_secret or "", redirect_uri=uri, flow="oauth", pkce_verifier=verifier, provider=p)
+    state, verifier = create_oauth_state(
+        db, user_id=user.id, provider=p, redirect_uri=uri, client_id=cid,
+    )
     challenge = connectors._pkce_challenge(verifier)
     if p == "google":
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
