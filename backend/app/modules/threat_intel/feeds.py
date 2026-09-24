@@ -246,41 +246,51 @@ def aggregate_threat_intel(domains: list[str], ips: list[str], urls: list[str]) 
     from .url_analyzer import domain_of
 
     hits: list[dict] = []
+    url_list = [u for u in (urls or [])[:50]]
+    url_doms = [d for d in (domain_of(u) for u in url_list) if d]
+    dom_list = [d for d in domains[:20] if d]
+    ip_list = [ip for ip in ips[:20] if ip]
+
+    # P0: ONE batched, deduplicated, TTL-cached MISP query per mail instead
+    # of up to 90 sequential POSTs. Coverage identical, latency bounded.
+    misp_hits = query_misp_batch([*dom_list, *ip_list, *url_doms])
+
+    def _misp_entry(value: str) -> dict[str, Any] | None:
+        n = misp_hits.get(value, 0)
+        if n:
+            return {"misp": {"source": "misp", "hits": n}}
+        return None
 
     def _add_url(u: str) -> None:
         dom = domain_of(u)
         if not dom:
             return
         reasons = check_domain_blocklists(dom)
-        m = query_misp(dom)
+        m = _misp_entry(dom)
         entry: dict[str, Any] = {"type": "url", "value": u[:500], "domain": dom}
         if reasons:
             entry["reasons"] = reasons
-        if m.get("hits"):
-            entry["misp"] = m
+        if m:
+            entry["misp"] = m["misp"]
             entry.setdefault("reasons", []).append("misp-hit")
         if entry.get("reasons"):
             hits.append(entry)
 
-    for d in domains[:20]:
-        if not d:
-            continue
+    for d in dom_list:
         b = check_domain_blocklists(d)
         if b:
             hits.append({"type": "domain", "value": d, "reasons": b})
-        m = query_misp(d)
-        if m.get("hits"):
-            hits.append({"type": "domain", "value": d, "misp": m, "reasons": ["misp-hit"]})
-    for ip in ips[:20]:
-        if not ip:
-            continue
+        m = _misp_entry(d)
+        if m:
+            hits.append({"type": "domain", "value": d, "misp": m["misp"], "reasons": ["misp-hit"]})
+    for ip in ip_list:
         b = check_ip_blocklists(ip) + check_ip_spamhaus(ip)
         if b:
             hits.append({"type": "ip", "value": ip, "reasons": b})
-        m = query_misp(ip)
-        if m.get("hits"):
-            hits.append({"type": "ip", "value": ip, "misp": m, "reasons": ["misp-hit"]})
-    for u in (urls or [])[:50]:
+        m = _misp_entry(ip)
+        if m:
+            hits.append({"type": "ip", "value": ip, "misp": m["misp"], "reasons": ["misp-hit"]})
+    for u in url_list:
         _add_url(u)
     malicious = sum(1 for h in hits if any(_is_malicious_reason(r) for r in h.get("reasons", [])))
     return {"hits": hits, "count": len(hits), "malicious_count": malicious}

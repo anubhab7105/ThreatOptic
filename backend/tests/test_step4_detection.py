@@ -309,3 +309,79 @@ def test_analyze_urls_async_merges_vt_hits(monkeypatch):
     out2 = asyncio.run(ua.analyze_urls_async(urls))
     assert out2["malicious_count"] == 0
     assert all("virustotal_hit" not in h for h in out2["hits"])
+
+
+def test_misp_single_batched_deduped_cached(monkeypatch):
+    """P0: one batched MISP POST per mail, deduped values, TTL cache."""
+    import app.modules.threat_intel.feeds as feeds
+
+    calls: list = []
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"response": {"Attribute": [
+                {"value": "evil.test"}, {"value": "evil.test"},
+                {"value": "1.2.3.4"},
+            ]}}
+
+    import requests
+    monkeypatch.setattr(feeds, "_MISP_CACHE", {})
+    monkeypatch.setenv("MISP_URL", "https://misp.test")
+    monkeypatch.setenv("MISP_KEY", "k")
+    monkeypatch.setattr(requests, "post",
+                        lambda *a, **k: (calls.append(k.get("json")), Resp())[1])
+
+    domains = ["evil.test", "evil.test", "clean.test"]
+    ips = ["1.2.3.4"]
+    urls = ["http://evil.test/login", "http://evil.test/other"]
+    out = feeds.aggregate_threat_intel(domains, ips, urls)
+    # exactly ONE network call for all indicators...
+    assert len(calls) == 1
+    sent = calls[0]["value"]
+    assert sorted(sent) == sorted({"evil.test", "clean.test", "1.2.3.4"})
+    # ...hits mapped back per entry type...
+    by_type = {}
+    for h in out["hits"]:
+        by_type.setdefault(h["type"], []).append(h)
+    assert any(h.get("misp", {}).get("hits") == 2 for h in by_type.get("domain", []))
+    assert any(h.get("misp", {}).get("hits") == 1 for h in by_type.get("ip", []))
+    assert any(h.get("misp", {}).get("hits") == 2 for h in by_type.get("url", []))
+    assert out["malicious_count"] >= 3
+    # ...and the second identical mail is fully cache-served (no network).
+    out2 = feeds.aggregate_threat_intel(domains, ips, urls)
+    assert len(calls) == 1
+    assert out2["malicious_count"] == out["malicious_count"]
+
+
+def test_misp_unconfigured_and_error_paths(monkeypatch):
+    """P0: unconfigured MISP never touches network; errors fail open."""
+    import app.modules.threat_intel.feeds as feeds
+    import requests
+
+    monkeypatch.setattr(feeds, "_MISP_CACHE", {})
+    monkeypatch.delenv("MISP_URL", raising=False)
+    monkeypatch.delenv("MISP_KEY", raising=False)
+    try:
+        from app.config import get_settings
+        monkeypatch.setattr(get_settings(), "misp_url", "")
+        monkeypatch.setattr(get_settings(), "misp_key", "")
+    except Exception:
+        pass
+    calls = []
+    monkeypatch.setattr(requests, "post", lambda *a, **k: calls.append(1))
+    assert feeds.query_misp_batch(["a.test"]) == {}
+    assert calls == []
+    assert feeds.query_misp("a.test") == {"source": "misp", "skipped": True}
+
+    # transport failure -> zero hits, no crash, nothing cached
+    monkeypatch.setenv("MISP_URL", "https://misp.test")
+    monkeypatch.setenv("MISP_KEY", "k")
+
+    def _boom(*a, **k):
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(requests, "post", _boom)
+    assert feeds.query_misp_batch(["a.test"]) == {"a.test": 0}
+    assert feeds._MISP_CACHE == {}
