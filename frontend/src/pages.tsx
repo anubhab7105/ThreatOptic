@@ -314,15 +314,15 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  // P0: OAuth secrets must never touch browser storage. Client ID (public)
-  // is kept in memory only; client secret lives in component state and is
-  // cleared after use — never localStorage/sessionStorage.
+  // P0: OAuth client secrets are NEVER held in the browser — not in state,
+  // not in storage. Only the public client ID (optional) and the opaque
+  // server-issued state token live here, both memory-only.
   const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const [code, setCode] = useState('');
-  const [secret, setSecret] = useState('');
+  const [oauthState, setOauthState] = useState('');
   const [query, setQuery] = useState('is:unread');
   const [maxN, setMaxN] = useState('10');
   const [busy, setBusy] = useState(false);
@@ -331,8 +331,6 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [showCreds, setShowCreds] = useState(false);
 
   const updateClientId = (v: string) => { setClientId(v); };
-  const updateSecret = (v: string) => { setSecret(v); };
-  const clearSecret = () => { setSecret(''); };
 
   const refresh = async () => {
     try {
@@ -349,27 +347,31 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const getUrl = async () => {
     setBusy(true); setErr(''); setNotice('');
     try {
-      // P0: secrets in POST body over TLS, never query params (log leak).
+      // P0: client_id/redirect_uri in POST body over TLS, never query params.
+      // client_secret is never sent — it resolves server-side only.
       const r = await jpost('/gmail/auth-url', {
         redirect_uri: redirectUri,
         ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
-        ...(secret.trim() ? { client_secret: secret.trim() } : {}),
       });
       window.location.href = r.auth_url;
       setNotice('Redirecting to Google consent page…');
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
 
-  const finish = async (manualCode?: string) => {
+  const finish = async (manualCode?: string, manualState?: string) => {
     const c = (manualCode ?? code).trim();
-    if (!c) return;
+    const s = (manualState ?? oauthState).trim();
+    if (!c || !s) {
+      setErr('Both authorization code and state are required — restart the connect flow.');
+      return;
+    }
     setBusy(true); setErr(''); setNotice('');
     try {
-      // Client secret is server-side only (C5) — never sent from the browser.
-      const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined });
+      // Client secret is server-side only — never sent from the browser.
+      const r = await jpost('/gmail/callback', { code: c, state: s, redirect_uri: redirectUri, client_id: clientId || undefined });
       setStatus(r);
       setCode('');
-      clearSecret();
+      setOauthState('');
       setNotice(`Connected as ${r.gmail_address}. Credentials saved securely on the server.`);
     } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
   };
@@ -378,11 +380,19 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   useEffect(() => {
     if (autoTried.current) return;
     autoTried.current = true;
-    const q = new URLSearchParams(window.location.search).get('code');
-    if (q) {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('code');
+    const st = params.get('state');
+    if (q && st) {
       setCode(q);
+      setOauthState(st);
       window.history.replaceState({}, '', window.location.pathname);
-      void finish(q);
+      void finish(q, st);
+    } else if (q) {
+      // Provider returned a code without our opaque state: refuse to
+      // complete (CSRF) — user must restart the connect flow.
+      window.history.replaceState({}, '', window.location.pathname);
+      setErr('OAuth state missing — restart the connect flow (possible CSRF).');
     }
     const hashParams = new URLSearchParams(window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '');
     const conn = hashParams.get('connected') || new URLSearchParams(window.location.search).get('connected');
@@ -398,9 +408,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/gmail/sync', { max_results: num, query, client_id: clientId || undefined, client_secret: secret || undefined });
+      const r = await jpost('/gmail/sync', { max_results: num, query, client_id: clientId || undefined });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      clearSecret();
       await refresh();
       await onSynced();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
