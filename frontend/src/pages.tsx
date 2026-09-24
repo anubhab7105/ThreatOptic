@@ -349,10 +349,12 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const getUrl = async () => {
     setBusy(true); setErr(''); setNotice('');
     try {
-      let url = `/gmail/auth-url?redirect_uri=${encodeURIComponent(redirectUri)}`;
-      if (clientId.trim()) url += `&client_id=${encodeURIComponent(clientId.trim())}`;
-      if (secret.trim()) url += `&client_secret=${encodeURIComponent(secret.trim())}`;
-      const r = await jget(url);
+      // P0: secrets in POST body over TLS, never query params (log leak).
+      const r = await jpost('/gmail/auth-url', {
+        redirect_uri: redirectUri,
+        ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
+        ...(secret.trim() ? { client_secret: secret.trim() } : {}),
+      });
       window.location.href = r.auth_url;
       setNotice('Redirecting to Google consent page…');
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
