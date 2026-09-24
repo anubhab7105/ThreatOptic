@@ -70,9 +70,12 @@ def test_auth_validator_offline_shape(monkeypatch):
     # never the display From domain and never "unverifiable".
     assert out["spf"]["status"] == "none"
     assert out["spf_domain"] == ""
-    # no loopback substitution: missing IP is explicit, not vouched
+    # no loopback substitution: missing IP is explicit, not vouched.
+    # (No envelope either, so SPF reports "none" — no identity to check.)
     out2 = validate_all(b"raw", {"From": "a@b.com"}, "", "")
-    assert out2["spf"]["status"] == "unverifiable" and "no sender IP" in out2["spf"]["detail"]
+    assert out2["spf"]["status"] == "none" and "no-return-path" in out2["spf"]["detail"]
+    out2b = validate_all(b"raw", {"From": "a@b.com", "Return-Path": "<b@env.test>"}, "", "")
+    assert out2b["spf"]["status"] == "unverifiable" and "no sender IP" in out2b["spf"]["detail"]
     # envelope (Return-Path), not display From, drives SPF domain
     out3 = validate_all(b"raw", {"From": "a@b.com", "Return-Path": "<bounce@env.test>"}, "127.0.0.1", "")
     assert out3["spf_domain"] == "env.test"
@@ -83,3 +86,61 @@ def test_auth_domain_cleaning_and_alignment():
     assert _clean_domain("<a@Y.COM>") == "y.com"  # no trailing '>' (lstrip bug)
     out = validate_all(b"raw", {"From": "a@b.com", "DKIM-Signature": "v=1; d=evil.test; s=x"}, "", "")
     assert out["dkim_domain"] == "evil.test" and out["aligned"] is False
+
+
+def test_upstream_untrusted_by_default(monkeypatch):
+    """P0: attacker-stamped Authentication-Results are ignored offline —
+    claims attached for provenance but never honored as verdicts."""
+    monkeypatch.setattr("app.modules.forensics.auth_validator._live", lambda: False)
+    monkeypatch.delenv("TRUSTED_RELAY_HOSTS", raising=False)
+    from app.modules.forensics.auth_validator import validate_all
+    headers = {
+        "From": "CEO <ceo@company.com>",
+        "Return-Path": "<bounce@evil.test>",
+        "Authentication-Results": "evil-relay.test; spf=pass; dkim=pass; dmarc=pass",
+    }
+    out = validate_all(b"raw", headers, "45.148.10.88", "")
+    assert out["upstream_trusted"] is False
+    assert out["spf"]["status"] == "unverifiable" and "live-lookups-disabled" in out["spf"]["detail"]
+    assert out["dkim"]["status"] == "none"  # no signature header present
+    assert out["dmarc"]["status"] == "unverifiable"
+    # ... but the claims are preserved for the analyst, not dropped.
+    assert out["spf"]["upstream"]["status"] == "pass"
+
+
+def test_upstream_trusted_via_relay_boundary(monkeypatch):
+    """P0: upstream claims ARE honored when the stamper is our relay."""
+    monkeypatch.setattr("app.modules.forensics.auth_validator._live", lambda: False)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    from app.modules.forensics.auth_validator import validate_all
+    headers = {
+        "From": "a@b.com",
+        "Return-Path": "<bounce@b.com>",
+        "Authentication-Results": "mx.ours.test; spf=pass; dkim=pass; dmarc=pass",
+    }
+    out = validate_all(b"raw", headers, "93.184.216.34", "")
+    assert out["upstream_trusted"] is True
+    assert out["spf"]["status"] == "pass" and "trusted-upstream" in out["spf"]["detail"]
+    assert out["dmarc"]["status"] == "pass" and "trusted-upstream" in out["dmarc"]["detail"]
+
+
+def test_trusted_upstream_never_overrides_live_fail(monkeypatch):
+    """P0: a live hard failure stands even against a trusted upstream pass."""
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    import spf as _pyspf
+    monkeypatch.setattr(_pyspf, "check2", lambda **kw: ("fail", "simulated hard fail"))
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=pass"},
+        "93.184.216.34", "")
+    assert out["spf"]["status"] == "fail"
+    assert out["spf"]["upstream"]["status"] == "pass"  # provenance kept
+
+
+def test_no_global_resolver_mutation():
+    """P0: the module must not mutate the global DNS resolver."""
+    import app.modules.forensics.auth_validator as av
+    assert not hasattr(av, "_ensure_dns_resolver")
