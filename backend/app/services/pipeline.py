@@ -37,6 +37,82 @@ def _sender_domain(from_addr: str) -> str:
     return m.group(1).lower().rstrip(".") if m else ""
 
 
+def _geo_fallbacks(path: list, dnsd: dict, domain: str, whois: dict,
+                   geo: dict, live_lookups: bool) -> dict:
+    """Synchronous geo fallback chain (relay hops -> MX/A -> country).
+
+    P0: runs in a worker thread under a timeout — NEVER on the event loop.
+    System-resolver DNS (socket.gethostbyname, no per-call timeout and
+    outside every library timeout) runs ONLY when live lookups are enabled,
+    so the offline switch covers every network path. Pure-local country
+    fallbacks always run.
+    """
+    import socket
+    from ..modules.traceability.geoip import geolocate, geolocate_country, has_coords
+
+    if not has_coords(geo):
+        for hop in (path or []):
+            for hop_ip in hop.get("ips", []):
+                try:
+                    g = geolocate(hop_ip)
+                except Exception:
+                    continue
+                if has_coords(g):
+                    geo = {**g, "source": f"relay-hop ({g.get('source', 'resolved')})"}
+                    break
+            if has_coords(geo):
+                break
+
+    if live_lookups and not has_coords(geo) and (dnsd or {}).get("mx"):
+        try:
+            for mx_host in (dnsd.get("mx", []) or [])[:3]:
+                clean_mx = str(mx_host).strip().rstrip(".")
+                if not clean_mx:
+                    continue
+                try:
+                    mx_ip = socket.gethostbyname(clean_mx)
+                except Exception:
+                    continue
+                try:
+                    g = geolocate(mx_ip)
+                except Exception:
+                    continue
+                if has_coords(g):
+                    geo = {**g, "source": "approx-mx-ip"}
+                    break
+        except Exception:
+            pass
+
+    if live_lookups and not has_coords(geo) and domain:
+        try:
+            dip = socket.gethostbyname(domain)
+        except Exception:
+            dip = ""
+        if dip:
+            try:
+                g = geolocate(dip)
+                if has_coords(g):
+                    geo = {**g, "source": "approx-domain-ip"}
+            except Exception:
+                pass
+
+    # Country fallback from whois or domain TLD (local data only)
+    if not has_coords(geo):
+        whois_country = str((whois or {}).get("country", "") or "").strip().upper()
+        if whois_country and len(whois_country) == 2:
+            geo = geolocate_country(whois_country, source="whois-country-approx")
+        elif domain and "." in domain:
+            tld = domain.split(".")[-1].upper()
+            if len(tld) == 2:
+                try:
+                    cg = geolocate_country(tld, source="tld-country-approx")
+                except Exception:
+                    cg = {}
+                if has_coords(cg):
+                    geo = cg
+    return geo
+
+
 def _url_domains(urls: list[str]) -> list[str]:
     out: list[str] = []
     for u in urls[:10]:
@@ -125,57 +201,27 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
 
-    # If origin_ip gave no coordinates, try relay hops, sender domain MX/A, or country centroids
-    from ..modules.traceability.geoip import has_coords, geolocate_country
-    if not has_coords(geo):
-        for hop in (path or []):
-            for hop_ip in hop.get("ips", []):
-                g = geolocate(hop_ip)
-                if has_coords(g):
-                    geo = {**g, "source": f"relay-hop ({g.get('source', 'resolved')})"}
-                    break
-            if has_coords(geo):
-                break
-
-    if not has_coords(geo) and dnsd.get("mx"):
-        try:
-            import socket
-            for mx_host in dnsd.get("mx", [])[:3]:
-                clean_mx = str(mx_host).strip().rstrip(".")
-                if clean_mx:
-                    mx_ip = socket.gethostbyname(clean_mx)
-                    g = geolocate(mx_ip)
-                    if has_coords(g):
-                        geo = {**g, "source": "approx-mx-ip"}
-                        break
-        except Exception:
-            pass
-
-    if not has_coords(geo) and domain:
-        try:
-            import socket
-            dip = socket.gethostbyname(domain)
-            g = geolocate(dip)
-            if has_coords(g):
-                geo = {**g, "source": "approx-domain-ip"}
-        except Exception:
-            pass
-
-    # Country fallback from whois or domain TLD
-    if not has_coords(geo):
-        whois_country = str(whois.get("country", "") or "").strip().upper()
-        if whois_country and len(whois_country) == 2:
-            geo = geolocate_country(whois_country, source="whois-country-approx")
-        elif domain and "." in domain:
-            tld = domain.split(".")[-1].upper()
-            if len(tld) == 2:
-                cg = geolocate_country(tld, source="tld-country-approx")
-                if has_coords(cg):
-                    geo = cg
-
-    # geo may lack isp/asn when offline — refresh infra flags with what we have
+    # P0: sync geo fallbacks (incl. system-resolver DNS) run in a worker
+    # thread with a timeout — never blocking the event loop — and the
+    # offline switch gates every resolver network path.
+    from ..config import get_settings as _get_settings
     try:
-        infra = flag_infrastructure(origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")))
+        geo_fb = await _to_thread(
+            _geo_fallbacks, path, dnsd, domain, whois, geo,
+            bool(_get_settings().live_lookups), timeout=5.0)
+        if isinstance(geo_fb, dict):
+            geo = geo_fb
+    except Exception as e:
+        log.warning("geo fallbacks failed: %s", e)
+
+    # geo may lack isp/asn when offline — refresh infra flags with what we
+    # have (off the event loop: may issue DNS blocklist lookups when live).
+    try:
+        infra_fb = await _to_thread(
+            flag_infrastructure, origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")),
+            timeout=3.0)
+        if isinstance(infra_fb, dict):
+            infra = infra_fb
     except Exception:
         pass
     try:
