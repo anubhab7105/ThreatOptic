@@ -149,6 +149,17 @@ def test_gmail_connect_sync_disconnect(monkeypatch):
 
         assert c.delete("/api/v1/gmail/disconnect", headers=h).status_code == 200
         assert c.get("/api/v1/gmail/status", headers=h).json()["connected"] is False
+        # P0: disconnect removes BOTH rows so background polling stops.
+        from app import models as _models
+        from app.database import SessionLocal as _SessionLocal
+        db = _SessionLocal()
+        try:
+            assert db.query(_models.GmailAccount).filter_by(gmail_address="demo@gmail.com").first() is None
+            assert db.query(_models.MailboxConnection).filter_by(account_email="demo@gmail.com").first() is None
+        finally:
+            db.close()
+        assert c.get("/api/v1/oauth/status", headers=h).json() == []
+        assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
 
 
 def test_gmail_sync_persists_client_id_for_future_refreshes(monkeypatch):

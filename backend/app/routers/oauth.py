@@ -398,8 +398,17 @@ def disconnect(provider: str, user: models.User = Depends(require_roles("Admin",
     p = _provider_or_400(provider)
     query = _scope(db.query(models.MailboxConnection).filter(models.MailboxConnection.provider == p), user)
     n = query.delete(synchronize_session=False)
+    gmail_cleared = False
+    if p == "google":
+        # P0 mirror of /gmail/disconnect: also clear the caller's Gmail
+        # credential row so /gmail/status and /gmail/sync stop, not just
+        # the org-level mailbox row.
+        gmail_acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+        if gmail_acct:
+            db.delete(gmail_acct)
+            gmail_cleared = True
     db.commit()
-    return {"disconnected": p, "removed": n}
+    return {"disconnected": p, "removed": n, "gmail_cleared": gmail_cleared}
 
 
 @router.post("/sync-now")
