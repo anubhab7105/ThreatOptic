@@ -244,55 +244,41 @@ async def callback(
     code: str = Query(...),
     redirect_uri: str | None = Query(None),
     state: str | None = Query(None),
-    client_id: str | None = Query(None),
-    client_secret: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Provider redirects here (no auth header possible): verify signed state, exchange, store."""
-    payload = _verify_state(state) if state else None
-    if not payload or payload.get("flow") not in ("oauth", "gmail"):
-        raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
-    if int(time.time()) - payload.get("t", 0) > STATE_TTL_MINUTES * 60:
-        raise HTTPException(400, "OAuth state expired — restart the connect flow")
-    
-    # Provider from payload if available, else route param
-    p = payload.get("p") or _provider_or_400(provider)
-    
-    # Prevent replay attacks: check if state signature was already used
-    try:
-        msg, sig = (state or "").split(".", 1)
-    except ValueError:
-        raise HTTPException(400, "invalid OAuth state format")
-    if not _check_and_mark_state_used(sig):
-        raise HTTPException(400, "OAuth state already used — restart the connect flow")
-    
-    owner_id = payload.get("sub")
-    if not owner_id:
-        raise HTTPException(400, "invalid OAuth state: missing user")
-    
-    owner = db.query(models.User).filter(models.User.id == owner_id).first()
-    if not owner:
-        owner = db.query(models.User).filter_by(role="Admin").first() or db.query(models.User).first()
-        if not owner:
-            raise HTTPException(400, "state owner no longer exists")
+    """Provider redirects here (no auth header possible): consume opaque
+    server-side state, exchange the code with PKCE, store credentials.
 
-    # Extract PKCE verifier from state
-    verifier = payload.get("pkv", "")
-    if not verifier and payload.get("flow") == "oauth":
+    P0: `state` is an opaque token indexing the OAuthState row — it carries
+    no data. Client secrets are never accepted here; they resolve
+    server-side only. Unknown/expired/replayed states fail closed (400).
+    """
+    p = _provider_or_400(provider)
+    if not state:
+        raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
+    row = consume_oauth_state(db, state=state, provider=p)
+
+    owner = db.query(models.User).filter(models.User.id == row.user_id).first()
+    if not owner:
+        # Fail closed: never attach a mailbox to a substitute user.
+        raise HTTPException(400, "state owner no longer exists")
+
+    verifier = row.code_verifier or ""
+    if not verifier:
         raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
 
-    # Verify redirect_uri matches what's in state
-    state_redirect_uri = payload.get("ruri", "")
-    if redirect_uri and state_redirect_uri and redirect_uri != state_redirect_uri:
+    # redirect_uri must match the stored value AND be allowlisted now
+    # (fail closed if the allowlist changed since authorize time).
+    if redirect_uri and redirect_uri != (row.redirect_uri or ""):
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
-    r_uri = redirect_uri or state_redirect_uri or (get_settings().google_redirect_uri if p == "google" else get_settings().frontend_url) or "http://localhost:5173/"
-    
-    # Verify client_id matches what's in state
-    state_client_id = payload.get("cid", "")
-    if client_id and state_client_id and client_id != state_client_id:
-        raise HTTPException(400, "OAuth client mismatch — restart the connect flow")
-    cid = (client_id or state_client_id or "").strip() or _resolve_client_id(p, None, db=db)
-    sec = (client_secret or payload.get("csec", "") or "").strip() or _resolve_client_secret(p, None, db=db)
+    r_uri = row.redirect_uri or ""
+    if not r_uri or not get_settings().oauth_redirect_allowed(r_uri):
+        raise HTTPException(400, "redirect_uri is not allowlisted (check FRONTEND_URL / OAUTH_REDIRECT_ALLOWLIST)")
+
+    # client_id resolves from the stored row, then server-side fallbacks.
+    # client_secret resolves server-side only — never from the request.
+    cid = (row.client_id or "").strip() or _resolve_client_id(p, None, db=db)
+    sec = _resolve_client_secret(p, None, db=db)
 
     try:
         if p == "google":
@@ -354,14 +340,13 @@ async def callback(
 
     db.commit()
     audit("oauth.callback", provider=p, account=address)
-    
+
     # URL-encode the redirect address
     from urllib.parse import quote
     raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
     base = raw_front or "http://localhost:5173"
     encoded_address = quote(address, safe="")
-    target_path = "/" if payload.get("flow") == "gmail" else "/mailboxes"
-    return RedirectResponse(f"{base}{target_path}?connected={p}:{encoded_address}", status_code=302)
+    return RedirectResponse(f"{base}/mailboxes?connected={p}:{encoded_address}", status_code=302)
 
 
 
