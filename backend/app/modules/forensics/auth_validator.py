@@ -167,14 +167,14 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
             return {"status": upstream_spf.get("status", UNVERIFIABLE),
                     "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
                     "upstream": dict(upstream_spf)}
-        return {"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}
+        return _with_upstream({"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}, upstream_spf)
 
     if not _live():
         if trust_upstream and upstream_spf:
             return {"status": upstream_spf.get("status", UNVERIFIABLE),
                     "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
                     "upstream": dict(upstream_spf)}
-        return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}
+        return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}, upstream_spf)
 
     if not envelope_from:
         # No envelope identity => SPF has nothing to check. "none", never
@@ -197,7 +197,7 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
             return {"status": upstream_spf.get("status", "temperror"),
                     "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
                     "upstream": dict(upstream_spf)}
-        return {"status": "temperror", "detail": f"spf-unavailable: {e}"}
+        return _with_upstream({"status": "temperror", "detail": f"spf-unavailable: {e}"}, upstream_spf)
 
 
 def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
@@ -212,7 +212,7 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
             return {"status": upstream_dkim.get("status", "none"),
                     "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
                     "upstream": dict(upstream_dkim)}
-        return {"status": "none", "detail": "no-dkim-signature-header"}
+        return _with_upstream({"status": "none", "detail": "no-dkim-signature-header"}, upstream_dkim)
 
     try:
         import dkim
@@ -227,7 +227,7 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
             return {"status": upstream_dkim.get("status", UNVERIFIABLE),
                     "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
                     "upstream": dict(upstream_dkim)}
-        return {"status": UNVERIFIABLE, "detail": f"dkim-unavailable: {e}"}
+        return _with_upstream({"status": UNVERIFIABLE, "detail": f"dkim-unavailable: {e}"}, upstream_dkim)
 
 
 def dkim_signing_domain(raw_headers: dict) -> str:
@@ -271,14 +271,14 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
     upstream_dmarc = (upstream or {}).get("dmarc")
     from_domain = _clean_domain(from_domain)
     if not from_domain:
-        return {"status": UNVERIFIABLE, "detail": "no-from-domain"}
+        return _with_upstream({"status": UNVERIFIABLE, "detail": "no-from-domain"}, upstream_dmarc)
 
     if not _live():
         if trust_upstream and upstream_dmarc:
             return {"status": upstream_dmarc.get("status", UNVERIFIABLE),
                     "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
                     "upstream": dict(upstream_dmarc)}
-        return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}
+        return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}, upstream_dmarc)
 
     recs = _txt_records(f"_dmarc.{from_domain}")
     # Also check parent domain if subdomain (e.g., mail.example.com -> example.com)
@@ -311,7 +311,7 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         return {"status": upstream_dmarc.get("status", "none"),
                 "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
                 "upstream": dict(upstream_dmarc)}
-    return {"status": "none", "detail": "no-dmarc-record"}
+    return _with_upstream({"status": "none", "detail": "no-dmarc-record"}, upstream_dmarc)
 
 
 def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_from: str = "") -> dict[str, Any]:

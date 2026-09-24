@@ -126,11 +126,14 @@ def test_upstream_trusted_via_relay_boundary(monkeypatch):
 
 def test_trusted_upstream_never_overrides_live_fail(monkeypatch):
     """P0: a live hard failure stands even against a trusted upstream pass."""
+    import sys
+    import types
     import app.modules.forensics.auth_validator as av
     monkeypatch.setattr(av, "_live", lambda: True)
     monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
-    import spf as _pyspf
-    monkeypatch.setattr(_pyspf, "check2", lambda **kw: ("fail", "simulated hard fail"))
+    fake_spf = types.ModuleType("spf")
+    fake_spf.check2 = lambda **kw: ("fail", "simulated hard fail")
+    monkeypatch.setitem(sys.modules, "spf", fake_spf)
     out = av.validate_all(
         b"raw",
         {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
