@@ -66,13 +66,16 @@ def test_auth_validator_offline_shape(monkeypatch):
     from app.modules.forensics.auth_validator import validate_all
     out = validate_all(b"raw", {"From": "a@b.com"}, "127.0.0.1", "")
     assert {"spf", "dkim", "dmarc", "aligned"} <= set(out)
-    # offline statuses are distinguishable from real failures
-    assert out["spf"]["status"] == "unverifiable"
+    # No envelope sender (Return-Path) => SPF has no identity: "none",
+    # never the display From domain and never "unverifiable".
+    assert out["spf"]["status"] == "none"
+    assert out["spf_domain"] == ""
     # no loopback substitution: missing IP is explicit, not vouched
     out2 = validate_all(b"raw", {"From": "a@b.com"}, "", "")
     assert out2["spf"]["status"] == "unverifiable" and "no sender IP" in out2["spf"]["detail"]
     # envelope (Return-Path), not display From, drives SPF domain
-    assert out["spf_domain"] in ("", "b.com")
+    out3 = validate_all(b"raw", {"From": "a@b.com", "Return-Path": "<bounce@env.test>"}, "127.0.0.1", "")
+    assert out3["spf_domain"] == "env.test"
 
 
 def test_auth_domain_cleaning_and_alignment():
