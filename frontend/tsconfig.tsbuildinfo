@@ -1,1 +1,1 @@
-{"root":["./src/api.ts","./src/auth.tsx","./src/components.test.ts","./src/components.tsx","./src/main.tsx","./src/pages.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/api.ts","./src/auth.tsx","./src/components.test.ts","./src/components.tsx","./src/main.tsx","./src/oauth_storage.test.ts","./src/pages.tsx","./src/vite-env.d.ts"],"errors":true,"version":"5.9.3"}
