@@ -63,7 +63,8 @@ def _upstream_trusted(raw_headers: dict) -> tuple[bool, str]:
         # cannot be tied to our boundary either.
         return False, ""
     for suffix in _trusted_relay_hosts():
-        if sid == suffix or sid.endswith("." + suffix):
+        from .psl import is_subdomain_of
+        if is_subdomain_of(sid, suffix):
             return True, sid
     return False, sid
 

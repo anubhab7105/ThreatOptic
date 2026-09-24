@@ -55,13 +55,15 @@ def parse_headers(raw_headers: dict[str, Any]) -> dict[str, Any]:
     # display-name spoof: name trades on an unowned identity
     if _identity_spoof(disp_name, from_addr):
         flags.append("display-name-spoof")
-    # reply-to mismatch
+    # reply-to mismatch (PSL-aware same-organization comparison so
+    # support@mail.company.com vs ceo@company.com is NOT flagged, while
+    # attacker@evil.co.uk vs ceo@bank.co.uk IS).
     if reply_addr and from_addr and reply_addr.lower() != from_addr.lower():
-        # only flag if domains differ
         try:
+            from .psl import same_organization
             d1 = reply_addr.split("@")[1].lower()
             d2 = from_addr.split("@")[1].lower()
-            if d1 != d2:
+            if not same_organization(d1, d2):
                 flags.append("reply-to-mismatch")
         except IndexError:
             flags.append("reply-to-mismatch")
