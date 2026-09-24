@@ -1,31 +1,26 @@
 """Organization mailbox OAuth2 (C3/C4): Google + Microsoft consent flow.
 
-Security properties (Step 2):
-- `state` is random, server-side, single-use, 10-minute expiry, bound to
-  the initiating user — no more latest-user fallback (C3).
-- PKCE (S256) on both providers; verifier stored with the state row.
-- redirect_uri must be allowlisted (C3): exact match against frontend_url,
-  google_redirect_uri, or OAUTH_REDIRECT_ALLOWLIST.
+Security properties (P0):
+- `state` is an opaque, single-use, server-side-stored token (OAuthState
+  row): 10-minute expiry, bound to the initiating user. The browser holds
+  only this opaque identifier — never client secrets or PKCE verifiers.
+- Client secrets are NEVER accepted from the client (body or query);
+  they resolve server-side only (stored connection or env).
+- PKCE (S256) on both providers; verifier stored server-side with state.
+- redirect_uri must be allowlisted: checked at authorize time AND at
+  callback time (fail closed if the allowlist changed in between).
 - status/disconnect/sync are scoped to the caller's organization (C4);
   users without an org are scoped to their own connections.
 - Rotated provider refresh tokens are persisted (service layer).
 """
-import asyncio
-import base64
-import hashlib
-import hmac
-import json
 import logging
 import secrets
-import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from .. import models
 from ..config import get_settings
@@ -42,59 +37,62 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 PROVIDERS = ("google", "microsoft")
 STATE_TTL_MINUTES = 10
 
-# In-memory cache for used state signatures (prevents replay attacks)
-# Key: state signature (the HMAC part), Value: expiry timestamp
-_used_state_cache: dict[str, float] = {}
-
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _make_state(user_id: str, client_id: str = "", client_secret: str = "", redirect_uri: str = "", flow: str = "oauth", pkce_verifier: str = "", provider: str = "google") -> str:
-    payload = {"sub": user_id, "t": int(time.time()), "flow": flow, "p": provider}
-    if client_id:
-        payload["cid"] = client_id
-    if client_secret:
-        payload["csec"] = client_secret
-    if redirect_uri:
-        payload["ruri"] = redirect_uri
-    if pkce_verifier:
-        payload["pkv"] = pkce_verifier
-    msg = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-    sig = hmac.new(get_settings().secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
-    return f"{msg}.{sig}"
-
-
-def _verify_state(state: str) -> dict | None:
-    try:
-        msg, sig = state.split(".", 1)
-        expected_sig = hmac.new(get_settings().secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig, expected_sig):
-            return None
-        rem = len(msg) % 4
-        padded = msg + ("=" * (4 - rem) if rem else "")
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
-        if int(time.time()) - payload.get("t", 0) > 86400:
-            return None
-        return payload
-    except Exception as e:
-        log.warning("OAuth state verification failed: %s", e)
+def _expires_at(dt: datetime | None) -> datetime | None:
+    """Normalize a possibly-naive DB datetime to aware UTC for comparison."""
+    if dt is None:
         return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
-def _check_and_mark_state_used(sig: str) -> bool:
-    """Check if state signature was already used, mark it used if not.
-    Returns True if state is fresh (not used), False if already used."""
-    now = time.time()
-    # Clean expired entries
-    expired = [k for k, v in _used_state_cache.items() if v < now]
-    for k in expired:
-        _used_state_cache.pop(k, None)
-    if sig in _used_state_cache:
-        return False
-    _used_state_cache[sig] = now + STATE_TTL_MINUTES * 60
-    return True
+def create_oauth_state(db: Session, *, user_id: str, provider: str,
+                       redirect_uri: str, client_id: str = "") -> tuple[str, str]:
+    """Mint an opaque single-use state token + PKCE verifier, stored server-side.
+
+    Returns (state, code_verifier). The state is a random token with no
+    embedded data — it only indexes the OAuthState row. No secrets or
+    verifiers ever leave the server inside the state value.
+    """
+    opaque = secrets.token_urlsafe(32)
+    verifier = connectors._new_verifier()
+    db.add(models.OAuthState(
+        state=opaque,
+        user_id=user_id,
+        provider=provider,
+        redirect_uri=redirect_uri,
+        client_id=client_id,
+        code_verifier=verifier,
+        expires_at=_utcnow() + timedelta(minutes=STATE_TTL_MINUTES),
+    ))
+    db.commit()
+    return opaque, verifier
+
+
+def consume_oauth_state(db: Session, *, state: str, provider: str) -> models.OAuthState:
+    """Validate an opaque state token and consume it single-use (fail closed).
+
+    Checks: row exists, provider matches, not already used, not expired.
+    Marks used=True before returning so replays fail. Raises HTTPException
+    400 on any mismatch — never returns a partial/ambiguous result.
+    """
+    row = db.query(models.OAuthState).filter(
+        models.OAuthState.state == (state or ""),
+        models.OAuthState.provider == provider,
+        models.OAuthState.used == False,  # noqa: E712
+    ).first()
+    if row is None:
+        raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
+    if _expires_at(row.expires_at) is None or _expires_at(row.expires_at) < _utcnow():  # type: ignore[operator]
+        raise HTTPException(400, "OAuth state expired — restart the connect flow")
+    row.used = True
+    db.commit()
+    return row
 
 
 def _provider_or_400(provider: str) -> str:
@@ -203,16 +201,14 @@ class SyncNowIn(BaseModel):
     provider: str | None = None
     max_results: int = Field(default=10, ge=1, le=50)
     client_id: str | None = None
-    client_secret: str | None = None
 
 
 class AuthorizeIn(BaseModel):
-    # P0: secrets travel in POST body over TLS, never as query params
-    # (query strings leak to proxy/access logs). redirect_uri required;
-    # allowlisting enforced server-side via _redirect_or_400.
+    # P0: client_id/redirect_uri travel in POST body over TLS, never as
+    # query params (query strings leak to proxy/access logs). client_secret
+    # is NEVER accepted from the client — it resolves server-side only.
     redirect_uri: str = Field(min_length=1, max_length=1024)
     client_id: str | None = Field(default=None, max_length=320)
-    client_secret: str | None = Field(default=None, max_length=320)
 
 
 @router.post("/{provider}/authorize")
