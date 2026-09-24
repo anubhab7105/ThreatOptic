@@ -159,7 +159,7 @@ def registrable_domain(host: str) -> str:
     collapsed both to co.uk). Single-label/IP-literal input echoes back.
     """
     parts = _labels(host)
-    if len(parts) < 2:
+    if len(parts) < 2 or _is_ip_literal(host):
         return (host or "").lower().strip().strip(".")
     suffix = public_suffix(host)
     if not suffix:
