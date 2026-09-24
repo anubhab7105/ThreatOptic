@@ -454,16 +454,6 @@ def graph_related(value: str = Query(..., min_length=1, max_length=320),
         graph, _tenant_email_addresses(db, user.organization_id))
 
 
-@app.get("/graph/campaigns")
-def _deprecated_graph_campaigns() -> None:  # pragma: no cover - placeholder
-    raise NotImplementedError
-
-
-@app.get("/unused")
-def _unused() -> None:  # pragma: no cover - placeholder
-    raise NotImplementedError
-
-
 @router.get("/graph/campaigns")
 def graph_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return find_campaigns()
