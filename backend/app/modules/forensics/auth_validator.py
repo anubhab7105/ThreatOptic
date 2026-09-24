@@ -149,59 +149,84 @@ def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
     return results
 
 
-def validate_spf(sender_ip: str, envelope_from: str, helo: str = "", upstream: dict[str, Any] | None = None) -> dict[str, Any]:
+def _with_upstream(result: dict[str, Any], upstream_claim: dict[str, Any] | None) -> dict[str, Any]:
+    """Attach the (un)trusted upstream claim for analyst provenance without
+    letting it change the local verdict."""
+    if upstream_claim:
+        result = dict(result)
+        result["upstream"] = dict(upstream_claim)
+    return result
+
+
+def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
+                 upstream: dict[str, Any] | None = None, trust_upstream: bool = False) -> dict[str, Any]:
     upstream_spf = (upstream or {}).get("spf")
-    
+
     if not (sender_ip or "").strip():
-        if upstream_spf:
-            return upstream_spf
+        if trust_upstream and upstream_spf:
+            return {"status": upstream_spf.get("status", UNVERIFIABLE),
+                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_spf)}
         return {"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}
 
     if not _live():
-        if upstream_spf:
-            return upstream_spf
+        if trust_upstream and upstream_spf:
+            return {"status": upstream_spf.get("status", UNVERIFIABLE),
+                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_spf)}
         return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}
 
     if not envelope_from:
-        if upstream_spf:
-            return upstream_spf
-        return {"status": "none", "detail": "no envelope sender; SPF not checked"}
+        # No envelope identity => SPF has nothing to check. "none", never
+        # the display From domain and never an upstream override.
+        return _with_upstream({"status": "none", "detail": "no envelope sender; SPF not checked"}, upstream_spf)
 
     try:
-        _ensure_dns_resolver()
         import spf
         result, comment = spf.check2(i=sender_ip, s=envelope_from, h=helo or None)
-        # If live check returned none or temperror, fallback to upstream if available
-        if result in ("none", "temperror") and upstream_spf and upstream_spf.get("status") == "pass":
-            return upstream_spf
-        return {"status": result, "detail": str(comment)}
+        if result == "fail":
+            # Hard failure stands even against a trusted upstream pass.
+            return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
+        if result in ("none", "temperror") and trust_upstream and upstream_spf:
+            return {"status": upstream_spf.get("status", result),
+                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_spf)}
+        return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
     except Exception as e:
-        if upstream_spf:
-            return upstream_spf
+        if trust_upstream and upstream_spf:
+            return {"status": upstream_spf.get("status", "temperror"),
+                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_spf)}
         return {"status": "temperror", "detail": f"spf-unavailable: {e}"}
 
 
-def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None, upstream: dict[str, Any] | None = None) -> dict[str, Any]:
+def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
+                  upstream: dict[str, Any] | None = None, trust_upstream: bool = False) -> dict[str, Any]:
     upstream_dkim = (upstream or {}).get("dkim")
     headers = raw_headers or {}
     dkim_sig = _get_header(headers, "DKIM-Signature")
     has_sig = bool(dkim_sig.strip())
 
-    if not has_sig and not upstream_dkim:
+    if not has_sig:
+        if trust_upstream and upstream_dkim:
+            return {"status": upstream_dkim.get("status", "none"),
+                    "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_dkim)}
         return {"status": "none", "detail": "no-dkim-signature-header"}
 
     try:
         import dkim
         res = dkim.verify(raw_bytes)
         if res:
-            return {"status": "pass", "detail": "dkimpy-verify"}
-        # If local verification failed (e.g. mail forwarder altered line breaks) but upstream verified it:
-        if upstream_dkim and upstream_dkim.get("status") == "pass":
-            return upstream_dkim
-        return {"status": "fail", "detail": "dkimpy-verify-failed"}
+            return _with_upstream({"status": "pass", "detail": "dkimpy-verify"}, upstream_dkim)
+        # Local cryptographic failure stands — a trusted upstream pass is
+        # attached for provenance but never overrides the fail.
+        return _with_upstream({"status": "fail", "detail": "dkimpy-verify-failed"}, upstream_dkim)
     except Exception as e:
-        if upstream_dkim:
-            return upstream_dkim
+        if trust_upstream and upstream_dkim:
+            return {"status": upstream_dkim.get("status", UNVERIFIABLE),
+                    "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_dkim)}
         return {"status": UNVERIFIABLE, "detail": f"dkim-unavailable: {e}"}
 
 
