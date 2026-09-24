@@ -37,6 +37,11 @@ def domain_of(url: str) -> str:
 VT_MAX_URLS = 5
 VT_MAX_POLLS = 3
 VT_POLL_SECONDS = 2.0
+# Async VT path (P0 reliability): shared per-mail deadline so VirusTotal can
+# never stall the request path; polling uses asyncio.sleep (cancellable),
+# never time.sleep in a thread. Sync helpers below stay for compat/tests.
+VT_MAIL_DEADLINE_S = 8.0
+VT_POLL_INTERVAL_S = 1.0
 
 
 def submit_url_virustotal(url: str, api_key: str) -> dict[str, Any]:
@@ -91,6 +96,59 @@ def check_virustotal(url: str, api_key: str = "") -> dict[str, Any]:
         return {"source": "virustotal",
                 "malicious": int(stats.get("malicious", 0)),
                 "suspicious": int(stats.get("suspicious", 0))}
+    except Exception as e:
+        return {"source": "virustotal", "error": str(e)[:300]}
+
+
+async def check_virustotal_async(url: str, api_key: str = "", *, deadline: float) -> dict[str, Any]:
+    """Async VirusTotal v3 flow bounded by an absolute monotonic deadline.
+
+    P0: submit + poll without blocking a thread (asyncio.sleep only, so
+    cancellation actually stops the wait). Past the deadline — or on any
+    transport error — returns pending/error instead of hanging the mail.
+    `deadline` is a time.monotonic() timestamp shared across all URLs of
+    one mail, so N URLs share one budget instead of N x timeout.
+    """
+    import asyncio
+    import time
+    import httpx
+    if not api_key:
+        return {"source": "virustotal", "skipped": True}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.post(
+                "https://www.virustotal.com/api/v3/urls",
+                headers={"x-apikey": api_key}, data={"url": url},
+            )
+            if r.status_code not in (200, 201):
+                return {"source": "virustotal", "status": r.status_code}
+            try:
+                analysis_id = (r.json().get("data", {}) or {}).get("id", "")
+            except Exception:
+                analysis_id = ""
+            if not analysis_id:
+                return {"source": "virustotal", "pending": True}
+            while True:
+                if time.monotonic() >= deadline:
+                    return {"source": "virustotal", "pending": True}
+                g = await client.get(
+                    f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+                    headers={"x-apikey": api_key},
+                )
+                if g.status_code != 200:
+                    return {"source": "virustotal", "status": g.status_code}
+                try:
+                    attrs = (g.json().get("data", {}) or {}).get("attributes", {}) or {}
+                except Exception:
+                    attrs = {}
+                if attrs.get("status") == "completed":
+                    stats = attrs.get("stats", {}) or attrs.get("last_analysis_stats", {}) or {}
+                    if not stats:
+                        return {"source": "virustotal", "pending": True}
+                    return {"source": "virustotal",
+                            "malicious": int(stats.get("malicious", 0)),
+                            "suspicious": int(stats.get("suspicious", 0))}
+                await asyncio.sleep(max(0.0, min(VT_POLL_INTERVAL_S, deadline - time.monotonic())))
     except Exception as e:
         return {"source": "virustotal", "error": str(e)[:300]}
 
@@ -199,3 +257,55 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
                 hits.append(entry)
     return {"urls": urls[:50], "hits": hits, "ml_phishing_count": ml_phishing_count, "malicious_count": sum(
         1 for h in hits if h.get("blocklisted") or h.get("urlhaus_hit") or h.get("virustotal_hit") or h.get("ml_phishing"))}
+
+
+def _is_malicious_hit(h: dict[str, Any]) -> bool:
+    return bool(h.get("blocklisted") or h.get("urlhaus_hit") or h.get("virustotal_hit") or h.get("ml_phishing"))
+
+
+async def analyze_urls_async(urls: list[str], vt_key: str = "",
+                             local_timeout_s: float = 5.0,
+                             vt_deadline_s: float = VT_MAIL_DEADLINE_S) -> dict[str, Any]:
+    """Request-path URL analysis (P0 reliability).
+
+    Local signals (blocklist/lookalike/ML/urlhaus) run in a worker thread
+    bounded by local_timeout_s; VirusTotal submit+poll runs concurrently
+    on the event loop under ONE shared per-mail deadline. No time.sleep,
+    no unbounded per-URL blocking: worst case the mail carries pending
+    (not malicious) VT verdicts instead of stalling ingestion.
+    """
+    import asyncio
+    import time
+    loop = asyncio.get_running_loop()
+    try:
+        base = await asyncio.wait_for(
+            loop.run_in_executor(None, analyze_urls, urls, ""), timeout=local_timeout_s)
+        if not isinstance(base, dict):
+            raise ValueError("bad base result")
+    except Exception:
+        base = {"urls": urls[:50], "hits": [], "ml_phishing_count": 0}
+    hits: list[dict[str, Any]] = list(base.get("hits", []))
+    if not vt_key:
+        return {"urls": urls[:50], "hits": hits,
+                "ml_phishing_count": int(base.get("ml_phishing_count", 0)),
+                "malicious_count": sum(1 for h in hits if _is_malicious_hit(h))}
+    deadline = time.monotonic() + max(0.5, vt_deadline_s)
+    seen = {str(h.get("url", "")) for h in hits}
+    candidates = [u for u in urls[:50] if u[:500] not in seen][:VT_MAX_URLS]
+
+    async def _one(u: str) -> dict[str, Any] | None:
+        try:
+            vt = await check_virustotal_async(u, vt_key, deadline=deadline)
+        except Exception:
+            return None
+        if vt.get("malicious"):
+            return {"url": u[:500], "domain": domain_of(u), "defanged": defang(u),
+                    "virustotal_hit": vt}
+        return None
+
+    for entry in await asyncio.gather(*(_one(u) for u in candidates)):
+        if entry:
+            hits.append(entry)
+    return {"urls": urls[:50], "hits": hits,
+            "ml_phishing_count": int(base.get("ml_phishing_count", 0)),
+            "malicious_count": sum(1 for h in hits if _is_malicious_hit(h))}

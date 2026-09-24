@@ -230,3 +230,82 @@ def test_alert_dedup_rate_limit_honesty(monkeypatch):
     # malicious ids are sanitized, never interpolated raw
     r3 = d.dispatch_alert("x\"; rm -rf", 10.0, "Clean", {})
     assert r3["severity"] == "Low"
+
+
+def test_virustotal_async_bounded_deadline(monkeypatch):
+    """P0: async VT completes fast on success and honors the deadline."""
+    import asyncio
+    import time
+    import app.modules.threat_intel.url_analyzer as ua
+
+    class Resp:
+        def __init__(self, status, payload):
+            self.status_code = status
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    states = [{"data": {"attributes": {"status": "queued"}}},
+              {"data": {"attributes": {"status": "completed", "stats": {"malicious": 7, "suspicious": 1}}}}]
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **k):
+            return Resp(200, {"data": {"id": "u-123"}})
+
+        async def get(self, *a, **k):
+            return Resp(200, states.pop(0))
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    t0 = time.monotonic()
+    out = asyncio.run(ua.check_virustotal_async(
+        "http://evil.test/x", "k", deadline=time.monotonic() + 10))
+    elapsed = time.monotonic() - t0
+    assert out == {"source": "virustotal", "malicious": 7, "suspicious": 1}
+    # one 1s poll interval, NOT 2x VT_POLL_SECONDS blocking sleeps
+    assert elapsed < 5.0
+
+    # never-completing analysis -> pending at the deadline, fast
+    class HangingClient(FakeClient):
+        async def get(self, *a, **k):
+            return Resp(200, {"data": {"attributes": {"status": "queued"}}})
+
+    monkeypatch.setattr(httpx, "AsyncClient", HangingClient)
+    t0 = time.monotonic()
+    out = asyncio.run(ua.check_virustotal_async(
+        "http://evil.test/x", "k", deadline=time.monotonic() + 0.3))
+    assert out == {"source": "virustotal", "pending": True}
+    assert time.monotonic() - t0 < 5.0
+
+
+def test_analyze_urls_async_merges_vt_hits(monkeypatch):
+    """P0: async entrypoint merges VT hits, skips already-hit URLs."""
+    import asyncio
+    import app.modules.threat_intel.url_analyzer as ua
+
+    async def _fake_vt(url, key="", *, deadline=0):
+        assert key == "k"
+        if "evil" in url:
+            return {"source": "virustotal", "malicious": 2, "suspicious": 0}
+        return {"source": "virustotal", "malicious": 0, "suspicious": 0}
+
+    monkeypatch.setattr(ua, "check_virustotal_async", _fake_vt)
+    urls = ["http://evil.test/login", "https://example.com/about"]
+    out = asyncio.run(ua.analyze_urls_async(urls, vt_key="k"))
+    vt_hits = [h for h in out["hits"] if h.get("virustotal_hit")]
+    assert len(vt_hits) == 1 and vt_hits[0]["domain"] == "evil.test"
+    assert out["malicious_count"] == 1
+    # no key -> sync-equivalent local result, no VT attempted
+    out2 = asyncio.run(ua.analyze_urls_async(urls))
+    assert out2["malicious_count"] == 0
+    assert all("virustotal_hit" not in h for h in out2["hits"])

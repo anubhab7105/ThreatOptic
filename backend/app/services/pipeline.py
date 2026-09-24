@@ -20,7 +20,7 @@ from ..modules.traceability.geoip import geolocate
 from ..modules.traceability.whois_dns import whois_lookup, dns_lookup, domain_age_days
 from ..modules.traceability.vpn_tor import flag_infrastructure
 from ..modules.nlp.engine import analyze_text
-from ..modules.threat_intel.url_analyzer import extract_urls, analyze_urls, domain_of
+from ..modules.threat_intel.url_analyzer import extract_urls, analyze_urls_async, domain_of
 from ..modules.threat_intel.attachment_analyzer import analyze_attachments
 from ..modules.threat_intel.feeds import aggregate_threat_intel
 from ..modules.correlation.scoring import compute_scores
@@ -194,7 +194,9 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     nlp_res, url_res, attach_res = await asyncio.gather(
         _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", ""), timeout=5.0),
-        _to_thread(analyze_urls, urls, vt_key, timeout=3.0),
+        # P0: VT submit+poll is async with a shared per-mail deadline — never
+        # blocking sleeps in the request path.
+        analyze_urls_async(urls, vt_key),
         _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key, timeout=3.0),
         return_exceptions=True,
     )
