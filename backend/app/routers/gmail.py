@@ -130,19 +130,17 @@ def _status_payload(user: models.User, db: Session) -> dict:
     }
 
 
-@router.get("/auth-url", response_model=schemas.GmailAuthUrlOut)
+@router.post("/auth-url", response_model=schemas.GmailAuthUrlOut)
 def auth_url(
-    client_id: str | None = Query(None),
-    client_secret: str | None = Query(None),
-    redirect_uri: str | None = Query(None),
+    payload: schemas.GmailAuthUrlIn,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     from .oauth import _make_state
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
-    cid = _resolve_client_id(client_id, acct, db=db)
-    sec = client_secret or (_resolve_client_secret(None, acct, db=db) if (acct and acct.encrypted_client_secret) else "")
-    uri = _redirect_uri(redirect_uri)
+    cid = _resolve_client_id(payload.client_id, acct, db=db)
+    sec = payload.client_secret or (_resolve_client_secret(None, acct, db=db) if (acct and acct.encrypted_client_secret) else "")
+    uri = _redirect_uri(payload.redirect_uri)
     verifier = connectors._new_verifier()
     challenge = connectors._pkce_challenge(verifier)
     state = _make_state(user.id, client_id=cid, client_secret=sec, redirect_uri=uri, flow="gmail", pkce_verifier=verifier, provider="google")

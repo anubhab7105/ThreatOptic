@@ -176,6 +176,15 @@ class GmailAuthUrlOut(BaseModel):
     auth_url: str
 
 
+class GmailAuthUrlIn(BaseModel):
+    # P0: secrets travel in POST body over TLS, never as query params
+    # (query strings leak to proxy/access logs). redirect_uri required;
+    # allowlisting enforced server-side in a follow-up fix.
+    redirect_uri: str = Field(min_length=1, max_length=1024)
+    client_id: str | None = Field(default=None, max_length=320)
+    client_secret: str | None = Field(default=None, max_length=320)
+
+
 class GmailCallbackIn(BaseModel):
     code: str = Field(min_length=1)
     redirect_uri: str | None = None
