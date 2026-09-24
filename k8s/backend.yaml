@@ -20,11 +20,12 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: backend
-          # RELEASE: pin by digest, e.g.
-          #   email-forensics-backend@sha256:<digest from `docker buildx ... --push`>
-          # :latest is a dev convenience only and defeats image immutability.
-          image: email-forensics-backend:latest
-          imagePullPolicy: Always
+          # RELEASE: images are immutable release tags (never :latest).
+          # The release pipeline retags the tested image and,
+          # where the registry supports it, pins the digest, e.g.
+          #   email-forensics-backend:1.0.0@sha256:<digest from the push>
+          image: email-forensics-backend:1.0.0
+          imagePullPolicy: IfNotPresent
           ports: [{ containerPort: 8000 }]
           env:
             - name: DATABASE_URL
@@ -42,7 +43,9 @@ spec:
             - name: TOKEN_ENCRYPTION_KEY
               valueFrom: { secretKeyRef: { name: soc-secrets, key: token-encryption-key } }
             - name: ELASTICSEARCH_URL
-              value: "http://elasticsearch:9200"
+              # P0: credentials (basic_auth) cross this connection — plaintext
+              # http is refused at boot in production (see require_secrets).
+              value: "https://elasticsearch:9200"
             - name: ELASTICSEARCH_USER
               value: "elastic"
             - name: ELASTICSEARCH_PASSWORD

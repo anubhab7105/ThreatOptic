@@ -196,6 +196,11 @@ def require_secrets() -> None:
                 "JWT secret_key is unset/default/short — development only. "
                 "Set a 32+ char SECRET_KEY before any non-local deployment."
             )
+        if (settings.elasticsearch_url or "").strip().lower().startswith("http://"):
+            logging.getLogger("config").warning(
+                "ELASTICSEARCH_URL uses plaintext http — development only. "
+                "Use https:// before any non-local deployment."
+            )
         return
     if not secret or secret.strip().lower() in FORGEABLE_SECRET_MARKERS:
         raise RuntimeError(
@@ -205,6 +210,15 @@ def require_secrets() -> None:
     if len(secret) < MIN_SECRET_BYTES:
         raise RuntimeError(
             f"Refusing to boot: SECRET_KEY is only {len(secret)} chars; minimum is {MIN_SECRET_BYTES}."
+        )
+    es_url = (settings.elasticsearch_url or "").strip()
+    if es_url.lower().startswith("http://"):
+        # Basic-auth credentials cross this connection — plaintext in a real
+        # deployment leaks them. (Development returned above with its own
+        # warning posture; this gate is production-only by construction.)
+        raise RuntimeError(
+            "Refusing to boot: ELASTICSEARCH_URL uses plaintext http in "
+            "production (basic_auth would leak). Use https://."
         )
 
 

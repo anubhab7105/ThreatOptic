@@ -48,6 +48,14 @@ def test_require_secrets_boot_gate(monkeypatch):
     # provisioned secret boots
     _fresh_settings(monkeypatch, APP_ENV="production", SECRET_KEY="x" * 40)
     require_secrets()
+    # plaintext Elasticsearch URL refused in production (basic_auth leak)
+    _fresh_settings(monkeypatch, APP_ENV="production", SECRET_KEY="x" * 40,
+                    ELASTICSEARCH_URL="http://es:9200")
+    with pytest.raises(RuntimeError, match="ELASTICSEARCH_URL"):
+        require_secrets()
+    _fresh_settings(monkeypatch, APP_ENV="production", SECRET_KEY="x" * 40,
+                    ELASTICSEARCH_URL="https://es:9200")
+    require_secrets()
     # development warns but boots
     _fresh_settings(monkeypatch, APP_ENV="development", SECRET_KEY="")
     require_secrets()
