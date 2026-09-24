@@ -17,8 +17,10 @@ log = logging.getLogger("gmail")
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
 
-def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = None, db: Session | None = None) -> str:
-    """Return client_id from: explicit param > acct in DB > other GmailAccount / MailboxConnection > env fallback."""
+def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = None,
+                       db: Session | None = None, user: models.User | None = None) -> str:
+    """Return client_id from: explicit param > own acct > TENANT-SCOPED
+    MailboxConnection > env fallback (P0: never another tenant's credentials)."""
     if explicit and explicit.strip():
         return explicit.strip()
     if acct and acct.encrypted_client_id:
@@ -29,20 +31,12 @@ def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = 
         except Exception:
             pass
     if db:
-        other_acct = db.query(models.GmailAccount).filter(
-            models.GmailAccount.encrypted_client_id != ""
-        ).order_by(models.GmailAccount.updated_at.desc()).first()
-        if other_acct and other_acct.encrypted_client_id:
-            try:
-                val = vault.decrypt_secret(other_acct.encrypted_client_id)
-                if val.strip():
-                    return val.strip()
-            except Exception:
-                pass
-        conn = db.query(models.MailboxConnection).filter(
+        from .oauth import _tenant_scope_conn
+        conn_q = _tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == "google",
             models.MailboxConnection.encrypted_client_id != ""
-        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        ), user)
+        conn = conn_q.order_by(models.MailboxConnection.updated_at.desc()).first()
         if conn and conn.encrypted_client_id:
             try:
                 val = vault.decrypt_secret(conn.encrypted_client_id)
@@ -56,8 +50,10 @@ def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = 
     return cid
 
 
-def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | None = None, db: Session | None = None) -> str:
-    """Return client_secret from: explicit param > acct in DB > other GmailAccount / MailboxConnection > env fallback."""
+def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | None = None,
+                           db: Session | None = None, user: models.User | None = None) -> str:
+    """Return client_secret from: explicit param > own acct > TENANT-SCOPED
+    MailboxConnection > env fallback (P0: never another tenant's credentials)."""
     if explicit and explicit.strip():
         return explicit.strip()
     if acct and acct.encrypted_client_secret:
@@ -68,20 +64,12 @@ def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | Non
         except Exception:
             pass
     if db:
-        other_acct = db.query(models.GmailAccount).filter(
-            models.GmailAccount.encrypted_client_secret != ""
-        ).order_by(models.GmailAccount.updated_at.desc()).first()
-        if other_acct and other_acct.encrypted_client_secret:
-            try:
-                val = vault.decrypt_secret(other_acct.encrypted_client_secret)
-                if val.strip():
-                    return val.strip()
-            except Exception:
-                pass
-        conn = db.query(models.MailboxConnection).filter(
+        from .oauth import _tenant_scope_conn
+        conn_q = _tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == "google",
             models.MailboxConnection.encrypted_client_secret != ""
-        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        ), user)
+        conn = conn_q.order_by(models.MailboxConnection.updated_at.desc()).first()
         if conn and conn.encrypted_client_secret:
             try:
                 val = vault.decrypt_secret(conn.encrypted_client_secret)

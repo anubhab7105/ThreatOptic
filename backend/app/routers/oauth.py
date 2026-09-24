@@ -253,7 +253,7 @@ def authorize(
     """Create an opaque server-side state + PKCE pair, return the consent URL."""
     p = _provider_or_400(provider)
     uri = _redirect_or_400(payload.redirect_uri)
-    cid = _resolve_client_id(p, payload.client_id, db=db)
+    cid = _resolve_client_id(p, payload.client_id, db=db, user=user)
     state, verifier = create_oauth_state(
         db, user_id=user.id, provider=p, redirect_uri=uri, client_id=cid,
     )
@@ -307,8 +307,8 @@ async def callback(
 
     # client_id resolves from the stored row, then server-side fallbacks.
     # client_secret resolves server-side only — never from the request.
-    cid = (row.client_id or "").strip() or _resolve_client_id(p, None, db=db)
-    sec = _resolve_client_secret(p, None, db=db)
+    cid = (row.client_id or "").strip() or _resolve_client_id(p, None, db=db, user=owner)
+    sec = _resolve_client_secret(p, None, db=db, user=owner)
 
     try:
         if p == "google":
