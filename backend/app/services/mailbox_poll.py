@@ -4,11 +4,20 @@ Owns all mailbox-sync DB work so routers and the scheduler stay thin:
 each mailbox gets an isolated session with commit/rollback, rotated
 provider refresh tokens are persisted back, and failures in one mailbox
 never abort the others.
+
+P0 fan-out bounds: mailbox IDs stream in pages (never .all()), at most
+MAX_MAILBOX_FANOUT connections poll concurrently, and per-mailbox
+max_results is clamped server-side — one sync-now cannot fan out
+unbounded work.
 """
 import logging
 from datetime import datetime, timezone
 
 log = logging.getLogger("mailbox_poll")
+
+MAX_MAILBOX_FANOUT = 8
+MAILBOX_ID_PAGE = 200
+POLL_MAX_RESULTS = 100
 
 
 def _utcnow():
@@ -25,6 +34,7 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
     from ..modules.ingestion import connectors
     from .pipeline import process_raw_email
 
+    max_results = max(1, min(int(max_results), POLL_MAX_RESULTS))
     settings = get_settings()
     db = SessionLocal()
     try:
@@ -123,13 +133,24 @@ async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None,
 
     organization_id="__all__" polls everything (scheduler); otherwise only
     that org's connections — or, for org-less users, only their own rows.
+
+    P0: connection IDs stream in pages (never .all() unbounded) and at most
+    MAX_MAILBOX_FANOUT mailboxes poll concurrently.
     """
     import asyncio
     from ..database import SessionLocal
     from .. import models
 
-    db = SessionLocal()
-    try:
+    max_results = max(1, min(int(max_results), POLL_MAX_RESULTS))
+    sem = asyncio.Semaphore(MAX_MAILBOX_FANOUT)
+
+    async def _bounded(conn_id: str) -> dict:
+        async with sem:
+            return await poll_connection_by_id(conn_id, max_results)
+
+    total = {"polled": 0, "synced": 0, "email_ids": [], "errors": []}
+
+    def _base_query(db):
         query = db.query(models.MailboxConnection.id)
         if provider:
             query = query.filter(models.MailboxConnection.provider == provider)
@@ -139,14 +160,24 @@ async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None,
                                      models.MailboxConnection.user_id == user_id)
             else:
                 query = query.filter(models.MailboxConnection.organization_id == organization_id)
-        ids = [row[0] for row in query.all()]
-    finally:
-        db.close()
-    results = await asyncio.gather(*(poll_connection_by_id(i, max_results) for i in ids))
-    total = {"polled": len(ids), "synced": 0, "email_ids": [], "errors": []}
-    for r in results:
-        total["synced"] += r["synced"]
-        total["email_ids"] += r["email_ids"]
-        total["errors"] += r["errors"]
+        return query.order_by(models.MailboxConnection.id)
+
+    offset = 0
+    while True:
+        db = SessionLocal()
+        try:
+            page = [row[0] for row in _base_query(db).limit(MAILBOX_ID_PAGE).offset(offset).all()]
+        finally:
+            db.close()
+        if not page:
+            break
+        offset += len(page)
+        for r in await asyncio.gather(*(_bounded(i) for i in page)):
+            total["polled"] += 1
+            total["synced"] += r["synced"]
+            total["email_ids"] += r["email_ids"]
+            total["errors"] += r["errors"]
+        if len(page) < MAILBOX_ID_PAGE:
+            break
     log.info("mailbox poll: synced=%s errors=%s", total["synced"], len(total["errors"]))
     return total

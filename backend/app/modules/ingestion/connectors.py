@@ -1,6 +1,13 @@
 import asyncio
 import httpx
 
+# P0 server-side fetch caps: client max_results is untrusted input — one
+# sync-now with max_results=1000000 must not page either API unbounded.
+# Single fetch pages at most MAX_PAGES, total items at most SERVER_MAX.
+SERVER_MAX_RESULTS = 100
+MAX_LIST_PAGES = 10
+FETCH_CONCURRENCY = 10
+
 GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -131,13 +138,19 @@ async def get_microsoft_profile_email(access_token: str) -> str:
 
 
 async def fetch_o365_messages(access_token: str, folder: str = "inbox", top: int = 25) -> list[dict]:
-    """Fetch messages via Microsoft Graph. Returns list of {id, raw_mime} dicts. Supports any requested count."""
-    target_count = max(1, int(top))
+    """Fetch messages via Microsoft Graph. Returns list of {id, raw_mime} dicts.
+
+    P0: top is clamped to SERVER_MAX_RESULTS and list pagination to
+    MAX_LIST_PAGES — unbounded client counts cannot page Graph forever.
+    """
+    target_count = max(1, min(int(top), SERVER_MAX_RESULTS))
     url: str | None = f"https://graph.microsoft.com/v1.0/me/mailFolders/{folder}/messages?$top={min(1000, target_count)}"
     headers = {"Authorization": f"Bearer {access_token}"}
     items: list[dict] = []
+    pages = 0
     async with httpx.AsyncClient(timeout=30) as client:
-        while url and len(items) < target_count:
+        while url and len(items) < target_count and pages < MAX_LIST_PAGES:
+            pages += 1
             r = await client.get(url, headers=headers)
             r.raise_for_status()
             data = r.json()
@@ -145,7 +158,7 @@ async def fetch_o365_messages(access_token: str, folder: str = "inbox", top: int
             url = data.get("@odata.nextLink") if len(items) < target_count else None
 
         items = items[:target_count]
-        sem = asyncio.Semaphore(10)
+        sem = asyncio.Semaphore(FETCH_CONCURRENCY)
 
         async def fetch_one_o365(m: dict):
             mid = m.get("id")
@@ -165,15 +178,21 @@ async def fetch_o365_messages(access_token: str, folder: str = "inbox", top: int
 
 
 async def fetch_gmail_messages(access_token: str, query: str = "newer_than:1d", max_results: int = 25) -> list[dict]:
-    """Fetch via Gmail API. Returns list of {id, raw} (base64 mime decoded). Supports any requested count."""
+    """Fetch via Gmail API. Returns list of {id, raw} (base64 mime decoded).
+
+    P0: max_results is clamped to SERVER_MAX_RESULTS and list pagination
+    to MAX_LIST_PAGES — unbounded client counts cannot page Gmail forever.
+    """
     import base64
     headers = {"Authorization": f"Bearer {access_token}"}
-    target_count = max(1, int(max_results))
+    target_count = max(1, min(int(max_results), SERVER_MAX_RESULTS))
     ids: list[str] = []
     page_token = None
+    pages = 0
 
     async with httpx.AsyncClient(timeout=30) as client:
-        while len(ids) < target_count:
+        while len(ids) < target_count and pages < MAX_LIST_PAGES:
+            pages += 1
             # Gmail API allows up to 500 per single list call
             batch_size = min(500, target_count - len(ids))
             params = {"q": query, "maxResults": batch_size}
@@ -194,7 +213,7 @@ async def fetch_gmail_messages(access_token: str, query: str = "newer_than:1d", 
                 break
 
         ids = ids[:target_count]
-        sem = asyncio.Semaphore(10)
+        sem = asyncio.Semaphore(FETCH_CONCURRENCY)
 
         async def fetch_one(mid: str):
             async with sem:

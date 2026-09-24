@@ -194,7 +194,7 @@ class GmailCallbackIn(BaseModel):
 
 
 class GmailSyncIn(BaseModel):
-    max_results: int = Field(default=10, ge=1)
+    max_results: int = Field(default=10, ge=1, le=100)
     query: str = Field(default="is:unread", max_length=200)
     client_id: str | None = None
 
