@@ -444,7 +444,24 @@ def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query
 def graph_related(value: str = Query(..., min_length=1, max_length=320),
                  email_id: str | None = Query(None),
                  db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    return related_entities(value, db=db, email_id=email_id)
+    from ..services.campaigns import _filter_graph_emails, _tenant_email_addresses
+    graph = related_entities(value, db=db, email_id=email_id)
+    if user.role == "Admin":
+        return graph
+    # P0: traversal runs on the shared global graph — strip foreign email
+    # nodes (addresses are tenant PII); infra nodes stay as shared intel.
+    return _filter_graph_emails(
+        graph, _tenant_email_addresses(db, user.organization_id))
+
+
+@app.get("/graph/campaigns")
+def _deprecated_graph_campaigns() -> None:  # pragma: no cover - placeholder
+    raise NotImplementedError
+
+
+@app.get("/unused")
+def _unused() -> None:  # pragma: no cover - placeholder
+    raise NotImplementedError
 
 
 @router.get("/graph/campaigns")

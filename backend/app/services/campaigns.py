@@ -169,4 +169,10 @@ def campaign_detail(db: Session, cid: str, organization_id: str | None = None, *
             "classification": a.threat_classification if a else "—",
         })
     rows.sort(key=lambda r: r["timestamp"] or "", reverse=True)
-    return {"card": card, "graph": related_entities(card["ip"]), "emails": rows}
+    graph = related_entities(card["ip"])
+    if not is_admin:
+        # P0: the embedded neighbourhood traverses the shared global graph —
+        # strip foreign email nodes before returning.
+        graph = _filter_graph_emails(
+            graph, _tenant_email_addresses(db, organization_id))
+    return {"card": card, "graph": graph, "emails": rows}
