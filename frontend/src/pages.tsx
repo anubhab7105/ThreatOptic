@@ -1705,10 +1705,12 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      let url = `/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
-      if (clientId.trim()) url += `&client_id=${encodeURIComponent(clientId.trim())}`;
-      if (clientSecret.trim()) url += `&client_secret=${encodeURIComponent(clientSecret.trim())}`;
-      const r = await jget(url);
+      // P0: secrets in POST body over TLS, never query params (log leak).
+      const r = await jpost(`/oauth/${provider}/authorize`, {
+        redirect_uri: redirectUri,
+        ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
+        ...(clientSecret.trim() ? { client_secret: clientSecret.trim() } : {}),
+      });
       window.location.href = r.auth_url;
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
