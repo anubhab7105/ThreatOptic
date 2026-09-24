@@ -434,8 +434,9 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
             db.add(org_a)
             db.flush()
             v.organization_id = org_a.id
+            org_a_id = org_a.id
             db.add(models.MailboxConnection(
-                user_id=v.id, organization_id=org_a.id, provider="google",
+                user_id=v.id, organization_id=org_a_id, provider="google",
                 account_email="victim@gmail.com",
                 encrypted_refresh_token=encrypt_secret("1//victim"),
                 encrypted_client_id=encrypt_secret("victim-cid"),
@@ -467,7 +468,7 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
         db = SessionLocal()
         try:
             m = db.query(models.User).order_by(models.User.created_at.desc()).first()
-            m.organization_id = org_a.id
+            m.organization_id = org_a_id
             db.commit()
         finally:
             db.close()
