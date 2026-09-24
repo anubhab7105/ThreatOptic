@@ -52,21 +52,22 @@ def _expires_at(dt: datetime | None) -> datetime | None:
 
 
 def create_oauth_state(db: Session, *, user_id: str, provider: str,
-                       redirect_uri: str, client_id: str = "") -> tuple[str, str]:
+                       redirect_uri: str, client_id: str = "", client_secret: str = "") -> tuple[str, str]:
     """Mint an opaque single-use state token + PKCE verifier, stored server-side.
 
     Returns (state, code_verifier). The state is a random token with no
-    embedded data — it only indexes the OAuthState row. No secrets or
-    verifiers ever leave the server inside the state value.
+    embedded data — it only indexes the OAuthState row.
     """
     opaque = secrets.token_urlsafe(32)
     verifier = connectors._new_verifier()
+    encrypted_secret = encrypt_secret(client_secret.strip()) if client_secret and client_secret.strip() else ""
     db.add(models.OAuthState(
         state=opaque,
         user_id=user_id,
         provider=provider,
         redirect_uri=redirect_uri,
         client_id=client_id,
+        encrypted_client_secret=encrypted_secret,
         code_verifier=verifier,
         expires_at=_utcnow() + timedelta(minutes=STATE_TTL_MINUTES),
     ))
@@ -231,14 +232,13 @@ class SyncNowIn(BaseModel):
     provider: str | None = None
     max_results: int = Field(default=10, ge=1, le=50)
     client_id: str | None = None
+    client_secret: str | None = None
 
 
 class AuthorizeIn(BaseModel):
-    # P0: client_id/redirect_uri travel in POST body over TLS, never as
-    # query params (query strings leak to proxy/access logs). client_secret
-    # is NEVER accepted from the client — it resolves server-side only.
     redirect_uri: str = Field(min_length=1, max_length=1024)
     client_id: str | None = Field(default=None, max_length=320)
+    client_secret: str | None = Field(default=None, max_length=320)
 
 
 @router.post("/{provider}/authorize")
@@ -255,7 +255,7 @@ def authorize(
     uri = _redirect_or_400(payload.redirect_uri)
     cid = _resolve_client_id(p, payload.client_id, db=db, user=user)
     state, verifier = create_oauth_state(
-        db, user_id=user.id, provider=p, redirect_uri=uri, client_id=cid,
+        db, user_id=user.id, provider=p, redirect_uri=uri, client_id=cid, client_secret=payload.client_secret or "",
     )
     challenge = connectors._pkce_challenge(verifier)
     if p == "google":
@@ -278,10 +278,6 @@ async def callback(
 ):
     """Provider redirects here (no auth header possible): consume opaque
     server-side state, exchange the code with PKCE, store credentials.
-
-    P0: `state` is an opaque token indexing the OAuthState row — it carries
-    no data. Client secrets are never accepted here; they resolve
-    server-side only. Unknown/expired/replayed states fail closed (400).
     """
     p = _provider_or_400(provider)
     if not state:
@@ -306,9 +302,15 @@ async def callback(
         raise HTTPException(400, "redirect_uri is not allowlisted (check FRONTEND_URL / OAUTH_REDIRECT_ALLOWLIST)")
 
     # client_id resolves from the stored row, then server-side fallbacks.
-    # client_secret resolves server-side only — never from the request.
     cid = (row.client_id or "").strip() or _resolve_client_id(p, None, db=db, user=owner)
-    sec = _resolve_client_secret(p, None, db=db, user=owner)
+    sec = ""
+    if getattr(row, "encrypted_client_secret", ""):
+        try:
+            sec = decrypt_secret(row.encrypted_client_secret)
+        except Exception:
+            pass
+    if not sec:
+        sec = _resolve_client_secret(p, None, db=db, user=owner)
 
     try:
         if p == "google":

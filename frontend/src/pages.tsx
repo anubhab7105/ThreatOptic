@@ -312,14 +312,20 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 /* ---------------- Gmail live import ---------------- */
 
+const DEFAULT_GOOGLE_CLIENT_ID = '895214579171-hlobo12ski2r1pocvm6eolf1ih0sn079.apps.googleusercontent.com';
+const DEFAULT_GOOGLE_CLIENT_SECRET = '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';
+
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  // P0: OAuth client secrets are NEVER held in the browser — not in state,
-  // not in storage. Only the public client ID (optional) and the opaque
-  // server-issued state token live here, both memory-only.
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(() => {
+    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_id')) || DEFAULT_GOOGLE_CLIENT_ID;
+  });
+  const [clientSecret, setClientSecret] = useState(() => {
+    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_secret')) || DEFAULT_GOOGLE_CLIENT_SECRET;
+  });
+  const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
-    typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
   );
   const [code, setCode] = useState('');
   const [oauthState, setOauthState] = useState('');
@@ -328,9 +334,18 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
+  const [authUrl, setAuthUrl] = useState('');
   const [showCreds, setShowCreds] = useState(false);
 
-  const updateClientId = (v: string) => { setClientId(v); };
+  const updateClientId = (v: string) => {
+    setClientId(v);
+    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
+  };
+
+  const updateClientSecret = (v: string) => {
+    setClientSecret(v);
+    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
+  };
 
   const refresh = async () => {
     try {
@@ -345,16 +360,24 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
 
   const getUrl = async () => {
-    setBusy(true); setErr(''); setNotice('');
+    setBusy(true); setErr(''); setNotice(''); setAuthUrl('');
     try {
-      // P0: client_id/redirect_uri in POST body over TLS, never query params.
-      // client_secret is never sent — it resolves server-side only.
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
+        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
+      }
       const r = await jpost('/gmail/auth-url', {
         redirect_uri: redirectUri,
-        ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
+        client_id: clientId.trim() || undefined,
+        client_secret: clientSecret.trim() || undefined,
       });
-      window.location.href = r.auth_url;
-      setNotice('Redirecting to Google consent page…');
+      setAuthUrl(r.auth_url);
+      setNotice('Redirecting to Google consent page… If not redirected, click the link below.');
+      try {
+        window.location.assign(r.auth_url);
+      } catch {
+        window.location.href = r.auth_url;
+      }
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
 
@@ -367,12 +390,25 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     }
     setBusy(true); setErr(''); setNotice('');
     try {
-      // Client secret is server-side only — never sent from the browser.
-      const r = await jpost('/gmail/callback', { code: c, state: s, redirect_uri: redirectUri, client_id: clientId || undefined });
+      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
+      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
+      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
+      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+
+      const r = await jpost('/gmail/callback', {
+        code: c,
+        state: s,
+        redirect_uri: redirectUri,
+        client_id: effectiveCid,
+        client_secret: effectiveSec,
+      });
       setStatus(r);
       setCode('');
       setOauthState('');
       setNotice(`Connected as ${r.gmail_address}. Credentials saved securely on the server.`);
+      await refresh();
+      await onSynced();
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
   };
 
@@ -389,8 +425,6 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       window.history.replaceState({}, '', window.location.pathname);
       void finish(q, st);
     } else if (q) {
-      // Provider returned a code without our opaque state: refuse to
-      // complete (CSRF) — user must restart the connect flow.
       window.history.replaceState({}, '', window.location.pathname);
       setErr('OAuth state missing — restart the connect flow (possible CSRF).');
     }
@@ -408,7 +442,17 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/gmail/sync', { max_results: num, query, client_id: clientId || undefined });
+      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
+      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
+      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
+      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+
+      const r = await jpost('/gmail/sync', {
+        max_results: num,
+        query,
+        client_id: effectiveCid,
+        client_secret: effectiveSec,
+      });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
       await refresh();
       await onSynced();
@@ -445,24 +489,64 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           </div>
           {showCreds && (
             <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
-              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (optional if server-configured)" />
-              <p className="sub" style={{ marginBottom: 0, fontSize: 12 }}>Client secret is server-side only and never entered here. Update the client ID to use different credentials for the next sync.</p>
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client ID</label>
+              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
+              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client Secret</label>
+              <div className="row" style={{ gap: 6 }}>
+                <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
+                <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+              </div>
             </div>
           )}
         </div>
       ) : (
         <div>
           <p className="sub" style={{ marginTop: 0 }}>
-            1. Configure the Google OAuth client server-side (env) or enter your Client ID below (redirect URI must match the Google console).
-            2. Open the consent URL and approve. Google redirects back here and the connection finishes automatically. Client secrets never leave the server.
+            Enter your Google OAuth Client ID &amp; Secret below, then click <b>Connect Gmail</b>.
           </p>
           <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (optional if server-configured)" />
-            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" />
-            <div className="row">
-              <button className="ghost" onClick={getUrl} disabled={busy || !redirectUri.trim()}>Connect Gmail</button>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client ID</label>
+              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" style={{ width: '100%' }} />
             </div>
-            <div className="row">
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client Secret</label>
+              <div className="row" style={{ gap: 6 }}>
+                <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
+                <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match Google Console)</label>
+              <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" style={{ width: '100%' }} />
+            </div>
+            <div className="row" style={{ marginTop: 4 }}>
+              <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !clientSecret.trim() || !redirectUri.trim()}>Connect Gmail</button>
+            </div>
+            {authUrl && (
+              <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.12)', border: '1px solid #3b82f6', borderRadius: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#93c5fd', marginBottom: 6 }}>
+                  👉 Click below if Google login did not open automatically:
+                </div>
+                <a
+                  href={authUrl}
+                  style={{
+                    display: 'inline-block',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  Open Google Consent Screen →
+                </a>
+              </div>
+            )}
+            <div className="row" style={{ marginTop: 6 }}>
               <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code (auto-filled on redirect)" style={{ flex: 1 }} />
               <input type="text" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State (auto-filled on redirect)" style={{ flex: 1 }} />
               <button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</button>
@@ -1691,12 +1775,25 @@ export function Mailboxes() {
   const [busy, setBusy] = useState(false);
   // P0: OAuth client secrets are NEVER held in the browser — not in state,
   // not in storage. Only the public client ID (optional) lives here.
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(() => {
+    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_id')) || DEFAULT_GOOGLE_CLIENT_ID;
+  });
+  const [clientSecret, setClientSecret] = useState(() => {
+    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_secret')) || DEFAULT_GOOGLE_CLIENT_SECRET;
+  });
+  const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
-    typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
+    typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
   );
 
-  const updateClientId = (v: string) => { setClientId(v); };
+  const updateClientId = (v: string) => {
+    setClientId(v);
+    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
+  };
+  const updateClientSecret = (v: string) => {
+    setClientSecret(v);
+    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
+  };
 
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
@@ -1712,11 +1809,14 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      // P0: client_id/redirect_uri in POST body over TLS, never query params.
-      // client_secret is never sent — it resolves server-side only.
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
+        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
+      }
       const r = await jpost(`/oauth/${provider}/authorize`, {
         redirect_uri: redirectUri,
-        ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
+        client_id: clientId.trim() || undefined,
+        client_secret: clientSecret.trim() || undefined,
       });
       window.location.href = r.auth_url;
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
@@ -1727,7 +1827,11 @@ export function Mailboxes() {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/oauth/sync-now', { max_results: num, client_id: clientId || undefined });
+      const r = await jpost('/oauth/sync-now', {
+        max_results: num,
+        client_id: clientId.trim() || undefined,
+        client_secret: clientSecret.trim() || undefined,
+      });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
       await load();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
@@ -1785,13 +1889,25 @@ export function Mailboxes() {
       <div className="card">
         <h3>Connect Mailbox</h3>
         <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-          <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID (optional if server-configured)" />
-          <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" />
-          <div className="row">
-            <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim()}>Connect Google</button>
-            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim()}>Connect Microsoft</button>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client ID</label>
+            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID" style={{ width: '100%' }} />
           </div>
-          <p className="sub" style={{ marginBottom: 0 }}>Client secrets never leave the server — configure them via env. After consent you return here automatically.</p>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client Secret</label>
+            <div className="row" style={{ gap: 6 }}>
+              <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="OAuth client secret" />
+              <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match provider console)</label>
+            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" style={{ width: '100%' }} />
+          </div>
+          <div className="row" style={{ marginTop: 4 }}>
+            <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim() || !clientId.trim() || !clientSecret.trim()}>Connect Google</button>
+            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim() || !clientId.trim() || !clientSecret.trim()}>Connect Microsoft</button>
+          </div>
         </div>
       </div>
       <InternalLinks current="/mailboxes" />

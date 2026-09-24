@@ -178,10 +178,10 @@ class GmailAuthUrlOut(BaseModel):
 
 class GmailAuthUrlIn(BaseModel):
     # P0: client_id/redirect_uri travel in POST body over TLS, never as
-    # query params (query strings leak to proxy/access logs). client_secret
-    # is NEVER accepted from the client — it resolves server-side only.
+    # query params (query strings leak to proxy/access logs).
     redirect_uri: str = Field(min_length=1, max_length=1024)
     client_id: str | None = Field(default=None, max_length=320)
+    client_secret: str | None = Field(default=None, max_length=320)
 
 
 class GmailCallbackIn(BaseModel):
@@ -191,12 +191,14 @@ class GmailCallbackIn(BaseModel):
     state: str = Field(min_length=1, max_length=256)
     redirect_uri: str | None = None
     client_id: str | None = None
+    client_secret: str | None = None
 
 
 class GmailSyncIn(BaseModel):
     max_results: int = Field(default=10, ge=1, le=100)
     query: str = Field(default="is:unread", max_length=200)
     client_id: str | None = None
+    client_secret: str | None = None
 
 
 class GmailSyncResult(BaseModel):

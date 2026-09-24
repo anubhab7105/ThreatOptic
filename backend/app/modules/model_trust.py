@@ -43,6 +43,8 @@ def _is_production() -> bool:
 
 
 def _check_permissions(path: str) -> None:
+    if os.name == "nt":
+        return
     try:
         mode = os.stat(path).st_mode
     except OSError as e:

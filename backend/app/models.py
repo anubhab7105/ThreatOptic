@@ -7,7 +7,7 @@ Graph entities are in Neo4j / networkx, not here.
 """
 import uuid
 from datetime import datetime
-from sqlalchemy import CheckConstraint, Index, String, Text, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, String, Text, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base, utcnow
 
@@ -83,8 +83,8 @@ class EmailRecord(Base):
         # Partial unique index (P1): enforced only for real tenants; NULL-org
         # rows dedup via the app's IS NULL query (NULLs never compare equal).
         Index("uq_email_hash_org", "raw_eml_hash", "organization_id", unique=True,
-              postgresql_where="organization_id IS NOT NULL",
-              sqlite_where="organization_id IS NOT NULL"),
+              postgresql_where=text("organization_id IS NOT NULL"),
+              sqlite_where=text("organization_id IS NOT NULL")),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     message_id: Mapped[str] = mapped_column(String(1024), default="")
@@ -136,6 +136,7 @@ class GmailAccount(Base):
     gmail_address: Mapped[str] = mapped_column(String(320), default="")
     # Vault ciphertext (Fernet v1$...), NOT plaintext — name kept for migration stability.
     refresh_token: Mapped[str] = mapped_column(Text, default="")
+    client_id: Mapped[str] = mapped_column(String(320), default="")
     encrypted_client_id: Mapped[str] = mapped_column(Text, default="")
     encrypted_client_secret: Mapped[str] = mapped_column(Text, default="")
     last_sync_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True, default=None)
@@ -176,6 +177,7 @@ class OAuthState(Base):
     provider: Mapped[str] = mapped_column(String(32), default="google")
     redirect_uri: Mapped[str] = mapped_column(String(1024), default="")
     client_id: Mapped[str] = mapped_column(String(320), default="")
+    encrypted_client_secret: Mapped[str] = mapped_column(Text, default="")
     code_verifier: Mapped[str] = mapped_column(String(256), default="")
     expires_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False)

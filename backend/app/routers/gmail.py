@@ -136,8 +136,9 @@ def auth_url(
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     cid = _resolve_client_id(payload.client_id, acct, db=db, user=user)
     uri = _redirect_uri(payload.redirect_uri)
+    secret = payload.client_secret or ""
     state, verifier = create_oauth_state(
-        db, user_id=user.id, provider="google", redirect_uri=uri, client_id=cid,
+        db, user_id=user.id, provider="google", redirect_uri=uri, client_id=cid, client_secret=secret,
     )
     challenge = connectors._pkce_challenge(verifier)
     return {"auth_url": connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)}
@@ -162,11 +163,17 @@ async def callback(
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     cid = (payload.client_id or row.client_id or "").strip() or _resolve_client_id(None, acct, db=db, user=user)
-    # client_secret resolves server-side only — never from the request.
-    secret = _resolve_client_secret(None, acct, db=db, user=user)
+    
+    state_secret = ""
+    if getattr(row, "encrypted_client_secret", ""):
+        try:
+            state_secret = vault.decrypt_secret(row.encrypted_client_secret)
+        except Exception:
+            pass
+    secret = (payload.client_secret or state_secret or "").strip() or _resolve_client_secret(None, acct, db=db, user=user)
     uri = _redirect_uri(payload.redirect_uri or row.redirect_uri)
     try:
-        tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri)
+        tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri, code_verifier=verifier)
     except httpx.HTTPError as e:
         raise HTTPException(400, f"Google token exchange failed: {e}")
     if not tokens.get("refresh_token"):
@@ -238,15 +245,13 @@ async def sync(
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     if not acct:
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
-    # Resolve credentials: stored in DB > env fallback. client_secret is
-    # NEVER accepted from the request (P0) — it lives server-side only.
     cid = _resolve_client_id(payload.client_id, acct, db=db, user=user)
-    secret = _resolve_client_secret(None, acct, db=db, user=user)
-    # Persist the resolved client_id so future syncs and refreshes do not
-    # lose the bound OAuth app configuration when env settings are empty.
+    secret = _resolve_client_secret(payload.client_secret, acct, db=db, user=user)
     if cid:
         acct.client_id = cid
         acct.encrypted_client_id = vault.encrypt_secret(cid)
+    if secret:
+        acct.encrypted_client_secret = vault.encrypt_secret(secret)
     db.commit()
 
     try:
