@@ -206,21 +206,28 @@ class SyncNowIn(BaseModel):
     client_secret: str | None = None
 
 
-@router.get("/{provider}/authorize")
+class AuthorizeIn(BaseModel):
+    # P0: secrets travel in POST body over TLS, never as query params
+    # (query strings leak to proxy/access logs). redirect_uri required;
+    # allowlisting enforced server-side via _redirect_or_400.
+    redirect_uri: str = Field(min_length=1, max_length=1024)
+    client_id: str | None = Field(default=None, max_length=320)
+    client_secret: str | None = Field(default=None, max_length=320)
+
+
+@router.post("/{provider}/authorize")
 @limiter.limit("30/minute")
 def authorize(
     provider: str,
+    payload: AuthorizeIn,
     request: Request,
-    redirect_uri: str = Query(...),
-    client_id: str | None = Query(None),
-    client_secret: str | None = Query(None),
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Create a signed state + PKCE pair, return the consent URL."""
     p = _provider_or_400(provider)
-    uri = _redirect_or_400(redirect_uri)
-    cid = _resolve_client_id(p, client_id, db=db)
+    uri = _redirect_or_400(payload.redirect_uri)
+    cid = _resolve_client_id(p, payload.client_id, db=db)
     verifier = connectors._new_verifier()
     state = _make_state(user.id, client_id=cid, client_secret=client_secret or "", redirect_uri=uri, flow="oauth", pkce_verifier=verifier, provider=p)
     challenge = connectors._pkce_challenge(verifier)
