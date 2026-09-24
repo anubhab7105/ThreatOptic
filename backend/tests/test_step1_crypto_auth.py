@@ -197,7 +197,13 @@ def test_gmail_server_side_secret_and_corrupt_token(monkeypatch):
         tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
         h = {"Authorization": f"Bearer {tok}"}
         # server-side secret missing -> clear 400 (no per-request secret accepted anymore)
-        r = c.post("/api/v1/gmail/callback", headers=h, json={"code": "x", "redirect_uri": "http://localhost:5173/"})
+        # P0: callback requires the opaque state minted via auth-url first.
+        au = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"}).json()["auth_url"]
+        from urllib.parse import parse_qs as _pqs, urlparse as _up
+        _st = _pqs(_up(au).query)["state"][0]
+        r = c.post("/api/v1/gmail/callback", headers=h, json={
+            "code": "x", "state": _st, "redirect_uri": "http://localhost:5173/"})
         assert r.status_code == 400 and "GOOGLE_CLIENT_SECRET" in r.text
         # corrupt stored credential -> forced re-auth, not silent plaintext fallback
         db = _session()
