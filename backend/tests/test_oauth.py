@@ -409,3 +409,78 @@ def test_tampered_redirect_uri(monkeypatch):
                   params={"code": "4/x", "state": state, "redirect_uri": "https://evil.com/cb"})
         assert r.status_code == 400
         assert "mismatch" in r.text.lower()
+
+
+def test_credential_fallback_never_crosses_tenant(monkeypatch):
+    """P0: credential resolvers must not borrow another tenant's stored
+    client_id/secret. Same-org members may share; outsiders fail closed."""
+    from app.main import app
+    from app.config import get_settings
+    from app import models
+    from app.database import SessionLocal
+    from app.modules.auth.vault import encrypt_secret
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "google_client_secret", "")
+
+    with TestClient(app) as c:
+        # Victim org A with a stored connection (client_id victim-cid)
+        hv = _auth(c)
+        db = SessionLocal()
+        try:
+            v = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            org_a = models.Organization(name=f"victim-org-{v.username}", compliance_policy={})
+            db.add(org_a)
+            db.flush()
+            v.organization_id = org_a.id
+            db.add(models.MailboxConnection(
+                user_id=v.id, organization_id=org_a.id, provider="google",
+                account_email="victim@gmail.com",
+                encrypted_refresh_token=encrypt_secret("1//victim"),
+                encrypted_client_id=encrypt_secret("victim-cid"),
+                encrypted_client_secret=encrypt_secret("victim-sec")))
+            db.commit()
+        finally:
+            db.close()
+
+        # Attacker in org B, no credentials anywhere -> fail closed (400),
+        # must NOT silently use victim-cid.
+        ha = _auth(c)
+        db = SessionLocal()
+        try:
+            a = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            org_b = models.Organization(name=f"attacker-org-{a.username}", compliance_policy={})
+            db.add(org_b)
+            db.flush()
+            a.organization_id = org_b.id
+            db.commit()
+        finally:
+            db.close()
+        r = c.post("/api/v1/oauth/google/authorize", headers=ha, json={
+            "redirect_uri": "http://localhost:5173/"})
+        assert r.status_code == 400, r.text
+        assert "victim-cid" not in r.text
+
+        # Same-org member with no explicit credentials MAY reuse org conn.
+        hm = _auth(c)
+        db = SessionLocal()
+        try:
+            m = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            m.organization_id = org_a.id
+            db.commit()
+        finally:
+            db.close()
+        r = c.post("/api/v1/oauth/google/authorize", headers=hm, json={
+            "redirect_uri": "http://localhost:5173/"})
+        assert r.status_code == 200, r.text
+        assert "victim-cid" in r.json()["auth_url"]
+
+        # Cleanup: drop fixture rows + orgs.
+        db = SessionLocal()
+        try:
+            db.query(models.MailboxConnection).filter_by(account_email="victim@gmail.com").delete()
+            db.query(models.OAuthState).delete()
+            db.commit()
+        finally:
+            db.close()
