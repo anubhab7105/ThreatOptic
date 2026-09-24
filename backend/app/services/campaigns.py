@@ -120,12 +120,23 @@ def campaign_cards(db: Session, organization_id: str | None = None, *, is_admin:
         asns = Counter((traces[e.id].isp_asn or "").strip() for e in matched if traces.get(e.id) and (traces[e.id].isp_asn or "").strip())
         stamps = sorted(e.timestamp for e in matched if e.timestamp)
         email_count = len(matched)
+        # P0: cluster domains are global threat intel — only expose the ones
+        # this tenant actually observed in its own matched mail. Cards with
+        # neither tenant mail nor tenant domains are dropped entirely.
+        seen_domains = set()
+        for e in matched:
+            sender = (e.sender_address or "").lower()
+            if "@" in sender:
+                seen_domains.add(sender.split("@")[-1].strip(" <>"))
+        visible_domains = sorted(set(domains) & seen_domains)
+        if not visible_domains and email_count == 0:
+            continue
         confidence = round(min(0.95, 0.45 + 0.10 * len(domains) + 0.03 * email_count), 2)
         cards.append({
             "id": _cid_for_ip(ip),
             "name": f"Campaign via {ip}",
             "ip": ip,
-            "domains": sorted(domains),
+            "domains": visible_domains,
             "asn": asns.most_common(1)[0][0] if asns else "",
             "confidence": confidence,
             "email_count": email_count,
