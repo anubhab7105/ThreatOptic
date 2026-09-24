@@ -315,8 +315,35 @@ async def sync(
 
 @router.delete("/disconnect")
 def disconnect(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Fully disconnect the caller's Gmail mailbox (P0).
+
+    Deletes BOTH the Gmail credential row and the caller's own
+    google MailboxConnection rows so background polling actually stops.
+    Rows owned by other org members are left alone (still legitimately
+    connected for the org). Best-effort revokes the refresh token at
+    Google; revoke failure never fails the local disconnect.
+    """
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
+    raw_refresh: str | None = None
+    if acct:
+        try:
+            raw_refresh = vault.decrypt_secret(acct.refresh_token)
+        except Exception:
+            raw_refresh = None
+    if raw_refresh:
+        try:
+            import httpx as _httpx
+            _httpx.post("https://oauth2.googleapis.com/revoke",
+                        data={"token": raw_refresh}, timeout=5)
+        except Exception as e:
+            log.warning("google token revoke failed (local disconnect continues): %s", e)
+    removed_mailboxes = db.query(models.MailboxConnection).filter(
+        models.MailboxConnection.provider == "google",
+        models.MailboxConnection.user_id == user.id,
+    ).delete(synchronize_session=False)
     if acct:
         db.delete(acct)
-        db.commit()
+    db.commit()
+    from ..modules.auth.rate_limit import audit as _audit
+    _audit("gmail.disconnect", user=user.username, removed=removed_mailboxes)
     return {"connected": False}
