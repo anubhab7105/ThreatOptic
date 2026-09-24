@@ -270,35 +270,58 @@ def upsert_email_graph(
 
 
 def ensure_graph_hydrated(db: Any) -> None:
-    """Hydrate in-memory graph from SQLite database if empty."""
+    """Hydrate in-memory graph from SQLite database if empty.
+
+    P0: paginated batches with a total cap — never .all() unbounded.
+    """
     if G.number_of_nodes() > 0 or db is None:
         return
     try:
         from ... import models
-        rows = (
-            db.query(
-                models.EmailRecord.sender_address,
-                models.EmailRecord.recipient_address,
-                models.TraceabilityData.origin_ip,
-                models.AnalysisResult.threat_classification,
+        loaded = 0
+        offset = 0
+        while loaded < HYDRATE_MAX_ROWS:
+            rows = (
+                db.query(
+                    models.EmailRecord.sender_address,
+                    models.EmailRecord.recipient_address,
+                    models.TraceabilityData.origin_ip,
+                    models.AnalysisResult.threat_classification,
+                )
+                .outerjoin(models.TraceabilityData, models.EmailRecord.id == models.TraceabilityData.email_id)
+                .outerjoin(models.AnalysisResult, models.EmailRecord.id == models.AnalysisResult.email_id)
+                .order_by(models.EmailRecord.timestamp.desc())
+                .limit(HYDRATE_BATCH_ROWS)
+                .offset(offset)
+                .all()
             )
-            .outerjoin(models.TraceabilityData, models.EmailRecord.id == models.TraceabilityData.email_id)
-            .outerjoin(models.AnalysisResult, models.EmailRecord.id == models.AnalysisResult.email_id)
-            .all()
-        )
-        for sender, recipient, ip, classification in rows:
-            if not sender:
-                continue
-            clean_s = _clean_email(sender)
-            domain = clean_s.split("@")[-1].strip(" <>") if "@" in clean_s else ""
-            campaign = classification if (classification and "phishing" in str(classification).lower()) else ""
-            upsert_email_graph(clean_s, ip or "", [domain] if domain else [], campaign=campaign, recipient=recipient or "")
+            if not rows:
+                break
+            for sender, recipient, ip, classification in rows:
+                if not sender:
+                    continue
+                clean_s = _clean_email(sender)
+                domain = clean_s.split("@")[-1].strip(" <>") if "@" in clean_s else ""
+                campaign = classification if (classification and "phishing" in str(classification).lower()) else ""
+                upsert_email_graph(clean_s, ip or "", [domain] if domain else [], campaign=campaign, recipient=recipient or "")
+            loaded += len(rows)
+            offset += len(rows)
+            if len(rows) < HYDRATE_BATCH_ROWS:
+                break
     except Exception:
         pass
 
 
 def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str | None = None) -> dict[str, Any]:
-    """BFS neighbourhood for graph view. Neo4j-first when configured (F8)."""
+    """BFS neighbourhood for graph view. Neo4j-first when configured (F8).
+
+    P0: depth clamped (unbounded radius on a 20k-node graph hangs the
+    request) and networkx output capped — same shape, bounded size.
+    """
+    try:
+        depth = max(1, min(int(depth or 2), NX_MAX_DEPTH))
+    except (TypeError, ValueError):
+        depth = 2
     neo = _neo_related(value, depth)
     if neo is not None:
         return neo
@@ -348,9 +371,16 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             upsert_email_graph(clean_val, "", [domain] if domain else [])
             key = f"email:{clean_val}"
     sub = nx.ego_graph(G.to_undirected(), key, radius=depth)
+    # P0: cap read output even if the capped radius still covers plenty.
+    sub_nodes = list(sub.nodes)[:NX_MAX_NODES]
+    keep = set(sub_nodes)
     edges = []
     seen_edges = set()
     for u, v in sub.edges:
+        if len(edges) >= NX_MAX_EDGES:
+            break
+        if u not in keep or v not in keep:
+            continue
         data = G.get_edge_data(u, v) or G.get_edge_data(v, u) or sub.get_edge_data(u, v) or {}
         pair = (min(u, v), max(u, v))
         if pair not in seen_edges:
