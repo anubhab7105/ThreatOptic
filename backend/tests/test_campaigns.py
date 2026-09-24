@@ -67,3 +67,87 @@ def test_campaign_cards_and_detail():
 
         assert c.get("/api/v1/campaigns/nope", headers=h).status_code == 404
         assert c.get("/api/v1/campaigns").status_code == 401
+
+
+def _auth_org(c, role="Analyst"):
+    """Register a user and move them into a fresh org. Returns (headers, org_id)."""
+    from app import models
+    from app.database import SessionLocal
+    h = _auth(c)
+    db = SessionLocal()
+    try:
+        u = db.query(models.User).order_by(models.User.created_at.desc()).first()
+        org = models.Organization(name=f"tcamp-{u.username}", compliance_policy={})
+        db.add(org)
+        db.flush()
+        u.organization_id = org.id
+        db.commit()
+        return h, org.id
+    finally:
+        db.close()
+
+
+def _ingest(c, headers, sender, ip, n):
+    raw = (f"From: {sender}\nTo: v@company.com\nSubject: t{n}\n"
+           f"Message-ID: <{n}@x.test>\nReturn-Path: <b@x.test>\n"
+           f"Received: from r.evil ({sender.split('@')[-1]} [{ip}]) by mx.c with ESMTPS id {n}\n"
+           f"Content-Type: text/plain\n\nhello {n}")
+    r = c.post("/api/v1/emails/ingest", headers=headers, json={"raw": raw})
+    assert r.status_code == 200, r.text
+
+
+def test_org_less_user_sees_only_null_org_campaigns():
+    """P0: organization_id=None means org-less scope, never the Admin view."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as c:
+        hx, org_x = _auth_org(c)
+        _ingest(c, hx, "x@orgx1.test", "203.0.113.90", "x1")
+        _ingest(c, hx, "x@orgx2.test", "203.0.113.90", "x2")
+        hn = _auth(c)  # org-less
+        _ingest(c, hn, "n@null1.test", "203.0.113.91", "n1")
+        _ingest(c, hn, "n@null2.test", "203.0.113.91", "n2")
+
+        cards_n = c.get("/api/v1/campaigns", headers=hn).json()
+        ips_n = {k["ip"] for k in cards_n}
+        assert "203.0.113.91" in ips_n, cards_n
+        assert "203.0.113.90" not in ips_n, cards_n
+        for k in cards_n:
+            assert k["email_count"] >= 0
+            for e in c.get(f"/api/v1/campaigns/{k['id']}", headers=hn).json()["emails"]:
+                assert e["sender"].endswith(("@null1.test", "@null2.test")), e
+
+        cards_x = c.get("/api/v1/campaigns", headers=hx).json()
+        assert "203.0.113.90" in {k["ip"] for k in cards_x}
+
+
+def test_graph_related_hides_foreign_email_nodes():
+    """P0: shared-IP neighbourhood shows own addresses only; infra stays."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as c:
+        ha, _ = _auth_org(c)
+        _ingest(c, ha, "aaa@aten.test", "203.0.113.92", "ga1")
+        hb, _ = _auth_org(c)
+        _ingest(c, hb, "bbb@bten.test", "203.0.113.92", "gb1")
+
+        rel = c.get("/api/v1/graph/related", headers=ha,
+                    params={"value": "203.0.113.92"}).json()
+        ids = {n["id"] for n in rel["nodes"]}
+        assert "email:aaa@aten.test" in ids, ids
+        assert "email:bbb@bten.test" not in ids, ids
+        assert "ip:203.0.113.92" in ids, ids
+        # dangling edges to hidden nodes are removed too
+        for e in rel["edges"]:
+            assert e["source"] in ids and e["target"] in ids
+
+        # campaign detail embeds the same filtered graph
+        cards = c.get("/api/v1/campaigns", headers=ha).json()
+        card = next(k for k in cards if k["ip"] == "203.0.113.92")
+        detail = c.get(f"/api/v1/campaigns/{card['id']}", headers=ha).json()
+        gids = {n["id"] for n in detail["graph"]["nodes"]}
+        assert "email:aaa@aten.test" in gids, gids
+        assert "email:bbb@bten.test" not in gids, gids
+        assert all(e["sender"].endswith("@aten.test") for e in detail["emails"])
