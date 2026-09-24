@@ -1,17 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
-function src(name: string): string {
-  return fs.readFileSync(path.join(__dirname, name), 'utf8');
-}
+import pagesSrc from './pages.tsx?raw';
+import mainSrc from './main.tsx?raw';
+import apiSrc from './api.ts?raw';
 
 // P0: OAuth client secrets / PKCE verifiers must never touch browser storage.
 // Browser holds at most opaque code/state identifiers; secrets stay server-side.
 describe('oauth browser-storage hygiene (P0)', () => {
-  const pages = src('pages.tsx');
-  const main = src('main.tsx');
-  const api = src('api.ts');
+  const pages: string = pagesSrc as unknown as string;
+  const main: string = mainSrc as unknown as string;
+  const api: string = apiSrc as unknown as string;
 
   it('never persists OAuth client secrets in localStorage/sessionStorage', () => {
     for (const [label, text] of [['pages.tsx', pages], ['main.tsx', main], ['api.ts', api]] as const) {
