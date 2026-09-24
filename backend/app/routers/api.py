@@ -423,7 +423,7 @@ def _compute_dashboard(db: Session, user: models.User) -> dict:
     from ..services.campaigns import campaign_cards as _campaign_cards
     scope_org = None if user.role == "Admin" else user.organization_id
     try:
-        active = len(_campaign_cards(db, organization_id=scope_org))
+        active = len(_campaign_cards(db, organization_id=scope_org, is_admin=(user.role == "Admin")))
     except Exception:
         active = 0
     stats = {"total_emails": total, "blocked_threats": blocked,
@@ -456,6 +456,13 @@ def graph_related(value: str = Query(..., min_length=1, max_length=320),
 
 @router.get("/graph/campaigns")
 def graph_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Shared infrastructure clusters (P0 documented access control).
+
+    Returns IP/domain clusters only — no email addresses, subjects, or
+    other tenant-attributable metadata. Cluster membership derives from
+    the global graph (shared threat intel); email-level detail stays
+    tenant-scoped behind /campaigns and /graph/related.
+    """
     return find_campaigns()
 
 
@@ -463,14 +470,14 @@ def graph_campaigns(db: Session = Depends(get_db), user: models.User = Depends(g
 def list_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import campaign_cards
     scope = None if user.role == "Admin" else user.organization_id
-    return campaign_cards(db, organization_id=scope)
+    return campaign_cards(db, organization_id=scope, is_admin=(user.role == "Admin"))
 
 
 @router.get("/campaigns/{cid}", response_model=schemas.CampaignDetail)
 def get_campaign(cid: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import campaign_detail
     scope = None if user.role == "Admin" else user.organization_id
-    detail = campaign_detail(db, cid, organization_id=scope)
+    detail = campaign_detail(db, cid, organization_id=scope, is_admin=(user.role == "Admin"))
     if not detail:
         raise HTTPException(404, "campaign not found")
     return detail

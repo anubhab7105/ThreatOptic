@@ -3,6 +3,14 @@
 Writes mirror to both backends (best-effort). Reads use Neo4j as the source
 of truth whenever it is configured so attribution stays consistent across
 replicas; the in-memory graph is a single-replica/local-dev fallback (F8).
+
+Tenant model (P0): the graph itself is SHARED cross-tenant threat intel
+(infra-level IPs/domains/campaigns — no access control at this layer).
+Tenant isolation is enforced by CALLERS (routers/api.py, services/
+campaigns.py): Email_Address nodes not attributable to the caller's org
+are stripped from responses; Admins see all. Never expose raw
+related_entities()/find_campaigns() output for one tenant to another
+without that filtering.
 """
 import os
 from typing import Any
