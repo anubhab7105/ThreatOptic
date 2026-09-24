@@ -135,11 +135,11 @@ def campaign_cards(db: Session, organization_id: str | None = None, *, is_admin:
     return sorted(cards, key=lambda k: (-k["email_count"], -k["confidence"]))
 
 
-def campaign_detail(db: Session, cid: str, organization_id: str | None = None) -> dict | None:
-    card = next((c for c in campaign_cards(db, organization_id=organization_id) if c["id"] == cid), None)
+def campaign_detail(db: Session, cid: str, organization_id: str | None = None, *, is_admin: bool = False) -> dict | None:
+    card = next((c for c in campaign_cards(db, organization_id=organization_id, is_admin=is_admin) if c["id"] == cid), None)
     if not card:
         return None
-    if organization_id is None:
+    if is_admin:
         emails = db.query(models.EmailRecord.id, models.EmailRecord.subject, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
         traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip).all()}
         analyses = {a.email_id: a for a in db.query(models.AnalysisResult.email_id, models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification).all()}
