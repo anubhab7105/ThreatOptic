@@ -71,6 +71,27 @@ def create_refresh_token(user_id: str, secret: str, expires_days: int = REFRESH_
     return jwt.encode(payload, secret, algorithm=ALGORITHM)
 
 
+def create_ws_ticket(user_id: str, username: str, role: str, secret: str) -> str:
+    """Short-lived WebSocket ticket (P0).
+
+    Exchanged via authenticated POST /ws/ticket, then presented as
+    ?ticket= on the socket handshake. 60-second expiry bounds the
+    exposure window of a credential appearing in a URL (proxy/access
+    logs); theft laterally only buys a minute of read-only alert stream.
+    """
+    now = _now()
+    payload = {
+        "sub": user_id,
+        "username": username,
+        "role": role,
+        "type": "ws-ticket",
+        "jti": uuid.uuid4().hex,
+        "exp": now + timedelta(seconds=60),
+        "iat": now,
+    }
+    return jwt.encode(payload, secret, algorithm=ALGORITHM)
+
+
 def refresh_token_fingerprint(token: str) -> str:
     """SHA-256 of the token for DB lookup — the token itself is never stored."""
     return hashlib.sha256(token.encode()).hexdigest()
