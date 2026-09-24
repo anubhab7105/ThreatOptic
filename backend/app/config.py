@@ -138,8 +138,11 @@ class Settings(BaseSettings):
     smtp_data_limit_bytes: int = 10 * 1024 * 1024
     smtp_tls_cert: str = ""
     smtp_tls_key: str = ""
-    # In-memory ingest queue bound (Step 5); overflow answers 452, never OOMs.
+    # In-memory ingest queue bounds (P0): item count AND byte budget —
+    # 1000 items of 10MB mail would otherwise OOM the worker (~10GB).
+    # Overflow answers 452, never OOMs.
     smtp_queue_max: int = 1000
+    smtp_queue_max_bytes: int = 100 * 1024 * 1024
 
     # Trust boundary for origin-IP extraction (Step 4): host suffixes / IPs
     # of our own relays (comma-separated). The hop below the first match is
