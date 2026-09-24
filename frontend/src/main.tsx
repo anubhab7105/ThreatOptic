@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
-import { BASE, getTokens } from './api';
+import { BASE, jpost } from './api';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -180,23 +180,27 @@ function AlertBell() {
   React.useEffect(() => {
     let ws: WebSocket | null = null;
     let closed = false;
-    try {
-      const pair = getTokens();
-      if (!pair?.access_token) return;
-      const base = BASE;
-      const wsBase = base
-        ? base.replace(/^http/, 'ws')
-        : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
-      ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?token=${encodeURIComponent(pair.access_token)}`);
-      ws.onopen = () => { if (!closed) setLive(true); };
-      ws.onmessage = (ev) => {
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.event === 'high-risk-alert') setAlerts((a) => [msg, ...a].slice(0, 20));
-        } catch { /* ignore malformed frames */ }
-      };
-      ws.onclose = () => { if (!closed) setLive(false); };
-    } catch { /* WS unavailable: bell stays dormant */ }
+    (async () => {
+      try {
+        // P0: never put the long-lived access token in the WS URL (leaks
+        // to proxy/access logs). Exchange it via POST for a 60s ticket.
+        const t = await jpost('/ws/ticket', {});
+        if (closed || !t?.ticket) return;
+        const base = BASE;
+        const wsBase = base
+          ? base.replace(/^http/, 'ws')
+          : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+        ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?ticket=${encodeURIComponent(t.ticket)}`);
+        ws.onopen = () => { if (!closed) setLive(true); };
+        ws.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data);
+            if (msg.event === 'high-risk-alert') setAlerts((a) => [msg, ...a].slice(0, 20));
+          } catch { /* ignore malformed frames */ }
+        };
+        ws.onclose = () => { if (!closed) setLive(false); };
+      } catch { /* WS unavailable: bell stays dormant */ }
+    })();
     return () => { closed = true; try { ws?.close(); } catch { /* noop */ } };
   }, []);
   return (
