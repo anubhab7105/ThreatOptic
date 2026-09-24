@@ -233,6 +233,22 @@ def main() -> dict:
             h.update(chunk)
     with open(model_path + ".sha256", "w", encoding="utf-8") as f:
         f.write(h.hexdigest())
+    # P0: optional offline Ed25519 signing. When MODEL_SIGN_KEY (build
+    # machine only) is set, also emit <model>.sig so production loaders
+    # with MODEL_VERIFY_KEY can verify before unpickling. See
+    # scripts/sign_model.py for the full ceremony.
+    sign_seed = (os.environ.get("MODEL_SIGN_KEY", "") or "").strip()
+    if sign_seed:
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+            priv = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(sign_seed))
+            with open(model_path, "rb") as f:
+                sig = priv.sign(f.read())
+            with open(model_path + ".sig", "w", encoding="utf-8") as f:
+                f.write(sig.hex() + "\n")
+            print(f"signed model: {model_path}.sig")
+        except Exception as e:
+            print(f"WARNING: model signing failed ({e}); shipping checksum sidecar only")
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
     print(f"saved model to {model_path}, classes={pipe.classes_}")
