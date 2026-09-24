@@ -6,38 +6,47 @@ export const API = `${BASE}/api/v1`;
 
 export type TokenPair = { access_token: string; refresh_token: string; token_type: string };
 
-let _tokens: TokenPair | null = (() => {
+// P0: tokens are memory-first. The ONLY browser persistence is
+// sessionStorage (cleared on tab close) — never localStorage, where a
+// persistent XSS foothold could exfiltrate long-lived refresh tokens.
+// (Full httpOnly-cookie storage needs backend set-cookie support;
+// session-only storage is the documented minimum.) Logout clears both.
+const LEGACY_KEY = 'soc_tokens';
+
+function readStored(): TokenPair | null {
   try {
-    const s = sessionStorage.getItem('soc_tokens') || localStorage.getItem('soc_tokens');
+    const s = sessionStorage.getItem(LEGACY_KEY);
     return s ? JSON.parse(s) : null;
   } catch {
     return null;
   }
+}
+
+let _tokens: TokenPair | null = (() => {
+  try {
+    // One-time migration: drop any legacy persistent copy.
+    localStorage.removeItem(LEGACY_KEY);
+  } catch { /* storage unavailable */ }
+  return readStored();
 })();
 
 export function getTokens(): TokenPair | null {
-  if (!_tokens) {
-    try {
-      const s = sessionStorage.getItem('soc_tokens') || localStorage.getItem('soc_tokens');
-      if (s) _tokens = JSON.parse(s);
-    } catch { /* storage unavailable */ }
-  }
+  if (!_tokens) _tokens = readStored();
   return _tokens;
 }
 
 export function setTokens(pair: TokenPair) {
   _tokens = pair;
   try {
-    sessionStorage.setItem('soc_tokens', JSON.stringify(pair));
-    localStorage.setItem('soc_tokens', JSON.stringify(pair));
+    sessionStorage.setItem(LEGACY_KEY, JSON.stringify(pair));
   } catch { /* storage unavailable */ }
 }
 
 export function clearTokens() {
   _tokens = null;
   try {
-    sessionStorage.removeItem('soc_tokens');
-    localStorage.removeItem('soc_tokens');
+    sessionStorage.removeItem(LEGACY_KEY);
+    localStorage.removeItem(LEGACY_KEY);
   } catch { /* storage unavailable */ }
 }
 
