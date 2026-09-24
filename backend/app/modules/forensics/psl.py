@@ -125,6 +125,15 @@ def _labels(host: str) -> list[str]:
     return [p for p in (host or "").lower().strip().strip(".").split(".") if p]
 
 
+def _is_ip_literal(host: str) -> bool:
+    try:
+        import ipaddress
+        ipaddress.ip_address((host or "").strip().strip("[] "))
+        return True
+    except Exception:
+        return False
+
+
 def public_suffix(host: str) -> str:
     """Longest matching multi-label suffix, else the last label.
 
