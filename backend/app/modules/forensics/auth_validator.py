@@ -297,8 +297,12 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         spf_status = (spf_res or {}).get("status", "").lower()
         dkim_status = (dkim_res or {}).get("status", "").lower()
 
-        spf_match = bool(spf_domain) and (spf_domain == from_domain or spf_domain.endswith("." + from_domain) or from_domain.endswith("." + spf_domain))
-        dkim_match = bool(dkim_domain) and (dkim_domain == from_domain or dkim_domain.endswith("." + from_domain) or from_domain.endswith("." + dkim_domain))
+        from .psl import same_organization
+        # PSL-aware organizational alignment (DMARC relaxed): same
+        # registrable domain in either direction — never raw endswith,
+        # which equated evil.co.uk with bank.co.uk via "co.uk".
+        spf_match = same_organization(spf_domain, from_domain)
+        dkim_match = same_organization(dkim_domain, from_domain)
 
         spf_aligned = spf_status == "pass" and spf_match
         dkim_aligned = dkim_status == "pass" and dkim_match
@@ -350,9 +354,12 @@ def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_f
     )
     
     # DMARC-style alignment requires an actual domain match, not just a pass.
-    spf_match = bool(spf_domain) and (spf_domain == from_domain or spf_domain.endswith("." + from_domain) or from_domain.endswith("." + spf_domain))
-    dkim_match = bool(dkim_domain) and (dkim_domain == from_domain or dkim_domain.endswith("." + from_domain) or from_domain.endswith("." + dkim_domain))
-    
+    from .psl import same_organization
+    # DMARC-style alignment requires same registrable domain (PSL-aware),
+    # not just a pass and not raw endswith.
+    spf_match = same_organization(spf_domain, from_domain)
+    dkim_match = same_organization(dkim_domain, from_domain)
+
     spf_aligned = spf_r.get("status") == "pass" and spf_match
     dkim_aligned = dkim_r.get("status") == "pass" and dkim_match
     aligned = spf_aligned or dkim_aligned
