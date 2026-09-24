@@ -306,7 +306,7 @@ def test_queue_byte_budget_and_accounting(monkeypatch):
         assert qmod.queue_bytes() == 0
         qmod.ack_email()
         assert qmod.queue_inflight() == 0
-        asyncio.run(qmod.enqueue_email({"raw": b"y" * 2000}))
+        asyncio.run(qmod.enqueue_email({"raw": b"z" * 1000}))
         assert qmod.queue_depth() == 1
     finally:
         while not qmod._mem_queue.empty():
