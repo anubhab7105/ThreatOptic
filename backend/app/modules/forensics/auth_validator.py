@@ -1,12 +1,21 @@
 """SPF / DKIM / DMARC validation. Real checks via pyspf/dkimpy/dnspython, graceful fallback.
 
-Live DNS checks only run when ENABLE_LIVE_LOOKUPS=1; otherwise every check
-reports an explicit "unverifiable" status or extracts upstream authentication
-headers (Authentication-Results, Received-SPF) stamped by recipient MTAs.
+Trust model (P0, fail closed):
+- Upstream Authentication-Results / Received-SPF headers are UNTRUSTED by
+  default — anyone's MTA (including the attacker's) can stamp them.
+- They are honored ONLY when attributable to a configured trusted relay
+  boundary: the header's authserv-id must suffix-match TRUSTED_RELAY_HOSTS
+  (env or settings, same source as origin-IP extraction).
+- Even then, a trusted upstream "pass" NEVER overrides a locally computed
+  hard failure. Local and upstream verdicts are reported separately
+  (result["upstream"]) with provenance, so analysts see both.
+- No envelope sender (Return-Path) means SPF has no identity to check:
+  status "none" — never silently checked against the display From domain.
+- No global DNS resolver mutation: per-lookup isolated resolvers only.
 
-When live lookups are enabled, DNS records and cryptographic DKIM signatures
-are validated live. If a live check is inconclusive or offline, trusted upstream
-MTA headers are used so analysts always get an accurate verification verdict.
+Live DNS checks only run when ENABLE_LIVE_LOOKUPS=1; otherwise every check
+reports an explicit "unverifiable" status unless trusted upstream headers
+exist (reported with "trusted-upstream:" provenance).
 """
 import os
 import re
@@ -19,15 +28,44 @@ def _live() -> bool:
     return os.environ.get("ENABLE_LIVE_LOOKUPS", "0").lower() not in ("", "0", "false", "no")
 
 
-def _ensure_dns_resolver():
+def _trusted_relay_hosts() -> set[str]:
+    """Host suffixes identifying our own stamping infrastructure."""
+    hosts = {h.strip().lower() for h in os.environ.get("TRUSTED_RELAY_HOSTS", "").split(",") if h.strip()}
     try:
-        import dns.resolver
-        res = dns.resolver.get_default_resolver()
-        res.nameservers = ["8.8.8.8", "1.1.1.1"] + [n for n in res.nameservers if n not in ("8.8.8.8", "1.1.1.1")]
-        res.timeout = 2.0
-        res.lifetime = 3.5
+        from ...config import get_settings
+        s = get_settings()
+        hosts |= {h.strip().lower() for h in str(getattr(s, "trusted_relay_hosts", "") or "").split(",") if h.strip()}
     except Exception:
         pass
+    return hosts
+
+
+def _authserv_id(raw_headers: dict) -> str:
+    """Hostname of the MTA that stamped Authentication-Results ("" if none)."""
+    if not isinstance(raw_headers, dict):
+        return ""
+    for k, v in raw_headers.items():
+        if str(k).lower() in ("authentication-results", "arc-authentication-results", "x-authentication-results"):
+            text = " ".join(v) if isinstance(v, list) else str(v or "")
+            first = text.strip().split(";")[0].strip().split()
+            if first:
+                return first[0].lower().rstrip(".")
+    return ""
+
+
+def _upstream_trusted(raw_headers: dict) -> tuple[bool, str]:
+    """(trusted, authserv_id): upstream headers count ONLY when the stamping
+    host belongs to the configured trusted relay boundary. Fail closed:
+    unconfigured boundary or unknown stamper => untrusted."""
+    sid = _authserv_id(raw_headers)
+    if not sid:
+        # Received-SPF alone carries no authserv-id; without attribution it
+        # cannot be tied to our boundary either.
+        return False, ""
+    for suffix in _trusted_relay_hosts():
+        if sid == suffix or sid.endswith("." + suffix):
+            return True, sid
+    return False, sid
 
 
 def _clean_domain(raw: str) -> str:
@@ -62,7 +100,12 @@ def _return_path_domain(raw_headers: dict) -> str:
 
 
 def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
-    """Extract SPF, DKIM, and DMARC results from upstream Authentication-Results / Received-SPF headers."""
+    """Extract SPF, DKIM, and DMARC claims from upstream Authentication-Results / Received-SPF headers.
+
+    NOTE: the returned claims are UNTRUSTED until the caller checks them
+    against _upstream_trusted(). Treat status values here as "some MTA
+    claimed X", never as a verdict.
+    """
     results: dict[str, dict[str, str]] = {}
     if not isinstance(raw_headers, dict):
         return results
