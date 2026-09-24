@@ -95,3 +95,48 @@ def test_api_validation():
         assert c.post("/api/v1/emails/ingest", headers=h, json={"raw": ""}).status_code == 422
         assert c.get("/api/v1/emails/does-not-exist", headers=h).status_code == 404
         assert c.post("/api/v1/cases", headers=h, json={"title": ""}).status_code == 400
+
+
+def test_geo_fallbacks_offline_skips_system_resolver(monkeypatch):
+    """P0: offline switch gates every resolver network path."""
+    import socket
+    from app.services.pipeline import _geo_fallbacks
+
+    def _boom(host):
+        raise SystemExit(f"resolver must not be touched offline: {host}")
+
+    monkeypatch.setattr(socket, "gethostbyname", _boom)
+    geo = {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
+    out = _geo_fallbacks([], {"mx": ["mx.evil.test"]}, "nonexistent-domain-xyz.test",
+                         {}, geo, live_lookups=False)
+    assert isinstance(out, dict)  # country fallback may fill in; no resolver used
+
+
+def test_geo_fallbacks_live_mx_path(monkeypatch):
+    """P0: live mode still resolves MX/A for approximate geo."""
+    import socket
+    from app.services.pipeline import _geo_fallbacks
+    import app.modules.traceability.geoip as geoip
+
+    monkeypatch.setattr(socket, "gethostbyname", lambda host: "93.184.216.34")
+    real_geolocate = geoip.geolocate
+    monkeypatch.setattr(geoip, "geolocate",
+                        lambda ip: {"lat": 1.0, "lon": 2.0, "country": "US",
+                                    "city": "X", "source": "t"} if ip == "93.184.216.34"
+                        else real_geolocate(ip))
+    geo = {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
+    out = _geo_fallbacks([], {"mx": ["mx.evil.test"]}, "example.test", {}, geo, live_lookups=True)
+    assert out.get("source") == "approx-mx-ip"
+
+
+def test_pipeline_offline_no_system_dns(monkeypatch):
+    """P0: end-to-end offline ingest never touches the system resolver."""
+    import socket
+
+    def _boom(host):
+        raise SystemExit(f"system resolver touched offline: {host}")
+
+    monkeypatch.setattr(socket, "gethostbyname", _boom)
+    db = _db()
+    res = asyncio.run(process_raw_email(db, CLEAN))
+    assert res["fraud_score"] < 50, res
