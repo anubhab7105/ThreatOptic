@@ -3,11 +3,23 @@
 No graph rewrites: uses store.find_campaigns() for the domain cluster behind
 each shared IP, then joins EmailRecord/AnalysisResult/TraceabilityData to add
 email counts, shared ASN, confidence, and first/last seen timestamps.
+
+Tenant model (P0): the graph CLUSTERS are shared cross-tenant threat intel
+(infra-level IPs/domains — no addresses/subjects), but every piece of
+email-level metadata (cards' email lists/counts, embedded graph email
+nodes) is scoped to the caller's org. Admins (is_admin=True) see all;
+org-less non-admins see only null-org mail — never the global view.
+Pass is_admin explicitly: organization_id=None alone means "org-less
+user", NOT "admin".
 """
 from collections import Counter
 from sqlalchemy.orm import Session
 from .. import models
 from ..modules.graph.store import find_campaigns, related_entities
+
+# Cap on addresses pulled for graph email-node filtering (fail closed
+# beyond: unlisted addresses are hidden, never leaked).
+GRAPH_EMAIL_ALLOWLIST_CAP = 20000
 
 
 def _cid_for_ip(ip: str) -> str:
@@ -28,13 +40,59 @@ def _ensure_graph(db: Session) -> None:
                 upsert_email_graph(sender, ip, [domain] if domain else [])
 
 
-def campaign_cards(db: Session, organization_id: str | None = None) -> list[dict]:
+def _tenant_email_addresses(db: Session, organization_id: str | None) -> set[str]:
+    """Exact sender/recipient addresses for one org (None => null-org mail).
+
+    Used to hide foreign Email_Address nodes from graph output. Capped;
+    beyond the cap unlisted addresses are hidden (fail closed).
+    """
+    from ..modules.graph.store import _clean_email
+    rows = (db.query(models.EmailRecord.sender_address, models.EmailRecord.recipient_address)
+            .filter(models.EmailRecord.organization_id == organization_id)
+            .limit(GRAPH_EMAIL_ALLOWLIST_CAP).all())
+    out: set[str] = set()
+    for sender, recipient in rows:
+        for raw in (sender, recipient):
+            clean = _clean_email(raw or "")
+            if clean:
+                out.add(clean)
+    return out
+
+
+def _filter_graph_emails(graph: dict, allowed: set[str] | None) -> dict:
+    """Drop Email_Address nodes not attributable to the caller.
+
+    allowed=None (Admin) returns the graph unchanged. IP/Domain/Campaign
+    nodes are shared threat intel and always stay; edges touching dropped
+    nodes are removed so no dangling references leak.
+    """
+    if allowed is None or not isinstance(graph, dict):
+        return graph
+    nodes = []
+    keep: set[str] = set()
+    for n in graph.get("nodes", []) or []:
+        if not isinstance(n, dict):
+            continue
+        nid = str(n.get("id", ""))
+        if n.get("kind") == "Email_Address" or nid.startswith("email:"):
+            addr = nid.split("email:", 1)[-1].lower() if "email:" in nid else ""
+            if addr not in allowed:
+                continue
+        nodes.append(n)
+        keep.add(nid)
+    edges = [e for e in graph.get("edges", []) or []
+             if isinstance(e, dict) and e.get("source") in keep and e.get("target") in keep]
+    return {"nodes": nodes, "edges": edges}
+
+
+def campaign_cards(db: Session, organization_id: str | None = None, *, is_admin: bool = False) -> list[dict]:
     _ensure_graph(db)
     clusters = find_campaigns()
     if not clusters:
         return []
-    # Tenant isolation: scope emails/traces to caller's org unless Admin (None)
-    if organization_id is None:
+    # Tenant isolation: Admin sees all; everyone else (including org-less
+    # users, whose organization_id is None) sees only their own org scope.
+    if is_admin:
         emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
         traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn).all()}
     else:
