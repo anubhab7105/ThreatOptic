@@ -331,7 +331,13 @@ async def callback(
         models.MailboxConnection.account_email == address,
     ).first()
     if conn:
-        if owner.organization_id and conn.organization_id and conn.organization_id != owner.organization_id:
+        # P0: reassigning an existing mailbox requires same owner or same
+        # (non-empty) org — everything else is a cross-tenant hijack.
+        # None==None org equality must NOT pass (org-less takeover).
+        same_owner = conn.user_id == owner.id
+        same_org = bool(owner.organization_id and conn.organization_id) \
+            and conn.organization_id == owner.organization_id
+        if not (same_owner or same_org):
             raise HTTPException(403, "mailbox already connected to another organization")
         conn.encrypted_refresh_token = encrypted_refresh
         conn.encrypted_client_id = encrypted_cid

@@ -202,6 +202,13 @@ async def callback(
         models.MailboxConnection.account_email == address,
     ).first()
     if conn:
+        # P0: same hijack gate as org OAuth — same owner or same
+        # (non-empty) org only; None==None org equality must NOT pass.
+        same_owner = conn.user_id == user.id
+        same_org = bool(user.organization_id and conn.organization_id) \
+            and conn.organization_id == user.organization_id
+        if not (same_owner or same_org):
+            raise HTTPException(403, "mailbox already connected to another organization")
         conn.encrypted_refresh_token = encrypted_refresh
         conn.encrypted_client_id = encrypted_cid
         conn.encrypted_client_secret = encrypted_sec

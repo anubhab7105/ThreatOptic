@@ -149,3 +149,48 @@ def test_gmail_connect_sync_disconnect(monkeypatch):
 
         assert c.delete("/api/v1/gmail/disconnect", headers=h).status_code == 200
         assert c.get("/api/v1/gmail/status", headers=h).json()["connected"] is False
+
+
+def test_gmail_sync_persists_client_id_for_future_refreshes(monkeypatch):
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+    from app import models
+    from app.database import SessionLocal
+    from app.modules.auth.vault import encrypt_secret
+
+    monkeypatch.setattr(conn, "exchange_gmail_code", _fake_exchange)
+    monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_profile)
+    monkeypatch.setattr(conn, "refresh_gmail_token", _fake_refresh)
+    monkeypatch.setattr(conn, "fetch_gmail_messages", _fake_fetch)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
+
+    with TestClient(app) as c:
+        h, _ = _auth(c)
+        db = SessionLocal()
+        try:
+            user = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            db.add(models.GmailAccount(
+                user_id=user.id,
+                gmail_address="demo@gmail.com",
+                refresh_token=encrypt_secret("1//fake-refresh"),
+                client_id="",
+                encrypted_client_id="",
+                encrypted_client_secret="",
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+        r = c.post("/api/v1/gmail/sync", headers=h, json={"query": "is:unread", "max_results": 1, "client_id": "demo-id"})
+        assert r.status_code == 200, r.text
+
+        db = SessionLocal()
+        try:
+            acct = db.query(models.GmailAccount).filter_by(gmail_address="demo@gmail.com").first()
+            assert acct is not None
+            assert acct.client_id == "demo-id"
+        finally:
+            db.close()
