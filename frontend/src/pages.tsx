@@ -445,27 +445,27 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           </div>
           {showCreds && (
             <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
-              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
-              <input type="password" value={secret} onChange={(e) => updateSecret(e.target.value)} placeholder="Client secret" autoComplete="off" />
-              <p className="sub" style={{ marginBottom: 0, fontSize: 12 }}>Credentials are stored encrypted on the server per connection. Update here to use different credentials for the next sync.</p>
+              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (optional if server-configured)" />
+              <p className="sub" style={{ marginBottom: 0, fontSize: 12 }}>Client secret is server-side only and never entered here. Update the client ID to use different credentials for the next sync.</p>
             </div>
           )}
         </div>
       ) : (
         <div>
           <p className="sub" style={{ marginTop: 0 }}>
-            1. Create a Google Cloud OAuth client (Web, redirect URI below) with the Gmail API enabled. 2. Enter your Client ID and Secret below.
-            3. Open the consent URL and approve. Google redirects back here and the connection finishes automatically. Credentials are encrypted and stored on the server.
+            1. Configure the Google OAuth client server-side (env) or enter your Client ID below (redirect URI must match the Google console).
+            2. Open the consent URL and approve. Google redirects back here and the connection finishes automatically. Client secrets never leave the server.
           </p>
           <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (*.apps.googleusercontent.com)" />
-            <input type="password" value={secret} onChange={(e) => updateSecret(e.target.value)} placeholder="Client secret (from Google Cloud Console)" autoComplete="off" />
+            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID (optional if server-configured)" />
             <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" />
             <div className="row">
-              <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !redirectUri.trim()}>Connect Gmail</button>
+              <button className="ghost" onClick={getUrl} disabled={busy || !redirectUri.trim()}>Connect Gmail</button>
             </div>
             <div className="row">
-              <button onClick={() => finish()} disabled={busy || !code.trim()}>Finish connection</button>
+              <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code (auto-filled on redirect)" style={{ flex: 1 }} />
+              <input type="text" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State (auto-filled on redirect)" style={{ flex: 1 }} />
+              <button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</button>
             </div>
           </div>
         </div>
@@ -1689,16 +1689,14 @@ export function Mailboxes() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  // P0: OAuth secrets must never touch browser storage — memory only.
+  // P0: OAuth client secrets are NEVER held in the browser — not in state,
+  // not in storage. Only the public client ID (optional) lives here.
   const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
 
   const updateClientId = (v: string) => { setClientId(v); };
-  const updateClientSecret = (v: string) => { setClientSecret(v); };
-  const clearOAuthSecret = () => { setClientSecret(''); };
 
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
@@ -1714,11 +1712,11 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      // P0: secrets in POST body over TLS, never query params (log leak).
+      // P0: client_id/redirect_uri in POST body over TLS, never query params.
+      // client_secret is never sent — it resolves server-side only.
       const r = await jpost(`/oauth/${provider}/authorize`, {
         redirect_uri: redirectUri,
         ...(clientId.trim() ? { client_id: clientId.trim() } : {}),
-        ...(clientSecret.trim() ? { client_secret: clientSecret.trim() } : {}),
       });
       window.location.href = r.auth_url;
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
@@ -1729,9 +1727,8 @@ export function Mailboxes() {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const r = await jpost('/oauth/sync-now', { max_results: num, client_id: clientId || undefined, client_secret: clientSecret || undefined });
+      const r = await jpost('/oauth/sync-now', { max_results: num, client_id: clientId || undefined });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
-      clearOAuthSecret();
       await load();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
