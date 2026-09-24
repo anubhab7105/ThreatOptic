@@ -79,11 +79,15 @@ def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
     # forged sender: From domain vs Return-Path domain mismatch
     rp_dom = _clean_domain(str(raw_headers.get("Return-Path", "")))
     frm_dom = _clean_domain(str(raw_headers.get("From", "")))
-    if rp_dom and frm_dom and rp_dom != frm_dom:
+    from .psl import same_organization
+    # Same-organization comparison (PSL-aware): bounce@mail.company.com vs
+    # ceo@company.com is legitimate; bounce@evil.test vs ceo@company.com
+    # is not. Exact-match false-positived on legitimate subdomains.
+    if rp_dom and frm_dom and not same_organization(rp_dom, frm_dom):
         flags.append("return-path-mismatch")
     # Message-ID domain vs From domain, compared by REGISTRABLE domain so
     # mail.paypal.com vs paypal.com no longer false-positives (Step 4).
     mid_dom = _clean_domain(str(raw_headers.get("Message-ID", "")))
-    if mid_dom and frm_dom and _registrable(mid_dom) != _registrable(frm_dom):
+    if mid_dom and frm_dom and not same_organization(mid_dom, frm_dom):
         flags.append("message-id-mismatch")
     return flags
