@@ -1,12 +1,19 @@
 """Real-time alert channel (Phase 3, item 12): FastAPI-native WebSocket.
 
-Clients connect to /api/v1/ws/alerts?token=<jwt-access-token> (browsers
-cannot set Authorization headers on WebSocket handshakes). Connections
-are tagged with the user's org + role; broadcasts go to same-org
-sockets plus Admins. Dead sockets are pruned on send failure.
+Clients first POST /api/v1/ws/ticket (authenticated) for a short-lived
+single-purpose ticket, then connect to /api/v1/ws/alerts?ticket=<ticket>.
+Long-lived access tokens are NEVER accepted as a query parameter (they
+leak to proxy/access logs); only 60-second ws-ticket JWTs are valid on
+the handshake. Connections are tagged with the user's org + role;
+broadcasts go to same-org sockets plus Admins. Dead sockets are pruned
+on send failure.
 """
 import logging
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+
+from .. import models
+from ..config import get_settings
+from .deps import get_current_user
 
 log = logging.getLogger("ws")
 
@@ -48,17 +55,17 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def _user_from_token(token: str):
-    from .. import models
-    from ..config import get_settings
+def _user_from_ticket(ticket: str):
+    """Validate a short-lived ws-ticket (P0). Anything else — including a
+    valid long-lived access token — fails closed (returns None)."""
     from ..database import SessionLocal
     from ..modules.auth.security import decode_token
 
     try:
-        data = decode_token(token or "", get_settings().secret_key)
+        data = decode_token(ticket or "", get_settings().secret_key)
     except Exception:
         return None
-    if data.get("type") != "access":
+    if data.get("type") != "ws-ticket":
         return None
     db = SessionLocal()
     try:
@@ -67,9 +74,18 @@ def _user_from_token(token: str):
         db.close()
 
 
+@router.post("/ws/ticket")
+def mint_ticket(user: models.User = Depends(get_current_user)):
+    """Exchange auth for a 60-second WebSocket ticket (P0: tokens in URLs
+    are bounded to a minute of read-only alert stream)."""
+    from ..modules.auth.security import create_ws_ticket
+
+    return {"ticket": create_ws_ticket(user.id, user.username, user.role, get_settings().secret_key)}
+
+
 @router.websocket("/ws/alerts")
-async def alerts_socket(ws: WebSocket, token: str = Query("")):
-    user = _user_from_token(token)
+async def alerts_socket(ws: WebSocket, ticket: str = Query("")):
+    user = _user_from_ticket(ticket)
     if not user:
         await ws.close(code=4401)
         return

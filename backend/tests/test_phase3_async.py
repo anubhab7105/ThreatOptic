@@ -99,8 +99,10 @@ def test_websocket_push_on_high_risk(monkeypatch):
     monkeypatch.setattr(pipe, "compute_scores", _hot)
     with TestClient(app) as c:
         h = _auth(c)
-        tok = h["Authorization"].split(" ", 1)[1]
-        with c.websocket_connect(f"/api/v1/ws/alerts?token={tok}") as ws:
+        # P0: sockets need a short-lived ticket, not the access token.
+        ticket = c.post("/api/v1/ws/ticket", headers=h).json()["ticket"]
+        assert c.post("/api/v1/ws/ticket").status_code == 401
+        with c.websocket_connect(f"/api/v1/ws/alerts?ticket={ticket}") as ws:
             c.post("/api/v1/emails/ingest", headers=h, json={
                 "raw": ("From: \"CEO\" <ceo@xn--paypa1-secure.top>\nTo: f@c.test\n"
                         "Subject: Urgent wire transfer - verify account now\nMessage-ID: <w1@x.top>\n"
@@ -111,10 +113,15 @@ def test_websocket_push_on_high_risk(monkeypatch):
             msg = ws.receive_json()
             assert msg["event"] == "high-risk-alert"
             assert msg["fraud_score"] >= 75 and msg["email_id"]
-        # bad token closes
+        # bad ticket closes; long-lived access tokens are NOT valid tickets
         try:
-            with c.websocket_connect("/api/v1/ws/alerts?token=junk"):
+            with c.websocket_connect("/api/v1/ws/alerts?ticket=junk"):
                 raise SystemExit("should have closed")
+        except Exception:
+            pass
+        try:
+            with c.websocket_connect(f"/api/v1/ws/alerts?ticket={h['Authorization'].split(' ', 1)[1]}"):
+                raise SystemExit("access token must not open a socket")
         except Exception:
             pass
 
