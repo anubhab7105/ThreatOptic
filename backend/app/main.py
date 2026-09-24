@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from .config import get_settings
-from .database import SessionLocal, init_db
+from .database import init_db
 from .modules.auth.rate_limit import apply_limiter_setting, limiter
 from .routers.api import router
 from .routers.auth import router as auth_router
