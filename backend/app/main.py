@@ -23,7 +23,7 @@ settings = get_settings()
 
 async def _smtp_consumer() -> None:
     """Background loop: SMTP queue -> forensic pipeline (F3)."""
-    from .modules.ingestion.queue import dequeue_email
+    from .modules.ingestion.queue import ack_email, dequeue_email
     from .services.pipeline import process_raw_email
     log.info("SMTP consumer started")
     while True:
@@ -32,26 +32,29 @@ async def _smtp_consumer() -> None:
                 payload = await dequeue_email()
             except asyncio.CancelledError:
                 raise
-            raw = payload.get("raw", b"")
-            if isinstance(raw, str):
-                raw = raw.encode()
-            db = SessionLocal()
             try:
-                res = await process_raw_email(
-                    db, raw, source=payload.get("source", "smtp"),
-                    envelope_from=payload.get("envelope_from", ""),
-                    envelope_tos=payload.get("rcpt_tos") or [],
-                )
-                log.info("SMTP mail analyzed: %s score=%s", res["email_id"], res["fraud_score"])
+                raw = payload.get("raw", b"")
+                if isinstance(raw, str):
+                    raw = raw.encode()
+                db = SessionLocal()
                 try:
-                    from .modules.cache import cache_delete_prefix
-                    cache_delete_prefix("dash:")
+                    res = await process_raw_email(
+                        db, raw, source=payload.get("source", "smtp"),
+                        envelope_from=payload.get("envelope_from", ""),
+                        envelope_tos=payload.get("rcpt_tos") or [],
+                    )
+                    log.info("SMTP mail analyzed: %s score=%s", res["email_id"], res["fraud_score"])
+                    try:
+                        from .modules.cache import cache_delete_prefix
+                        cache_delete_prefix("dash:")
+                    except Exception:
+                        pass
                 except Exception:
-                    pass
-            except Exception:
-                log.exception("SMTP pipeline run failed")
+                    log.exception("SMTP pipeline run failed")
+                finally:
+                    db.close()
             finally:
-                db.close()
+                ack_email()  # P0 consumer discipline (success or failure)
         except asyncio.CancelledError:
             log.info("SMTP consumer stopped")
             break

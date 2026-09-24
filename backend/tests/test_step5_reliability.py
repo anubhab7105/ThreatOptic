@@ -273,3 +273,94 @@ def test_metrics_corrupt_file(tmp_path):
         raise SystemExit("missing metrics should raise")
     except HTTPException as e:
         assert e.status_code == 404
+
+
+def test_queue_byte_budget_and_accounting(monkeypatch):
+    """P0: byte budget bounds memory independently of item count."""
+    import asyncio
+    import queue as std_queue
+    from app.modules.ingestion import queue as qmod
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "smtp_queue_max", 1000)
+    monkeypatch.setattr(get_settings(), "smtp_queue_max_bytes", 3000)
+    monkeypatch.setattr(get_settings(), "kafka_bootstrap", "")
+    while not qmod._mem_queue.empty():
+        qmod._mem_queue.get()
+    qmod._mem_bytes = 0
+    qmod._inflight = 0
+    try:
+        asyncio.run(qmod.enqueue_email({"raw": b"x" * 500}))
+        assert qmod.queue_bytes() > 0
+        # 500+1024 + 2000+1024 > 3000 budget -> Full (452 upstream)
+        try:
+            asyncio.run(qmod.enqueue_email({"raw": b"y" * 2000}))
+            raise SystemExit("byte budget should have rejected")
+        except std_queue.Full:
+            pass
+        # dequeue frees budget; ack clears inflight
+        assert qmod.queue_inflight() == 0
+        payload = asyncio.run(qmod.dequeue_email())
+        assert payload["raw"] == b"x" * 500
+        assert qmod.queue_inflight() == 1
+        assert qmod.queue_bytes() == 0
+        qmod.ack_email()
+        assert qmod.queue_inflight() == 0
+        asyncio.run(qmod.enqueue_email({"raw": b"y" * 2000}))
+        assert qmod.queue_depth() == 1
+    finally:
+        while not qmod._mem_queue.empty():
+            qmod._mem_queue.get()
+        qmod._mem_bytes = 0
+        qmod._inflight = 0
+
+
+def test_kafka_mirror_never_blackholes_and_starts_once(monkeypatch):
+    """P0: Kafka is a mirror — memory always receives; producer starts once."""
+    import asyncio
+    import sys
+    import types
+    from app.modules.ingestion import queue as qmod
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "kafka_bootstrap", "kafka:9092")
+    monkeypatch.setattr(get_settings(), "smtp_queue_max_bytes", 10 * 1024 * 1024)
+    starts, sends = [], []
+
+    class FakeProducer:
+        async def start(self):
+            starts.append(1)
+
+        async def send_and_wait(self, topic, payload):
+            sends.append((topic, payload))
+            return True
+
+        async def stop(self):
+            pass
+
+    fake_mod = types.ModuleType("aiokafka")
+    fake_mod.AIOKafkaProducer = lambda **kw: FakeProducer()
+    monkeypatch.setitem(sys.modules, "aiokafka", fake_mod)
+    while not qmod._mem_queue.empty():
+        qmod._mem_queue.get()
+    qmod._mem_bytes = 0
+    qmod._inflight = 0
+    qmod._producer = None
+    qmod._producer_started = False
+    try:
+        asyncio.run(qmod.enqueue_email({"raw": b"one"}))
+        asyncio.run(qmod.enqueue_email({"raw": b"two"}))
+        assert len(starts) == 1  # started once, not per-enqueue
+        assert len(sends) == 2  # mirrored
+        # ...and the pipeline path still got both (no black hole)
+        assert qmod.queue_depth() == 2
+        first = asyncio.run(qmod.dequeue_email())
+        assert first["raw"] == b"one"
+        qmod.ack_email()
+    finally:
+        while not qmod._mem_queue.empty():
+            qmod._mem_queue.get()
+        qmod._mem_bytes = 0
+        qmod._inflight = 0
+        qmod._producer = None
+        qmod._producer_started = False
