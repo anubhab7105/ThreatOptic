@@ -77,6 +77,15 @@ def _load_bundle() -> dict:
             logger.error("URL ML model unavailable — %s", _model_error)
             raise ModelUnavailableError(_model_error)
 
+        # P0: trust gate BEFORE unpickling (pickle == RCE on write access).
+        try:
+            from ..model_trust import verify_model_artifact, ModelTrustError
+            verify_model_artifact(_MODEL_PATH, purpose="url-ml")
+        except ModelTrustError as exc:
+            _model_error = f"URL ML model trust failed: {exc}"
+            logger.error("URL ML model unavailable — %s", _model_error)
+            raise ModelUnavailableError(_model_error) from exc
+
         try:
             import joblib
             bundle = joblib.load(_MODEL_PATH)
