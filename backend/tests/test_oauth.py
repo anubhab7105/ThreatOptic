@@ -44,6 +44,25 @@ def test_authorize_urls():
         assert c.get("/api/v1/oauth/status").status_code == 401
 
 
+def test_authorize_rejects_query_param_secrets():
+    """P0: authorize/auth-url accept secrets in POST body only — GET with
+    query params must not exist (405), so secrets never land in URLs/logs."""
+    from app.main import app
+
+    with TestClient(app) as c:
+        h = _auth(c)
+        # GET authorize route removed: query-string secrets impossible
+        assert c.get("/api/v1/oauth/google/authorize",
+                     headers=h,
+                     params={"redirect_uri": "http://localhost:5173/", "client_id": "gid",
+                             "client_secret": "topsecret"}).status_code == 405
+        # GET gmail auth-url route removed as well
+        assert c.get("/api/v1/gmail/auth-url",
+                     headers=h,
+                     params={"redirect_uri": "http://localhost:5173/", "client_id": "gid",
+                             "client_secret": "topsecret"}).status_code == 405
+
+
 async def _fake_g_exchange(code, cid, sec, uri, code_verifier=""):
     return {"access_token": "ya29.x", "refresh_token": "1//r-token", "expires_in": 3600}
 

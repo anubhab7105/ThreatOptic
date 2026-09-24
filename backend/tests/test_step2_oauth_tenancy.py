@@ -53,7 +53,7 @@ def test_oauth_state_expiry_and_allowlist(monkeypatch):
     with TestClient(app) as c:
         h = _register(c, _uname("st"), role="Analyst")
         # non-allowlisted redirect rejected
-        r = c.get("/api/v1/oauth/google/authorize", headers=h, params={
+        r = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "https://evil.test/cb", "client_id": "gid"})
         assert r.status_code == 400 and "allowlisted" in r.text
         # unknown state rejected

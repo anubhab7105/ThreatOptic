@@ -25,4 +25,13 @@ describe('oauth browser-storage hygiene (P0)', () => {
     expect(main).not.toMatch(/client_secret=\$\{/);
     expect(main).not.toMatch(/[`'"]&client_secret=/);
   });
+
+  it('never builds auth-url/authorize URLs with secret query params', () => {
+    // P0: GmailPanel.getUrl and Mailboxes.connect must POST bodies, never
+    // GET query strings (proxy/access-log leak).
+    expect(pages).not.toMatch(/\/gmail\/auth-url\?.*client_secret/);
+    expect(pages).not.toMatch(/\/authorize\?.*client_secret/);
+    expect(pages).not.toMatch(/jget\(`\/gmail\/auth-url/);
+    expect(pages).not.toMatch(/jget\(`\/oauth\//);
+  });
 });
