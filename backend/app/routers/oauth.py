@@ -165,8 +165,10 @@ def _resolve_client_id(provider: str, explicit: str | None, conn: models.Mailbox
     return cid
 
 
-def _resolve_client_secret(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None, db: Session | None = None) -> str:
-    """Return client_secret from: explicit > conn > other connections in DB > GmailAccount in DB > env fallback."""
+def _resolve_client_secret(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None,
+                           db: Session | None = None, user: models.User | None = None) -> str:
+    """Return client_secret from: explicit > conn > TENANT-SCOPED connections >
+    own GmailAccount > env fallback (P0: never another tenant's credentials)."""
     if explicit and explicit.strip():
         return explicit.strip()
     if conn and conn.encrypted_client_secret:
@@ -177,10 +179,10 @@ def _resolve_client_secret(provider: str, explicit: str | None, conn: models.Mai
         except Exception:
             pass
     if db:
-        other_conn = db.query(models.MailboxConnection).filter(
+        other_conn = _tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == provider,
             models.MailboxConnection.encrypted_client_secret != ""
-        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        ), user).order_by(models.MailboxConnection.updated_at.desc()).first()
         if other_conn and other_conn.encrypted_client_secret:
             try:
                 val = decrypt_secret(other_conn.encrypted_client_secret)
@@ -189,9 +191,15 @@ def _resolve_client_secret(provider: str, explicit: str | None, conn: models.Mai
             except Exception:
                 pass
         if provider == "google":
-            acct = db.query(models.GmailAccount).filter(
+            acct_q = db.query(models.GmailAccount).filter(
                 models.GmailAccount.encrypted_client_secret != ""
-            ).order_by(models.GmailAccount.updated_at.desc()).first()
+            )
+            if user is not None:
+                # GmailAccount is per-user: never borrow another user's row.
+                acct_q = acct_q.filter(models.GmailAccount.user_id == user.id)
+            else:
+                acct_q = acct_q.filter(models.GmailAccount.id == "__none__")
+            acct = acct_q.order_by(models.GmailAccount.updated_at.desc()).first()
             if acct and acct.encrypted_client_secret:
                 try:
                     val = decrypt_secret(acct.encrypted_client_secret)
