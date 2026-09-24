@@ -235,14 +235,13 @@ async def sync(
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     if not acct:
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
-    # Resolve credentials: request body > stored in DB > env fallback
+    # Resolve credentials: stored in DB > env fallback. client_secret is
+    # NEVER accepted from the request (P0) — it lives server-side only.
     cid = _resolve_client_id(payload.client_id, acct, db=db)
-    secret = _resolve_client_secret(payload.client_secret, acct, db=db)
-    # Persist explicit credentials so future syncs don't need them again
+    secret = _resolve_client_secret(None, acct, db=db)
+    # Persist explicit client_id so future syncs don't need it again
     if payload.client_id:
         acct.encrypted_client_id = vault.encrypt_secret(cid)
-    if payload.client_secret:
-        acct.encrypted_client_secret = vault.encrypt_secret(secret)
     db.commit()
 
     try:
