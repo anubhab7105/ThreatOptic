@@ -267,15 +267,17 @@ def _txt_records(name: str) -> list[str]:
 
 def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict | None = None,
                    spf_domain: str = "", dkim_domain: str = "",
-                   upstream: dict[str, Any] | None = None) -> dict[str, Any]:
+                   upstream: dict[str, Any] | None = None, trust_upstream: bool = False) -> dict[str, Any]:
     upstream_dmarc = (upstream or {}).get("dmarc")
     from_domain = _clean_domain(from_domain)
     if not from_domain:
         return {"status": UNVERIFIABLE, "detail": "no-from-domain"}
 
     if not _live():
-        if upstream_dmarc:
-            return upstream_dmarc
+        if trust_upstream and upstream_dmarc:
+            return {"status": upstream_dmarc.get("status", UNVERIFIABLE),
+                    "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
+                    "upstream": dict(upstream_dmarc)}
         return {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}
 
     recs = _txt_records(f"_dmarc.{from_domain}")
@@ -293,20 +295,22 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         # Check alignment
         spf_status = (spf_res or {}).get("status", "").lower()
         dkim_status = (dkim_res or {}).get("status", "").lower()
-        
+
         spf_match = bool(spf_domain) and (spf_domain == from_domain or spf_domain.endswith("." + from_domain) or from_domain.endswith("." + spf_domain))
         dkim_match = bool(dkim_domain) and (dkim_domain == from_domain or dkim_domain.endswith("." + from_domain) or from_domain.endswith("." + dkim_domain))
-        
+
         spf_aligned = spf_status == "pass" and spf_match
         dkim_aligned = dkim_status == "pass" and dkim_match
 
         if spf_aligned or dkim_aligned:
-            return {"status": "pass", "detail": f"dmarc-pass (policy: {pol})", "policy": pol, "record": dmarc[0][:200]}
+            return _with_upstream({"status": "pass", "detail": f"dmarc-pass (policy: {pol})", "policy": pol, "record": dmarc[0][:200]}, upstream_dmarc)
         else:
-            return {"status": "fail", "detail": f"dmarc-alignment-failed (policy: {pol})", "policy": pol, "record": dmarc[0][:200]}
+            return _with_upstream({"status": "fail", "detail": f"dmarc-alignment-failed (policy: {pol})", "policy": pol, "record": dmarc[0][:200]}, upstream_dmarc)
 
-    if upstream_dmarc:
-        return upstream_dmarc
+    if trust_upstream and upstream_dmarc:
+        return {"status": upstream_dmarc.get("status", "none"),
+                "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
+                "upstream": dict(upstream_dmarc)}
     return {"status": "none", "detail": "no-dmarc-record"}
 
 
