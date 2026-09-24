@@ -193,13 +193,17 @@ def test_oauth_hijack_prevention(monkeypatch):
         q = parse_qs(urlparse(victim_au).query)
         victim_state = q["state"][0]
 
-        # Verify state contains victim's user_id
-        import base64, json
-        msg, sig = victim_state.split(".", 1)
-        rem = len(msg) % 4
-        padded = msg + ("=" * (4 - rem) if rem else "")
-        payload = json.loads(base64.urlsafe_b64decode(padded.encode()).decode())
-        victim_user_id = payload["sub"]
+        # P0: state is opaque — no embedded payload, no dot-separated blob.
+        assert "." not in victim_state
+
+        # Resolve the state owner server-side (browser never sees user_id).
+        db0 = SessionLocal()
+        try:
+            row = db0.query(models.OAuthState).filter_by(state=victim_state).first()
+            assert row is not None
+            victim_user_id = row.user_id
+        finally:
+            db0.close()
 
         # Attacker tries to use victim's state with their own session
         # The mailbox should be attached to the VICTIM (state's user_id), not the attacker
@@ -217,6 +221,52 @@ def test_oauth_hijack_prevention(monkeypatch):
             conn = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
             assert conn is not None, "Mailbox should be created"
             assert conn.user_id == victim_user_id, "Mailbox should be attached to victim (state's user_id)"
+            db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+            db.query(models.OAuthState).filter_by(state=victim_state).delete()
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_opaque_state_carries_no_secrets(monkeypatch):
+    """P0: authorize state is an opaque token — no secrets/PKCE/data inside."""
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+    from app import models
+    from app.database import SessionLocal
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "gid")
+    monkeypatch.setattr(settings, "google_client_secret", "gsec")
+
+    with TestClient(app) as c:
+        h = _auth(c)
+        au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
+        from urllib.parse import parse_qs, urlparse
+        import base64
+        q = parse_qs(urlparse(au).query)
+        state = q["state"][0]
+        # Opaque: single token, no dot-separated signed blob to decode.
+        assert "." not in state
+        assert "csec" not in state and "pkv" not in state and "gsec" not in state
+        try:
+            base64.urlsafe_b64decode(state + "=" * (-len(state) % 4))
+            decodes = True
+        except Exception:
+            decodes = False
+        if decodes:
+            raw = base64.urlsafe_b64decode(state + "=" * (-len(state) % 4)).decode("utf8", "ignore")
+            assert "gsec" not in raw and "pkv" not in raw
+        # Server holds the verifier + owner; browser got only the token.
+        db = SessionLocal()
+        try:
+            row = db.query(models.OAuthState).filter_by(state=state).first()
+            assert row is not None and row.code_verifier and row.user_id
+            assert row.used is False
+            db.query(models.OAuthState).filter_by(state=state).delete()
+            db.commit()
         finally:
             db.close()
 
@@ -304,19 +354,33 @@ def test_invalid_missing_state(monkeypatch):
         assert r.status_code == 400
         assert "state" in r.text.lower()
 
-        # Invalid state (malformed)
-        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "state": "not.valid.state"})
+        # Invalid state (unknown opaque token)
+        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "state": "bogus-opaque-state-token"})
         assert r.status_code == 400
 
-        # Expired state (old timestamp)
-        import base64, json, hmac, hashlib, time
-        payload = {"sub": "fake-user", "t": int(time.time()) - 2000, "flow": "oauth", "pkv": "verifier"}
-        msg = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
-        sig = hmac.new(settings.secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
-        expired_state = f"{msg}.{sig}"
-        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "state": expired_state})
+        # Expired state (server-side row past expiry)
+        from datetime import datetime, timedelta, timezone
+        from app import models as _models
+        from app.database import SessionLocal as _SessionLocal
+        db = _SessionLocal()
+        try:
+            u = db.query(_models.User).order_by(_models.User.created_at.desc()).first()
+            db.add(_models.OAuthState(state="expired-opaque-state", user_id=u.id, provider="google",
+                                      redirect_uri="http://localhost:5173/", client_id="gid",
+                                      code_verifier="v",
+                                      expires_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+            db.commit()
+        finally:
+            db.close()
+        r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "state": "expired-opaque-state"})
         assert r.status_code == 400
         assert "expired" in r.text.lower()
+        db = _SessionLocal()
+        try:
+            db.query(_models.OAuthState).filter_by(state="expired-opaque-state").delete()
+            db.commit()
+        finally:
+            db.close()
 
 
 def test_tampered_redirect_uri(monkeypatch):
