@@ -229,7 +229,7 @@ def authorize(
     uri = _redirect_or_400(payload.redirect_uri)
     cid = _resolve_client_id(p, payload.client_id, db=db)
     verifier = connectors._new_verifier()
-    state = _make_state(user.id, client_id=cid, client_secret=client_secret or "", redirect_uri=uri, flow="oauth", pkce_verifier=verifier, provider=p)
+    state = _make_state(user.id, client_id=cid, client_secret=payload.client_secret or "", redirect_uri=uri, flow="oauth", pkce_verifier=verifier, provider=p)
     challenge = connectors._pkce_challenge(verifier)
     if p == "google":
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
