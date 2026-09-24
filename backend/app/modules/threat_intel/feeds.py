@@ -133,20 +133,103 @@ def check_ip_blocklists(ip: str) -> list[str]:
 
 
 def query_misp(value: str) -> dict[str, Any]:
-    url = os.environ.get("MISP_URL", "")
-    key = os.environ.get("MISP_KEY", "")
+    """Single-value MISP lookup (compat wrapper over the batched path)."""
+    v = (value or "").strip()
+    if not v:
+        return {"source": "misp", "skipped": True}
+    url, key = _misp_config()
     if not url or not key:
         return {"source": "misp", "skipped": True}
+    return {"source": "misp", "hits": query_misp_batch([v]).get(v, 0)}
+
+
+def _misp_config() -> tuple[str, str]:
+    url = os.environ.get("MISP_URL", "") or ""
+    key = os.environ.get("MISP_KEY", "") or ""
+    if not url or not key:
+        try:
+            from ...config import get_settings
+            s = get_settings()
+            url = url or s.misp_url or ""
+            key = key or s.misp_key or ""
+        except Exception:
+            pass
+    return url, key
+
+
+# Batch MISP state (P0 reliability): per-value TTL cache + single batched
+# restSearch per mail instead of up to 90 sequential POSTs.
+_MISP_CACHE: dict[str, tuple[float, int]] = {}
+MISP_CACHE_TTL_S = 15 * 60
+MISP_VALUE_CAP = 30
+MISP_TIMEOUT_S = 5.0
+
+
+def _misp_cache_get(value: str, now: float) -> int | None:
+    ent = _MISP_CACHE.get((value or "").lower())
+    if ent and ent[0] > now:
+        return ent[1]
+    if ent:
+        _MISP_CACHE.pop((value or "").lower(), None)
+    return None
+
+
+def query_misp_batch(values: list[str]) -> dict[str, int]:
+    """One batched MISP restSearch for deduplicated values -> {value: hits}.
+
+    P0: replaces up to 90 sequential per-indicator POSTs (each with its own
+    5s timeout) with a single request over capped unique values, served
+    from a 15-minute TTL cache when warm. Transport failure yields zero
+    hits (same fail-open-per-mail as before); errors are NOT cached.
+    """
+    seen: list[str] = []
+    for v in values or []:
+        v = (v or "").strip()
+        if v and v not in seen:
+            seen.append(v)
+    seen = seen[:MISP_VALUE_CAP]
+    if not seen:
+        return {}
+    url, key = _misp_config()
+    if not url or not key:
+        return {}
+    now = time.time()
+    out: dict[str, int] = {}
+    pending = [v for v in seen if (_misp_cache_get(v, now) is None)]
+    for v in seen:
+        cached = _misp_cache_get(v, now)
+        if cached is not None:
+            out[v] = cached
+    if not pending:
+        return out
     try:
         import requests
         r = requests.post(
             f"{url.rstrip('/')}/attributes/restSearch",
             headers={"Authorization": key, "Accept": "application/json", "Content-Type": "application/json"},
-            json={"value": value}, timeout=5,
+            json={"value": pending, "limit": 100}, timeout=MISP_TIMEOUT_S,
         )
-        return {"source": "misp", "status": r.status_code, "hits": len(r.json().get("response", {}).get("Attribute", [])) if r.status_code == 200 else 0}
-    except Exception as e:
-        return {"source": "misp", "error": str(e)[:300]}
+        counts: dict[str, int] = {v: 0 for v in pending}
+        if r.status_code == 200:
+            try:
+                attrs = (r.json().get("response", {}) or {}).get("Attribute", []) or []
+            except Exception:
+                attrs = []
+            wanted = {v.lower() for v in pending}
+            for a in attrs:
+                try:
+                    av = str((a or {}).get("value", "")).strip().lower()
+                except Exception:
+                    continue
+                if av in wanted:
+                    counts[next(v for v in pending if v.lower() == av)] += 1
+        for v in pending:
+            out[v] = counts[v]
+            _MISP_CACHE[v.lower()] = (now + MISP_CACHE_TTL_S, counts[v])
+    except Exception:
+        for v in pending:
+            out[v] = 0
+    return out
 
 
 def _is_malicious_reason(reason: str) -> bool:
