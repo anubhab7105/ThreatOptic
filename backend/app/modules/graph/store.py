@@ -14,6 +14,14 @@ G = nx.DiGraph()
 # Oldest nodes (insertion order) are evicted first.
 MAX_GRAPH_NODES = 20000
 
+# P0 reliability budgets: paginated hydration, clamped traversals, capped
+# read output — none of these paths may load or return unbounded data.
+HYDRATE_BATCH_ROWS = 1000
+HYDRATE_MAX_ROWS = 5000
+NX_MAX_DEPTH = 5
+NX_MAX_NODES = 500
+NX_MAX_EDGES = 1000
+
 _neo_driver = None
 
 
@@ -62,6 +70,45 @@ def graph_consistency_note() -> str | None:
         return ("NEO4J_URI is unset with expected_replicas>1: the in-memory graph "
                 "is per-replica and attribution will diverge — configure Neo4j.")
     return None
+
+
+def _valid_ip(ip: str) -> bool:
+    return bool(ip) and ip not in ("0.0.0.0", "unresolved", "none", "")
+
+
+def _neo_mirror(email_addr: str, ip: str, domains: list[str], campaign: str) -> None:
+    """Mirror one mail to Neo4j in a few batched statements (P0).
+
+    Previously up to ~62 round trips per mail (per-domain/per-edge
+    MERGEs). Now: one statement for the email node, one for the IP edge,
+    and one UNWIND batch each for domains / HOSTS / campaign edges.
+    Best-effort: any failure is swallowed (local graph is authoritative
+    for single-replica writes).
+    """
+    drv = _neo()
+    if not drv:
+        return
+    domains = [d for d in (domains or []) if d][:20]
+    try:
+        with drv.session() as s:
+            s.run("MERGE (e:Email_Address {address:$a})", a=email_addr)
+            if _valid_ip(ip):
+                s.run("MERGE (i:IP_Address {ip:$ip}) WITH i "
+                      "MATCH (e:Email_Address {address:$a}) "
+                      "MERGE (e)-[:SENT_FROM]->(i)", a=email_addr, ip=ip)
+            if domains:
+                s.run("UNWIND $ds AS dname MERGE (d:Domain {name:dname})", ds=domains)
+                if _valid_ip(ip):
+                    s.run("UNWIND $ds AS dname "
+                          "MATCH (i:IP_Address {ip:$ip}), (d:Domain {name:dname}) "
+                          "MERGE (i)-[:HOSTS]->(d)", ip=ip, ds=domains)
+                if campaign:
+                    s.run("UNWIND $ds AS dname "
+                          "MATCH (d:Domain {name:dname}) "
+                          "MERGE (c:Threat_Campaign {name:$c}) "
+                          "MERGE (d)-[:PART_OF]->(c)", ds=domains, c=campaign)
+    except Exception:
+        pass
 
 
 def _node_id(labels: list, props: dict) -> str | None:
@@ -216,22 +263,8 @@ def upsert_email_graph(
             G.add_node(r_node, kind="Email_Address", address=rec_clean)
             G.add_edge(e_node, r_node, rel="SENT_TO")
 
-    # Neo4j mirror best-effort
-    drv = _neo()
-    if drv:
-        try:
-            with drv.session() as s:
-                s.run("MERGE (e:Email_Address {address:$a})", a=email_addr)
-                if ip and ip not in ("0.0.0.0", "unresolved", "none", ""):
-                    s.run("MERGE (i:IP_Address {ip:$ip}) MERGE (e:Email_Address {address:$a}) MERGE (e)-[:SENT_FROM]->(i)", a=email_addr, ip=ip)
-                for d in derived_domains[:20]:
-                    s.run("MERGE (d:Domain {name:$d})", d=d)
-                    if ip and ip not in ("0.0.0.0", "unresolved", "none", ""):
-                        s.run("MERGE (i:IP_Address {ip:$ip}) MERGE (d:Domain {name:$d}) MERGE (i)-[:HOSTS]->(d)", ip=ip, d=d)
-                    if campaign:
-                        s.run("MERGE (d:Domain {name:$d}) MERGE (c:Threat_Campaign {name:$c}) MERGE (d)-[:PART_OF]->(c)", d=d, c=campaign)
-        except Exception:
-            pass
+    # Neo4j mirror best-effort, batched (P0: ~5 round trips, not ~62).
+    _neo_mirror(email_addr, ip, derived_domains, campaign)
     _touch()
     return {"nodes": G.number_of_nodes(), "edges": G.number_of_edges()}
 
