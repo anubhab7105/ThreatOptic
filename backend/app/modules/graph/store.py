@@ -291,7 +291,7 @@ def ensure_graph_hydrated(db: Any) -> None:
                 .outerjoin(models.TraceabilityData, models.EmailRecord.id == models.TraceabilityData.email_id)
                 .outerjoin(models.AnalysisResult, models.EmailRecord.id == models.AnalysisResult.email_id)
                 .order_by(models.EmailRecord.timestamp.desc())
-                .limit(HYDRATE_BATCH_ROWS)
+                .limit(min(HYDRATE_BATCH_ROWS, HYDRATE_MAX_ROWS - loaded))
                 .offset(offset)
                 .all()
             )
@@ -403,7 +403,7 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
         return {"id": n, **data, "kind": kind}
 
     return {
-        "nodes": [_enrich_node(n, G.nodes[n]) for n in sub.nodes],
+        "nodes": [_enrich_node(n, G.nodes[n]) for n in sub_nodes],
         "edges": edges,
     }
 

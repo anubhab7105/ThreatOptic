@@ -12,8 +12,10 @@ class FakeSession:
     def __exit__(self, *args):
         return False
 
-    def run(self, query, params=None):
-        return self._script(query, params or {})
+    def run(self, query, params=None, **kw):
+        merged = dict(params or {})
+        merged.update(kw)
+        return self._script(query, merged)
 
 
 class FakeDriver:
@@ -80,3 +82,66 @@ def test_consistency_note(monkeypatch):
     assert store.graph_consistency_note() is not None
     monkeypatch.setattr(settings, "expected_replicas", 1)
     assert store.graph_consistency_note() is None
+
+
+def test_neo_mirror_batched_statements(monkeypatch):
+    """P0: one mail mirrors in a handful of statements, not ~62."""
+    calls: list = []
+
+    def _script(query, params):
+        calls.append((query, params))
+        return []
+
+    monkeypatch.setattr(store, "_neo", lambda: FakeDriver(_script))
+    store.upsert_email_graph(
+        "batch@test.local", "9.9.9.9",
+        [f"d{i}.test" for i in range(10)], campaign="camp-x")
+    assert len(calls) <= 5, calls
+    unwinds = [p for q, p in calls if "UNWIND" in q]
+    assert unwinds, "domains must go as UNWIND batches"
+    assert any(len(p.get("ds", [])) == 10 for p in unwinds)
+
+
+def test_hydration_paginated_and_capped(monkeypatch):
+    """P0: hydration pages through rows and respects the total cap."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    from app import models
+    import app.modules.graph.store as store_mod
+
+    store.G.clear()
+    eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=eng)
+    db = sessionmaker(bind=eng)()
+    try:
+        for i in range(12):
+            db.add(models.EmailRecord(
+                message_id=f"<h{i}@t.local>", sender_address=f"u{i}@t.local",
+                recipient_address="r@t.local", subject="s"))
+        db.commit()
+        monkeypatch.setattr(store_mod, "HYDRATE_BATCH_ROWS", 5)
+        monkeypatch.setattr(store_mod, "HYDRATE_MAX_ROWS", 8)
+        store_mod.ensure_graph_hydrated(db)
+        emails = [n for n in store_mod.G.nodes if str(n).startswith("email:")]
+        assert len(emails) == 8, emails
+    finally:
+        db.close()
+        store.G.clear()
+
+
+def test_related_depth_clamped_and_output_capped(monkeypatch):
+    """P0: absurd depth cannot hang the request or dump the graph."""
+    monkeypatch.setattr(store, "_neo", lambda: None)
+    store.G.clear()
+    try:
+        for i in range(30):
+            store.upsert_email_graph(f"u{i}@t.local", "9.9.9.9", [f"d{i}.test"])
+        rel = store.related_entities("9.9.9.9", depth=999)
+        assert len(rel["nodes"]) <= store.NX_MAX_NODES
+        assert len(rel["edges"]) <= store.NX_MAX_EDGES
+        # garbage depth falls back instead of crashing
+        rel2 = store.related_entities("9.9.9.9", depth="abc")  # type: ignore[arg-type]
+        assert rel2["nodes"]
+    finally:
+        store.G.clear()
