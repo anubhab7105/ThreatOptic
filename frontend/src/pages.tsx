@@ -314,12 +314,15 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  const [clientId, setClientId] = useState(() => localStorage.getItem('gmail_client_id') || '');
+  // P0: OAuth secrets must never touch browser storage. Client ID (public)
+  // is kept in memory only; client secret lives in component state and is
+  // cleared after use — never localStorage/sessionStorage.
+  const [clientId, setClientId] = useState('');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
   const [code, setCode] = useState('');
-  const [secret, setSecret] = useState(() => localStorage.getItem('gmail_client_secret') || '');
+  const [secret, setSecret] = useState('');
   const [query, setQuery] = useState('is:unread');
   const [maxN, setMaxN] = useState('10');
   const [busy, setBusy] = useState(false);
@@ -327,9 +330,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [notice, setNotice] = useState('');
   const [showCreds, setShowCreds] = useState(false);
 
-  // Persist credentials in localStorage so they survive page refreshes
-  const updateClientId = (v: string) => { setClientId(v); localStorage.setItem('gmail_client_id', v); };
-  const updateSecret = (v: string) => { setSecret(v); localStorage.setItem('gmail_client_secret', v); };
+  const updateClientId = (v: string) => { setClientId(v); };
+  const updateSecret = (v: string) => { setSecret(v); };
+  const clearSecret = () => { setSecret(''); };
 
   const refresh = async () => {
     try {
@@ -364,6 +367,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       const r = await jpost('/gmail/callback', { code: c, redirect_uri: redirectUri, client_id: clientId || undefined });
       setStatus(r);
       setCode('');
+      clearSecret();
       setNotice(`Connected as ${r.gmail_address}. Credentials saved securely on the server.`);
     } catch (e) { fail(e, 'Connection'); } finally { setBusy(false); }
   };
