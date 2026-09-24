@@ -1718,6 +1718,7 @@ export function Mailboxes() {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
       const r = await jpost('/oauth/sync-now', { max_results: num, client_id: clientId || undefined, client_secret: clientSecret || undefined });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      clearOAuthSecret();
       await load();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }

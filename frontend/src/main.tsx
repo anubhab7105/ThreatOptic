@@ -266,13 +266,11 @@ function Shell() {
     const state = params.get('state');
     if (code) {
       const originPath = window.location.origin + window.location.pathname;
-      const cid = localStorage.getItem('gmail_client_id') || localStorage.getItem('oauth_client_id') || '';
-      const csec = localStorage.getItem('gmail_client_secret') || localStorage.getItem('oauth_client_secret') || '';
-
+      // P0: never read OAuth secrets from browser storage and never forward
+      // them as query params (proxy/access-log leak). Forward only the opaque
+      // code + state; server resolves credentials/redirect from its own store.
       let target = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
       if (state) target += `&state=${encodeURIComponent(state)}`;
-      if (cid) target += `&client_id=${encodeURIComponent(cid)}`;
-      if (csec) target += `&client_secret=${encodeURIComponent(csec)}`;
 
       window.history.replaceState({}, '', window.location.pathname);
       window.location.href = target;
