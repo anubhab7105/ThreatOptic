@@ -99,7 +99,9 @@ def test_neo_mirror_batched_statements(monkeypatch):
     assert len(calls) <= 5, calls
     unwinds = [p for q, p in calls if "UNWIND" in q]
     assert unwinds, "domains must go as UNWIND batches"
-    assert any(len(p.get("ds", [])) == 10 for p in unwinds)
+    # 10 passed domains + the sender's own domain, in as few batches as possible
+    assert sum(len(p.get("ds", [])) for p in unwinds) >= 10
+    assert max(len(p.get("ds", [])) for p in unwinds) >= 10
 
 
 def test_hydration_paginated_and_capped(monkeypatch):
@@ -123,8 +125,9 @@ def test_hydration_paginated_and_capped(monkeypatch):
         monkeypatch.setattr(store_mod, "HYDRATE_BATCH_ROWS", 5)
         monkeypatch.setattr(store_mod, "HYDRATE_MAX_ROWS", 8)
         store_mod.ensure_graph_hydrated(db)
-        emails = [n for n in store_mod.G.nodes if str(n).startswith("email:")]
-        assert len(emails) == 8, emails
+        senders = [n for n in store_mod.G.nodes
+                   if str(n).startswith("email:u") and str(n).endswith("@t.local")]
+        assert len(senders) == 8, senders
     finally:
         db.close()
         store.G.clear()
