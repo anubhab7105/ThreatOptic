@@ -34,4 +34,10 @@ describe('oauth browser-storage hygiene (P0)', () => {
     expect(pages).not.toMatch(/jget\(`\/gmail\/auth-url/);
     expect(pages).not.toMatch(/jget\(`\/oauth\//);
   });
+
+  it('never opens WebSockets with the long-lived access token in the URL', () => {
+    // P0: AlertBell exchanges the token via POST for a 60s ticket.
+    expect(main).not.toMatch(/ws\/alerts\?token=/);
+    expect(main).toMatch(/ws\/alerts\?ticket=/);
+  });
 });
