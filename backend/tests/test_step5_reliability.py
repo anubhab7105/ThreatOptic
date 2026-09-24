@@ -203,14 +203,16 @@ def test_alembic_upgrade_fresh_db(tmp_path):
     cfg = Config(ini_path)
     cfg.set_main_option("script_location", script_loc)
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
-    # env.py ignores sqlalchemy.url and uses settings; point settings at tmp db
-    os.environ["DATABASE_URL"] = f"sqlite:///{db}"
+    # env.py ignores sqlalchemy.url and uses settings; point settings at tmp
+    # db via TEST_DATABASE_URL (takes precedence; the isolation fixture owns
+    # plain DATABASE_URL shadowing, so setting that here would be ignored).
+    os.environ["TEST_DATABASE_URL"] = f"sqlite:///{db}"
     from app.config import get_settings
     get_settings.cache_clear()
     try:
         command.upgrade(cfg, "head")
     finally:
-        os.environ.pop("DATABASE_URL", None)
+        os.environ.pop("TEST_DATABASE_URL", None)
         get_settings.cache_clear()
     tables = {r[0] for r in sqlite3.connect(db).execute("select name from sqlite_master where type='table'")}
     assert {"users", "email_records", "refresh_tokens", "mailbox_connections", "oauth_states"} <= tables
