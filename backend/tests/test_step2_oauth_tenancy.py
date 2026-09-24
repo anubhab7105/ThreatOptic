@@ -209,7 +209,7 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
 
     seen = {}
 
-    async def _fake_exchange(code, cid, sec, uri):
+    async def _fake_exchange(code, cid, sec, uri, code_verifier=""):
         return {"access_token": "a", "refresh_token": "1//g", "expires_in": 3600}
 
     async def _fake_profile(token):

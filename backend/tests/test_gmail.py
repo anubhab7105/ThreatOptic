@@ -21,7 +21,7 @@ def _auth(c: TestClient) -> tuple[dict, str]:
     return {"Authorization": f"Bearer {tok}"}, uname
 
 
-async def _fake_exchange(code, client_id, client_secret, redirect_uri):
+async def _fake_exchange(code, client_id, client_secret, redirect_uri, code_verifier=""):
     assert code and client_id and client_secret and redirect_uri
     return {"access_token": "ya29.fake", "refresh_token": "1//fake-refresh", "expires_in": 3600}
 
@@ -77,8 +77,13 @@ def test_gmail_connect_sync_disconnect(monkeypatch):
         # sync before connect
         assert c.post("/api/v1/gmail/sync", headers=h, json={}).status_code == 404
 
+        # P0: callback requires the opaque server-side state from auth-url
+        au = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"}).json()["auth_url"]
+        from urllib.parse import parse_qs, urlparse
+        st = parse_qs(urlparse(au).query)["state"][0]
         r = c.post("/api/v1/gmail/callback", headers=h, json={
-            "code": "4/fake", "redirect_uri": "http://localhost:5173/",
+            "code": "4/fake", "state": st, "redirect_uri": "http://localhost:5173/",
             "client_id": "demo-id",
         })
         assert r.status_code == 200, r.text
