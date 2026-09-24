@@ -316,18 +316,28 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
 
 def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_from: str = "") -> dict[str, Any]:
     from_domain = _clean_domain(_get_header(raw_headers, "From"))
-    # SPF authenticates the ENVELOPE sender (Return-Path), never display From.
-    env_from = (envelope_from or "").strip() or _get_header(raw_headers, "Return-Path") or from_domain
-    
-    # Extract upstream headers as authoritative context or graceful fallback
-    upstream_auth = parse_auth_headers(raw_headers)
+    # SPF authenticates the ENVELOPE sender (Return-Path), never the display
+    # From. Missing envelope => SPF "none", not a From-domain check.
+    return_path = _get_header(raw_headers, "Return-Path")
+    has_envelope = bool((envelope_from or "").strip() or return_path.strip())
+    env_from = (envelope_from or "").strip() or return_path.strip()
 
-    spf_r = validate_spf((sender_ip or "").strip(), env_from, upstream=upstream_auth)
-    dkim_r = validate_dkim(raw_bytes, raw_headers=raw_headers, upstream=upstream_auth)
-    
-    spf_domain = _clean_domain(env_from)
+    # Upstream claims + trust gate: honored only when stamped by our boundary.
+    upstream_auth = parse_auth_headers(raw_headers)
+    trust_upstream, authserv_id = _upstream_trusted(raw_headers)
+
+    if has_envelope:
+        spf_r = validate_spf((sender_ip or "").strip(), env_from, upstream=upstream_auth, trust_upstream=trust_upstream)
+        spf_domain = _clean_domain(env_from)
+    else:
+        spf_r = _with_upstream(
+            {"status": "none", "detail": "no-return-path; SPF has no envelope identity to check"},
+            upstream_auth.get("spf"))
+        spf_domain = ""
+    dkim_r = validate_dkim(raw_bytes, raw_headers=raw_headers, upstream=upstream_auth, trust_upstream=trust_upstream)
+
     dkim_domain = dkim_signing_domain(raw_headers)
-    
+
     dmarc_r = validate_dmarc(
         from_domain,
         spf_res=spf_r,
@@ -335,6 +345,7 @@ def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_f
         spf_domain=spf_domain,
         dkim_domain=dkim_domain,
         upstream=upstream_auth,
+        trust_upstream=trust_upstream,
     )
     
     # DMARC-style alignment requires an actual domain match, not just a pass.
