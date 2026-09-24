@@ -490,7 +490,8 @@ def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db),
         raise HTTPException(400, "title is required")
     if payload.assignee_id and not db.query(models.User).filter(models.User.id == payload.assignee_id).first():
         raise HTTPException(400, "assignee not found")
-    c = models.InvestigationCase(title=payload.title.strip(), email_ids=payload.email_ids or [],
+    c = models.InvestigationCase(title=payload.title.strip(),
+                                 email_ids=_validate_case_emails(db, user, payload.email_ids or []),
                                  assignee_id=payload.assignee_id, notes=payload.notes or "",
                                  organization_id=user.organization_id)
     db.add(c)
@@ -531,7 +532,7 @@ def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db)
             raise HTTPException(400, "assignee not found")
         c.assignee_id = payload.assignee_id
     if payload.email_ids is not None:
-        c.email_ids = payload.email_ids
+        c.email_ids = _validate_case_emails(db, user, payload.email_ids)
     db.commit()
     db.refresh(c)
     return c
