@@ -232,9 +232,13 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
 
     with TestClient(app) as c:
         h = _register(c, _uname("pin"), role="Analyst")
-        # connect with an explicit client_id override
+        # connect with an explicit client_id override (P0: via opaque state)
+        au = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "override-id"}).json()["auth_url"]
+        from urllib.parse import parse_qs as _pqs, urlparse as _up
+        _st = _pqs(_up(au).query)["state"][0]
         r = c.post("/api/v1/gmail/callback", headers=h, json={
-            "code": "x", "redirect_uri": "http://localhost:5173/", "client_id": "override-id"})
+            "code": "x", "state": _st, "redirect_uri": "http://localhost:5173/", "client_id": "override-id"})
         assert r.status_code == 200, r.text
         db = _session()
         try:

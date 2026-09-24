@@ -57,6 +57,38 @@ def test_gmail_unauth_and_auth_url_validation():
         assert "accounts.google.com" in url and "gmail.readonly" in url and "demo-id" in url
 
 
+def test_gmail_callback_requires_state(monkeypatch):
+    """P0: Gmail callback verifies the opaque state (CSRF hole closed)."""
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+
+    monkeypatch.setattr(conn, "exchange_gmail_code", _fake_exchange)
+    monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_profile)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
+
+    with TestClient(app) as c:
+        h, _ = _auth(c)
+        # missing state -> 422 (schema requires it)
+        r = c.post("/api/v1/gmail/callback", headers=h, json={"code": "4/fake"})
+        assert r.status_code == 422
+        # unknown state -> 400
+        r = c.post("/api/v1/gmail/callback", headers=h, json={
+            "code": "4/fake", "state": "bogus-opaque-state"})
+        assert r.status_code == 400
+        # another user's state -> 400 (session binding)
+        h2, _ = _auth(c)
+        au = c.post("/api/v1/gmail/auth-url", headers=h2, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"}).json()["auth_url"]
+        from urllib.parse import parse_qs, urlparse
+        st = parse_qs(urlparse(au).query)["state"][0]
+        r = c.post("/api/v1/gmail/callback", headers=h, json={
+            "code": "4/fake", "state": st})
+        assert r.status_code == 400
+
+
 def test_gmail_connect_sync_disconnect(monkeypatch):
     from app.main import app
     from app.config import get_settings
