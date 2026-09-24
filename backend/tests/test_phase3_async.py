@@ -155,3 +155,26 @@ def test_websocket_org_isolation():
             manager.disconnect(b)
 
     asyncio.run(run())
+
+
+def test_task_polling_requires_ownership(monkeypatch):
+    """P0: task results are tenant-isolated — 401 anon, 404 foreign/unknown."""
+    from app.main import app
+    from app.services import tasks
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "celery_broker_url", "memory://")
+    tasks.celery_app.conf.task_always_eager = True
+    try:
+        with TestClient(app) as c:
+            ha = _auth(c)
+            assert c.get("/api/v1/tasks/does-not-exist-1").status_code == 401
+            tid = c.post("/api/v1/emails/ingest?async_mode=true", headers=ha, json={
+                "raw": "From: a@b.test\nSubject: hi\n\nhello there friend"}).json()["task_id"]
+            assert c.get(f"/api/v1/tasks/{tid}", headers=ha).status_code == 200
+            hb = _auth(c)
+            assert c.get(f"/api/v1/tasks/{tid}", headers=hb).status_code == 404
+            assert c.get("/api/v1/tasks/does-not-exist-1", headers=hb).status_code == 404
+    finally:
+        tasks.celery_app.conf.task_always_eager = False

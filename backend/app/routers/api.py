@@ -59,6 +59,30 @@ def _org_filter(query, model, user: models.User):
     return query.filter(model.organization_id == user.organization_id)
 
 
+TASK_OWNER_TTL_S = 3600
+
+
+def _record_task_owner(task_id: str, user: models.User) -> None:
+    """Bind a Celery task to its submitter (P0: task polling is otherwise
+    cross-tenant readable). Best-effort cache write; a missing record
+    fails closed as 404 on poll."""
+    try:
+        from ..modules.cache import cache_set
+        cache_set(f"task-owner:{task_id}",
+                  {"user_id": user.id, "org": user.organization_id}, TASK_OWNER_TTL_S)
+    except Exception:
+        pass
+
+
+def _task_owner(task_id: str) -> dict | None:
+    try:
+        from ..modules.cache import cache_get
+        owner = cache_get(f"task-owner:{task_id}")
+        return owner if isinstance(owner, dict) else None
+    except Exception:
+        return None
+
+
 class CaseStatus(str, enum.Enum):
     Open = "Open"
     InProgress = "InProgress"
@@ -94,6 +118,7 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
         import base64
         task = analyze_email_task.delay(base64.b64encode(payload.raw.encode()).decode(),
                                         payload.source or "api", "", user.organization_id)
+        _record_task_owner(task.id, user)
         audit("email.ingest.queued", user=user.username, task_id=task.id)
         return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
@@ -127,6 +152,7 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode:
             raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
         import base64
         task = analyze_email_task.delay(base64.b64encode(raw).decode(), "upload", "", user.organization_id)
+        _record_task_owner(task.id, user)
         audit("email.upload.queued", user=user.username, task_id=task.id)
         return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
@@ -144,13 +170,26 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode:
 
 
 @router.get("/tasks/{task_id}", response_model=schemas.AsyncTaskStatus)
-def task_status(task_id: str):
-    """Poll a Celery ingestion task (202 flow)."""
+def task_status(task_id: str, db: Session = Depends(get_db),
+                user: models.User = Depends(get_current_user)):
+    """Poll a Celery ingestion task (202 flow).
+
+    P0: requires auth and task ownership — same user, same org, or Admin.
+    Anything else is 404 (indistinguishable from missing: no existence
+    or tenant leak).
+    """
     from ..services.tasks import broker_configured, celery_app
     if not broker_configured():
         raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
     if not re.match(r"^[A-Za-z0-9\-]{1,64}$", task_id or ""):
         raise HTTPException(400, "invalid task id")
+    owner = _task_owner(task_id)
+    if owner is None:
+        raise HTTPException(404, "task not found")
+    same_user = owner.get("user_id") == user.id
+    same_org = bool(owner.get("org") and user.organization_id) and owner.get("org") == user.organization_id
+    if not (same_user or same_org or user.role == "Admin"):
+        raise HTTPException(404, "task not found")
     res = celery_app.AsyncResult(task_id)
     out: dict = {"task_id": task_id, "state": res.state}
     if res.state == "SUCCESS":
