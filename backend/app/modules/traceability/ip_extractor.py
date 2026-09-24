@@ -122,8 +122,9 @@ def extract_origin_ip(
     hosts, ips = _known_ours()
 
     def _is_ours(hop: dict) -> bool:
+        from ..forensics.psl import is_subdomain_of
         by_host = str(hop.get("by_host", "") or "").lower().rstrip(".")
-        if by_host and any(by_host == h or by_host.endswith("." + h) for h in hosts):
+        if by_host and any(is_subdomain_of(by_host, h) for h in hosts):
             return True
         return any(ip in ips for ip in hop.get("ips", []) or [])
 
