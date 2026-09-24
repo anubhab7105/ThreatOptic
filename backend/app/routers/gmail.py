@@ -242,8 +242,10 @@ async def sync(
     # NEVER accepted from the request (P0) — it lives server-side only.
     cid = _resolve_client_id(payload.client_id, acct, db=db, user=user)
     secret = _resolve_client_secret(None, acct, db=db, user=user)
-    # Persist explicit client_id so future syncs don't need it again
-    if payload.client_id:
+    # Persist the resolved client_id so future syncs and refreshes do not
+    # lose the bound OAuth app configuration when env settings are empty.
+    if cid:
+        acct.client_id = cid
         acct.encrypted_client_id = vault.encrypt_secret(cid)
     db.commit()
 

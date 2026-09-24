@@ -194,3 +194,52 @@ def test_gmail_sync_persists_client_id_for_future_refreshes(monkeypatch):
             assert acct.client_id == "demo-id"
         finally:
             db.close()
+
+
+def test_gmail_cross_user_hijack_blocked(monkeypatch):
+    """P0: Gmail callback 403s when the address belongs to another user/org."""
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+    from app import models
+    from app.database import SessionLocal
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setattr(conn, "exchange_gmail_code", _fake_exchange)
+    monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_profile)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
+
+    def _flow(c, headers):
+        au = c.post("/api/v1/gmail/auth-url", headers=headers, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"}).json()["auth_url"]
+        st = parse_qs(urlparse(au).query)["state"][0]
+        return c.post("/api/v1/gmail/callback", headers=headers, json={
+            "code": "4/fake", "state": st, "redirect_uri": "http://localhost:5173/"})
+
+    with TestClient(app) as c:
+        hv, _ = _auth(c)
+        assert _flow(c, hv).status_code == 200
+        db = SessionLocal()
+        try:
+            victim = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            victim_id = victim.id
+        finally:
+            db.close()
+
+        ha, _ = _auth(c)
+        r = _flow(c, ha)
+        assert r.status_code == 403, r.text
+
+        db = SessionLocal()
+        try:
+            row = db.query(models.GmailAccount).filter_by(gmail_address="demo@gmail.com").first()
+            assert row is not None and row.user_id == victim_id
+            mrow = db.query(models.MailboxConnection).filter_by(account_email="demo@gmail.com").first()
+            assert mrow is not None and mrow.user_id == victim_id
+            db.query(models.GmailAccount).filter_by(gmail_address="demo@gmail.com").delete()
+            db.query(models.MailboxConnection).filter_by(account_email="demo@gmail.com").delete()
+            db.commit()
+        finally:
+            db.close()

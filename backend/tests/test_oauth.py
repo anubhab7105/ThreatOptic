@@ -485,3 +485,86 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
             db.commit()
         finally:
             db.close()
+
+
+def test_cross_org_mailbox_hijack_blocked(monkeypatch):
+    """P0: completing OAuth for an address owned by another org/user 403s —
+    including org-less vs org-less (None==None must not pass)."""
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+    from app import models
+    from app.database import SessionLocal
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setattr(conn, "exchange_gmail_code", _fake_g_exchange)
+    monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_g_profile)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "gid")
+    monkeypatch.setattr(settings, "google_client_secret", "gsec")
+
+    def _org_for(c, headers, name):
+        db = SessionLocal()
+        try:
+            u = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            org = models.Organization(name=name, compliance_policy={})
+            db.add(org)
+            db.flush()
+            u.organization_id = org.id
+            db.commit()
+        finally:
+            db.close()
+
+    def _flow(c, headers):
+        au = c.post("/api/v1/oauth/google/authorize", headers=headers, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
+        st = parse_qs(urlparse(au).query)["state"][0]
+        return c.get("/api/v1/oauth/google/callback",
+                     params={"code": "4/x", "state": st}, follow_redirects=False)
+
+    with TestClient(app) as c:
+        # Victim org A connects shared address (mock profile is fixed).
+        hv = _auth(c)
+        _org_for(c, hv, f"hijack-victim-{hv['Authorization'][-6:]}")
+        assert _flow(c, hv).status_code == 302
+        db = SessionLocal()
+        try:
+            victim = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            victim_id, victim_org = victim.id, victim.organization_id
+        finally:
+            db.close()
+
+        # Attacker org B attempts same address -> 403, no reassignment.
+        ha = _auth(c)
+        _org_for(c, ha, f"hijack-attacker-{ha['Authorization'][-6:]}")
+        r = _flow(c, ha)
+        assert r.status_code == 403, r.text
+
+        db = SessionLocal()
+        try:
+            row = db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").first()
+            assert row is not None
+            assert row.user_id == victim_id, "mailbox must stay with victim"
+            assert row.organization_id == victim_org, "mailbox org must stay with victim"
+        finally:
+            db.close()
+
+        # Org-less victim vs org-less attacker: also 403.
+        db = SessionLocal()
+        try:
+            db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+            db.commit()
+        finally:
+            db.close()
+        hv2 = _auth(c)  # org-less
+        assert _flow(c, hv2).status_code == 302
+        ha2 = _auth(c)  # org-less attacker, same fixed address
+        assert _flow(c, ha2).status_code == 403
+
+        db = SessionLocal()
+        try:
+            db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
+            db.query(models.OAuthState).delete()
+            db.commit()
+        finally:
+            db.close()
