@@ -398,6 +398,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
       const r = await jpost('/gmail/sync', { max_results: num, query, client_id: clientId || undefined, client_secret: secret || undefined });
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      clearSecret();
       await refresh();
       await onSynced();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
@@ -1677,14 +1678,16 @@ export function Mailboxes() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [clientId, setClientId] = useState(() => localStorage.getItem('oauth_client_id') || '');
-  const [clientSecret, setClientSecret] = useState(() => localStorage.getItem('oauth_client_secret') || '');
+  // P0: OAuth secrets must never touch browser storage — memory only.
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'https://socforensics.io/',
   );
 
-  const updateClientId = (v: string) => { setClientId(v); localStorage.setItem('oauth_client_id', v); };
-  const updateClientSecret = (v: string) => { setClientSecret(v); localStorage.setItem('oauth_client_secret', v); };
+  const updateClientId = (v: string) => { setClientId(v); };
+  const updateClientSecret = (v: string) => { setClientSecret(v); };
+  const clearOAuthSecret = () => { setClientSecret(''); };
 
   const fail = (e: unknown, what: string) =>
     setErr(e instanceof ApiError ? `${what} failed (${e.status}): ${e.message}` : String(e));
