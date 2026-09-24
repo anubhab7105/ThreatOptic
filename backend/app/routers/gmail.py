@@ -126,7 +126,7 @@ def auth_url(
 ):
     from .oauth import create_oauth_state
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
-    cid = _resolve_client_id(payload.client_id, acct, db=db)
+    cid = _resolve_client_id(payload.client_id, acct, db=db, user=user)
     uri = _redirect_uri(payload.redirect_uri)
     state, verifier = create_oauth_state(
         db, user_id=user.id, provider="google", redirect_uri=uri, client_id=cid,
@@ -153,9 +153,9 @@ async def callback(
     if payload.redirect_uri and payload.redirect_uri != (row.redirect_uri or ""):
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
-    cid = (payload.client_id or row.client_id or "").strip() or _resolve_client_id(None, acct, db=db)
+    cid = (payload.client_id or row.client_id or "").strip() or _resolve_client_id(None, acct, db=db, user=user)
     # client_secret resolves server-side only — never from the request.
-    secret = _resolve_client_secret(None, acct, db=db)
+    secret = _resolve_client_secret(None, acct, db=db, user=user)
     uri = _redirect_uri(payload.redirect_uri or row.redirect_uri)
     try:
         tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri)
@@ -225,8 +225,8 @@ async def sync(
         raise HTTPException(404, "no Gmail account connected (POST /gmail/callback first)")
     # Resolve credentials: stored in DB > env fallback. client_secret is
     # NEVER accepted from the request (P0) — it lives server-side only.
-    cid = _resolve_client_id(payload.client_id, acct, db=db)
-    secret = _resolve_client_secret(None, acct, db=db)
+    cid = _resolve_client_id(payload.client_id, acct, db=db, user=user)
+    secret = _resolve_client_secret(None, acct, db=db, user=user)
     # Persist explicit client_id so future syncs don't need it again
     if payload.client_id:
         acct.encrypted_client_id = vault.encrypt_secret(cid)
