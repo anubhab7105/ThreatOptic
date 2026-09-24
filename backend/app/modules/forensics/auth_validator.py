@@ -361,6 +361,8 @@ def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_f
         "dkim": dkim_r,
         "dmarc": dmarc_r,
         "aligned": aligned,
+        "upstream_trusted": trust_upstream,
+        "upstream_authserv_id": authserv_id,
         "spf_domain": spf_domain,
         "dkim_domain": dkim_domain,
         "from_domain": from_domain,
