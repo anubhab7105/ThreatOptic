@@ -101,14 +101,15 @@ def status(user: models.User = Depends(get_current_user), db: Session = Depends(
 
 
 def _status_payload(user: models.User, db: Session) -> dict:
+    from .oauth import _tenant_scope_conn
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     has_stored = bool(acct and acct.encrypted_client_id)
     if not has_stored:
-        # Check any MailboxConnection
-        has_stored = bool(db.query(models.MailboxConnection).filter(
+        # P0: tenant-scoped only — never infer other tenants' connections.
+        has_stored = bool(_tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == "google",
             models.MailboxConnection.encrypted_client_id != ""
-        ).first())
+        ), user).first())
     has_env = bool(get_settings().google_client_id)
     return {
         "connected": acct is not None,
