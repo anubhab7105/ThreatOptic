@@ -102,8 +102,24 @@ def _provider_or_400(provider: str) -> str:
     return p
 
 
-def _resolve_client_id(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None, db: Session | None = None) -> str:
-    """Return client_id from: explicit > conn > other connections in DB > GmailAccount in DB > env fallback."""
+def _tenant_scope_conn(query, user: models.User | None):
+    """Scope a MailboxConnection query to the caller's tenant (P0).
+
+    Org members share the org's connections; org-less users see only
+    their own rows. user=None (background jobs) means no fallback —
+    callers must pass an explicit row instead.
+    """
+    if user is None:
+        return query.filter(models.MailboxConnection.id == "__none__")
+    if user.organization_id:
+        return query.filter(models.MailboxConnection.organization_id == user.organization_id)
+    return query.filter(models.MailboxConnection.user_id == user.id)
+
+
+def _resolve_client_id(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None,
+                       db: Session | None = None, user: models.User | None = None) -> str:
+    """Return client_id from: explicit > conn > TENANT-SCOPED connections >
+    own GmailAccount > env fallback (P0: never another tenant's credentials)."""
     if explicit and explicit.strip():
         return explicit.strip()
     if conn and conn.encrypted_client_id:
@@ -114,10 +130,10 @@ def _resolve_client_id(provider: str, explicit: str | None, conn: models.Mailbox
         except Exception:
             pass
     if db:
-        other_conn = db.query(models.MailboxConnection).filter(
+        other_conn = _tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == provider,
             models.MailboxConnection.encrypted_client_id != ""
-        ).order_by(models.MailboxConnection.updated_at.desc()).first()
+        ), user).order_by(models.MailboxConnection.updated_at.desc()).first()
         if other_conn and other_conn.encrypted_client_id:
             try:
                 val = decrypt_secret(other_conn.encrypted_client_id)
@@ -126,9 +142,15 @@ def _resolve_client_id(provider: str, explicit: str | None, conn: models.Mailbox
             except Exception:
                 pass
         if provider == "google":
-            acct = db.query(models.GmailAccount).filter(
+            acct_q = db.query(models.GmailAccount).filter(
                 models.GmailAccount.encrypted_client_id != ""
-            ).order_by(models.GmailAccount.updated_at.desc()).first()
+            )
+            if user is not None:
+                # GmailAccount is per-user: never borrow another user's row.
+                acct_q = acct_q.filter(models.GmailAccount.user_id == user.id)
+            else:
+                acct_q = acct_q.filter(models.GmailAccount.id == "__none__")
+            acct = acct_q.order_by(models.GmailAccount.updated_at.desc()).first()
             if acct and acct.encrypted_client_id:
                 try:
                     val = decrypt_secret(acct.encrypted_client_id)
