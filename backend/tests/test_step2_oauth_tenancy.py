@@ -306,3 +306,29 @@ def test_scheduler_uses_service_layer():
     src = p.read_text()
     assert "routers" not in src
     assert "mailbox_poll" in src
+
+
+def test_case_linkage_validates_email_tenant():
+    """P0: linked email IDs must exist in the caller's tenant (404 else)."""
+    from app.main import app
+
+    with TestClient(app) as c:
+        ha, _a, _org_a = _make_org_with_user(c)
+        hb, _b, _org_b = _make_org_with_user(c)
+        eid_a = c.post("/api/v1/emails/ingest", headers=ha,
+                       json={"raw": "From: a@x.test\nTo: y@y.test\nSubject: A\n\nbody"}).json()["email_id"]
+        # cross-tenant link rejected on create and on patch (404, no leak)
+        assert c.post("/api/v1/cases", headers=hb,
+                      json={"title": "hijack", "email_ids": [eid_a]}).status_code == 404
+        cid_b = c.post("/api/v1/cases", headers=hb, json={"title": "ok"}).json()["id"]
+        assert c.patch(f"/api/v1/cases/{cid_b}", headers=hb,
+                       json={"email_ids": [eid_a]}).status_code == 404
+        # unknown IDs rejected the same way
+        assert c.post("/api/v1/cases", headers=hb,
+                      json={"title": "ghost", "email_ids": ["no-such-id"]}).status_code == 404
+        # own mail links fine (deduped, order kept)
+        eid_b = c.post("/api/v1/emails/ingest", headers=hb,
+                       json={"raw": "From: b@x.test\nTo: y@y.test\nSubject: B\n\nbody"}).json()["email_id"]
+        r = c.patch(f"/api/v1/cases/{cid_b}", headers=hb,
+                    json={"email_ids": [eid_b, eid_b]})
+        assert r.status_code == 200 and r.json()["email_ids"] == [eid_b]

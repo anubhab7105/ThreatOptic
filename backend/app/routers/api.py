@@ -105,6 +105,27 @@ class IngestBody(BaseModel):
     source: str = "api"
 
 
+def _validate_case_emails(db: Session, user: models.User, email_ids: list[str] | None) -> list[str]:
+    """Validate linked mail belongs to the caller's tenant (P0).
+
+    Every ID must exist AND be tenant-visible (same org, or Admin);
+    anything else is 404 indistinguishable from missing — no
+    cross-tenant existence inference via linkage. Dedupes, preserves
+    order.
+    """
+    ids = list(dict.fromkeys(email_ids or []))
+    if not ids:
+        return []
+    rows = dict(db.query(models.EmailRecord.id, models.EmailRecord.organization_id
+                         ).filter(models.EmailRecord.id.in_(ids)).all())
+    for eid in ids:
+        if eid not in rows:
+            raise HTTPException(404, "email not found")
+        if user.role != "Admin" and rows[eid] != user.organization_id:
+            raise HTTPException(404, "email not found")
+    return ids
+
+
 @router.post("/emails/ingest", response_model=schemas.EmailIngestResponse | schemas.AsyncIngestResponse,
                status_code=200)
 @limiter.limit("60/minute")
