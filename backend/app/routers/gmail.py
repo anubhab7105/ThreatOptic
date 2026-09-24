@@ -136,14 +136,14 @@ def auth_url(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from .oauth import _make_state
+    from .oauth import create_oauth_state
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     cid = _resolve_client_id(payload.client_id, acct, db=db)
-    sec = payload.client_secret or (_resolve_client_secret(None, acct, db=db) if (acct and acct.encrypted_client_secret) else "")
     uri = _redirect_uri(payload.redirect_uri)
-    verifier = connectors._new_verifier()
+    state, verifier = create_oauth_state(
+        db, user_id=user.id, provider="google", redirect_uri=uri, client_id=cid,
+    )
     challenge = connectors._pkce_challenge(verifier)
-    state = _make_state(user.id, client_id=cid, client_secret=sec, redirect_uri=uri, flow="gmail", pkce_verifier=verifier, provider="google")
     return {"auth_url": connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)}
 
 
@@ -153,10 +153,22 @@ async def callback(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from .oauth import consume_oauth_state
+    # P0: verify the opaque state belongs to THIS caller (CSRF binding),
+    # then consume it single-use. No state → no exchange.
+    row = consume_oauth_state(db, state=payload.state, provider="google")
+    if row.user_id != user.id:
+        raise HTTPException(400, "OAuth state does not belong to this session — restart the connect flow")
+    verifier = row.code_verifier or ""
+    if not verifier:
+        raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
+    if payload.redirect_uri and payload.redirect_uri != (row.redirect_uri or ""):
+        raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
-    cid = _resolve_client_id(payload.client_id, acct, db=db)
-    secret = _resolve_client_secret(payload.client_secret, acct, db=db)
-    uri = _redirect_uri(payload.redirect_uri)
+    cid = (payload.client_id or row.client_id or "").strip() or _resolve_client_id(None, acct, db=db)
+    # client_secret resolves server-side only — never from the request.
+    secret = _resolve_client_secret(None, acct, db=db)
+    uri = _redirect_uri(payload.redirect_uri or row.redirect_uri)
     try:
         tokens = await connectors.exchange_gmail_code(payload.code, cid, secret, uri)
     except httpx.HTTPError as e:
