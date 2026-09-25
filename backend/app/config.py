@@ -19,9 +19,12 @@ class Settings(BaseSettings):
     # refuses to boot outside development when unset, default, or short.
     secret_key: str = ""
     access_token_expire_minutes: int = 20
-    # Supabase Auth JWT secret (Supabase → Settings → API → JWT Settings).
+    # Supabase Auth JWT secret (kept for HS256 fallback / local dev).
     # Required for verifying Supabase access tokens in deps.get_current_user.
     supabase_jwt_secret: str = ""
+    # Supabase project URL (e.g. https://<ref>.supabase.co).
+    # Used to fetch the JWKS public keys for ES256/HS256 token verification.
+    supabase_url: str = ""
     # Separate key for the mailbox-token vault (never reuse secret_key).
     # Required (min 32 chars); fail closed when empty.
     token_encryption_key: str = ""

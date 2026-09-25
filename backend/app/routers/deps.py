@@ -1,5 +1,6 @@
 """Auth dependencies: Supabase JWT verification + RBAC."""
 import jwt
+from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -7,8 +8,22 @@ from ..database import get_db
 from .. import models
 from ..config import get_settings
 
-# Supabase JWTs are HS256 signed with the project's JWT Secret
 bearer_scheme = HTTPBearer()
+
+# Cache the JWKS client so it's not recreated on every request.
+# PyJWKClient fetches Supabase's public keys and supports both
+# the new ECC P-256 (ES256) and legacy HS256 signing algorithms.
+_jwks_client: PyJWKClient | None = None
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        settings = get_settings()
+        supabase_url = (settings.supabase_url or "").rstrip("/")
+        jwks_uri = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(jwks_uri, cache_keys=True)
+    return _jwks_client
 
 
 def get_current_user(
@@ -18,15 +33,33 @@ def get_current_user(
     settings = get_settings()
     token = credentials.credentials
     try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",   # Supabase sets this
-        )
+        # Try JWKS first (supports both new ECC/ES256 and legacy HS256).
+        # Falls back to the shared secret if JWKS lookup fails (e.g. offline).
+        try:
+            jwks_client = _get_jwks_client()
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256", "RS256", "HS256"],
+                audience="authenticated",
+            )
+        except Exception:
+            # Fallback: legacy HS256 shared secret (for local dev or
+            # if JWKS endpoint is temporarily unavailable).
+            if not settings.supabase_jwt_secret:
+                raise
+            payload = jwt.decode(
+                token,
+                settings.supabase_jwt_secret,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired")
     except jwt.PyJWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
+    except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
 
     user_id = payload.get("sub")
