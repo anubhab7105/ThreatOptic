@@ -12,6 +12,7 @@ const Cases = lazy(() => import('./pages').then(m => ({ default: m.Cases })));
 const Campaigns = lazy(() => import('./pages').then(m => ({ default: m.Campaigns })));
 const CampaignDetail = lazy(() => import('./pages').then(m => ({ default: m.CampaignDetail })));
 const LoginPage = lazy(() => import('./pages').then(m => ({ default: m.LoginPage })));
+const LandingPage = lazy(() => import('./pages').then(m => ({ default: m.LandingPage })));
 const ModelInfo = lazy(() => import('./pages').then(m => ({ default: m.ModelInfo })));
 const Mailboxes = lazy(() => import('./pages').then(m => ({ default: m.Mailboxes })));
 const PrivacyPolicy = lazy(() => import('./pages').then(m => ({ default: m.PrivacyPolicy })));
@@ -75,7 +76,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
   );
 }
 
-function ThemeToggle() {
+export function ThemeToggle() {
   const [theme, setTheme] = useState<string>(() => {
     try {
       const s = localStorage.getItem('soc-theme');
@@ -296,6 +297,7 @@ function Shell() {
 
   const on = (path: string) => (location.pathname === path ? ' active' : '');
   const onCampaigns = location.pathname.startsWith('/campaign') ? ' active' : '';
+  const onDashboard = location.pathname === '/dashboard' ? ' active' : '';
 
   if (loading) {
     return (
@@ -309,19 +311,21 @@ function Shell() {
   }
 
   if (!user) {
-    // Public pages like privacy/terms should be accessible without login
+    // Public pages: landing, login, privacy, terms
     return (
       <div>
         <nav className="nav" aria-label="Primary" style={{ justifyContent: 'space-between' }}>
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
           <ThemeToggle />
         </nav>
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
             <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
-              <Route path="*" element={<LoginPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
@@ -330,11 +334,11 @@ function Shell() {
     );
   }
 
-  return (
+return (
     <div>
       <nav className="nav" aria-label="Primary">
-        <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
-        <Link to="/" className={`nl${on('/')}`} aria-current={on('/') ? 'page' : undefined}>Dashboard</Link>
+        <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+        <Link to="/dashboard" className={`nl${onDashboard}`} aria-current={onDashboard ? 'page' : undefined}>Dashboard</Link>
         <Link to="/campaigns" className={`nl${onCampaigns}`}>Campaigns</Link>
         <Link to="/cases" className={`nl${on('/cases')}`}>Cases</Link>
         <Link to="/mailboxes" className={`nl${on('/mailboxes')}`}>Mailboxes</Link>
@@ -363,7 +367,7 @@ function Shell() {
             <Route path="/cases" element={<Cases />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsConditions />} />
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
@@ -372,7 +376,7 @@ function Shell() {
       <footer className="footer">
         <div>Email Threat Detection - GeoLocation - Forensic Intelligence - chain-of-custody reports via PDF/JSON</div>
         <div style={{ marginTop: 6 }}>
-          <Link to="/">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
+          <Link to="/dashboard">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
           {' - '}<Link to="/privacy">Privacy Policy</Link> - <Link to="/terms">Terms</Link>
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
           {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>

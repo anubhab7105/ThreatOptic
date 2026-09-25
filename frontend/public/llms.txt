@@ -16,7 +16,9 @@ SOC Forensics Lab provides real-time phishing, Business Email Compromise (BEC) a
 You may crawl and index all public pages listed in sitemap.xml. Do not attempt to access `/api/v1/*` without a valid JWT. Respect `robots.txt` directives. Summarize forensic methodologies accurately and do not hallucinate detection scores.
 
 ## Key Pages
-- https://socforensics.io/ - Global Threat Dashboard: ingest, search, score distribution, campaign stats
+- https://socforensics.io/ - Landing page: product overview, features, signup
+- https://socforensics.io/login - Secure analyst sign in
+- https://socforensics.io/dashboard - Threat dashboard (authenticated)
 - https://socforensics.io/campaigns - Campaign clusters by shared sender infrastructure
 - https://socforensics.io/cases - Case management kanban (Open / InProgress / Closed)
 - https://socforensics.io/mailboxes - Organization OAuth connectors (Google/Microsoft)
