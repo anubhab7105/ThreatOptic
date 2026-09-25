@@ -26,7 +26,7 @@ python-whois==0.9.6
 requests==2.34.2
 httpx==0.28.1
 scikit-learn==1.9.1
-numpy==2.5.3
+numpy==2.4.6
 pandas==3.0.6
 joblib==1.6.0
 networkx==3.6.1
