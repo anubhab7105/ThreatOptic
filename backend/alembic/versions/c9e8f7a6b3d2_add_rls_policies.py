@@ -25,10 +25,20 @@ Two correctness rules this revision must keep:
    the owning user; a policy that says `organization_id IS NULL OR ...`
    would hand every authenticated user all org-less rows — strictly
    wider than the app allows. Org-less rows are therefore Admin-only here.
+
+A third, added after this revision broke a plain-Postgres dev setup: being
+PostgreSQL is not sufficient. Every policy here is written against Supabase's
+`auth.uid()` and granted `TO authenticated` — a role that exists only inside a
+Supabase project. On any other Postgres server the statement fails outright
+with `role "authenticated" does not exist`, which aborts the upgrade chain and
+takes the whole application down at boot. Since the policies are inert without
+those constructs anyway (see above), skipping them off-Supabase loses nothing
+and is strictly better than an unbootable database.
 """
 from typing import Sequence, Union
 
 from alembic import op
+import sqlalchemy as sa
 
 revision: str = "c9e8f7a6b3d2"
 down_revision: Union[str, None] = "b7c2d1a9e4f5"
@@ -128,10 +138,37 @@ def _is_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+def _is_supabase() -> bool:
+    """True only on a Supabase-managed Postgres.
+
+    The policies reference `auth.uid()` and are granted to the `authenticated`
+    role. Both are installed by Supabase, not by PostgreSQL. Probe for the
+    function rather than the role so a project that renamed or dropped the role
+    is treated as non-Supabase too — the policies could not be created there.
+    """
+    return bool(
+        op.get_bind().execute(
+            sa.text(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM pg_proc p"
+                "  JOIN pg_namespace n ON n.oid = p.pronamespace"
+                "  WHERE n.nspname = 'auth' AND p.proname = 'uid'"
+                ")"
+            )
+        ).scalar()
+    )
+
+
+def _should_apply() -> bool:
+    # SQLite (CI / pytest) has no RLS; plain Postgres (a local dev server, or
+    # any non-Supabase managed instance) has no auth.uid() and no
+    # `authenticated` role. In both cases the application-layer tenant checks
+    # are the enforcement, exactly as on Supabase.
+    return _is_postgres() and _is_supabase()
+
+
 def upgrade() -> None:
-    if not _is_postgres():
-        # SQLite (local dev / CI) has no RLS; the application-layer tenant
-        # checks are the enforcement there.
+    if not _should_apply():
         return
     for table in TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -153,7 +190,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if not _is_postgres():
+    if not _should_apply():
         return
     for table in TABLES:
         op.execute(f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}")
