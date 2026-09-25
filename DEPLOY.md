@@ -1,11 +1,10 @@
-# Deploy Guide — Vercel (Frontend) + Railway (Backend)
+# Deploy Guide — Vercel (Frontend) + Railway (Backend) + Supabase (Auth + Postgres)
 
-This repo is a monorepo: `frontend/` is a Vite + React SPA, `backend/` is a FastAPI service. The recommended production split is:
+This repo is a monorepo: `frontend/` is a Vite + React SPA, `backend/` is a FastAPI service. Production stack:
 
 - **Frontend → Vercel** (static, edge-cached, SPA rewrites)
-- **Backend → Railway** (Docker, Postgres, health checks)
-
-Custom domain used throughout: `https://socforensics.io` (CNAME `socforensics.io` in `frontend/public/CNAME`, canonical in `frontend/index.html:11`). Replace with your own domain if needed.
+- **Backend → Railway** (Docker, health checks)
+- **Database + Auth → Supabase** (Postgres via Transaction Pooler + Supabase Auth JWT)
 
 ---
 
@@ -14,263 +13,267 @@ Custom domain used throughout: `https://socforensics.io` (CNAME `socforensics.io
 - GitHub account and this repo pushed to GitHub
 - Vercel account (https://vercel.com) linked to GitHub
 - Railway account (https://railway.app) linked to GitHub
-- Domain purchased (e.g., socforensics.io on Cloudflare / Namecheap / Route53)
-- `SECRET_KEY`, `CUSTODY_KEY` generated locally (see below)
+- Supabase project (https://supabase.com) — **do NOT add Railway Postgres addon**
+- Domain (optional — you can use Vercel's `*.vercel.app` and Railway's `*.up.railway.app`)
 
-Generate secrets:
+### 0.1 Verify `.env` was never committed
 
 ```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-# first -> SECRET_KEY, second -> CUSTODY_KEY (min 32 bytes)
+git log --all --full-history -- .env
+# If any commits appear, rotate secrets immediately in Supabase dashboard
 ```
+
+### 0.2 Generate missing secrets locally (for Railway Variables)
+
+```powershell
+# SECRET_KEY (WebSocket ticket HMAC, 32+ chars)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# CUSTODY_KEY (chain-of-custody signing, 32+ chars)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# TOKEN_ENCRYPTION_KEY (Fernet key for OAuth token encryption)
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### 0.3 Supabase — verify prerequisites
+
+1. Log into Supabase → your project
+2. **Authentication → Email** → ✅ Confirm "Enable Email Confirmations" is ON
+3. **Authentication → URL Configuration** → Add `http://localhost:5173` to Redirect URLs for local dev
+4. **SQL Editor** → Run the `on_auth_user_created` trigger SQL (from Supabase Migration Plan). Verify it exists under **Database → Functions**
+5. Collect these values (needed for Railway + Vercel):
+   - `DATABASE_URL` (Transaction Pooler, port 6543, `?pgbouncer=true`) — already in `.env`
+   - `SUPABASE_JWT_SECRET` — already in `.env`
+   - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (from **Project Settings → API**) — needed for frontend
 
 ---
 
-## 1. Push to GitHub (if not already)
+## 1. Fix `docker-compose.yml` for Local Dev (Optional)
 
+Since production uses Supabase Postgres, the local `postgres` service has been removed. Neo4j, Elasticsearch, and Kafka remain for optional local use.
+
+Run locally:
 ```bash
-git init
-git add .
-git commit -m "chore: vercel+railway deploy config"
-git branch -M main
-git remote add origin https://github.com/<your-user>/Email_Scanner.git
-git push -u origin main
+docker compose up -d
+# Backend at http://localhost:8000 (reads Supabase DATABASE_URL from .env)
+# Frontend at http://localhost:5173 (proxies to backend)
 ```
 
 ---
 
 ## 2. Deploy Backend to Railway
 
-### 2.1 Create project
-1. Railway → **New Project** → **Deploy from GitHub repo** → select `Email_Scanner`
-2. When prompted for service, choose **backend** (Railway auto-detects `backend/Dockerfile` via `railway.json:4` and `backend/railway.toml:1`)
-3. **Root Directory:** leave **empty** (repo root `.`) — **do NOT set to `backend`**. `backend/Dockerfile:6` expects repo-root context (`COPY backend/requirements.txt`). If you set Root Directory to `backend`, the build will fail with `"/scripts": not found`.
-   - If you already set it to `backend`, go to Service → Settings → Source → Root Directory → clear it → Redeploy.
+### 2.1 Create the Railway Project
 
-### 2.2 Add Postgres (and optionally Redis/Neo4j)
-1. In Railway project → **New** → **Database** → **PostgreSQL** → Add
-2. Railway injects `DATABASE_URL` automatically as `postgresql://...` - **copy its internal URL**. For public, use the `DATABASE_URL` variable shown in Postgres → Variables.
-3. If you need Neo4j/Elastic: add them the same way, or leave empty to use SQLite fallback (not recommended for production).
+1. Go to railway.app → **New Project** → **Deploy from GitHub repo**
+2. Select your `Email_Scanner` repository
+3. Railway detects `railway.json` at repo root → uses `backend/Dockerfile`
+4. ⚠️ **Critical:** Under **Service → Settings → Source → Root Directory** — confirm it is **blank/empty**. Do NOT set it to `backend`. The Dockerfile uses `COPY backend/requirements.txt` which requires repo-root context.
 
-### 2.3 Set environment variables
-Railway → Service `backend` → **Variables** → **Raw Editor** → paste:
+### 2.2 Do NOT add a Railway Postgres addon
 
-```
+> **WARNING:** If you add a Railway Postgres database, Railway will inject its own `DATABASE_URL` variable which will silently overwrite your Supabase connection string. Skip the Postgres addon entirely.
+
+### 2.3 Set Environment Variables
+
+Go to **Railway Service → Variables → Raw Editor** → paste all of the following:
+
+```env
 APP_ENV=production
-SECRET_KEY=<your-generated-secret-key>
-CUSTODY_KEY=<your-generated-custody-key>
-CORS_ORIGINS=https://socforensics.io,https://www.socforensics.io,https://<your-vercel-url>.vercel.app
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-# or manually paste postgres URL if not using reference:
-# DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/railway
-FRONTEND_URL=https://socforensics.io
-# Optional - leave empty for offline mode:
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-MS_CLIENT_ID=
-MS_CLIENT_SECRET=
-TOKEN_ENCRYPTION_KEY=<generate with python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
-ENABLE_LIVE_LOOKUPS=0
+# Database — Supabase Transaction Pooler
+DATABASE_URL=postgresql://postgres.lwdlgmwuqbfjeqxaxcck:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+# Supabase Auth JWT verification
+SUPABASE_JWT_SECRET=[your-supabase-jwt-secret]
+# App Secrets (generate fresh values for production — see Phase 0.2)
+SECRET_KEY=[your-32-char-secret-key]
+CUSTODY_KEY=[your-32-char-custody-key]
+TOKEN_ENCRYPTION_KEY=[your-fernet-key]
+# CORS — update AFTER you get your Vercel URL in Phase 3
+CORS_ORIGINS=https://[your-app].vercel.app
+# Frontend URL (for OAuth redirect allowlisting)
+FRONTEND_URL=https://[your-app].vercel.app
+# Optional features — leave empty to disable
 NEO4J_URI=
 NEO4J_PASSWORD=
 ELASTICSEARCH_URL=
+VIRUSTOTAL_API_KEY=
+SLACK_WEBHOOK_URL=
+PAGERDUTY_ROUTING_KEY=
+ENABLE_LIVE_LOOKUPS=0
+SMTP_ENABLED=0
+# Gmail / Microsoft OAuth (leave empty if not using)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
+MS_CLIENT_ID=
+MS_CLIENT_SECRET=
 ```
 
-> **Important:** `CORS_ORIGINS` must include your final Vercel URL. Update it after step 3.4 (you can add both the vercel preview URL and your custom domain).
+> **Note:** `SECRET_KEY` is now only used for WebSocket tickets (`create_ws_ticket()`). It is no longer used for JWT login. Still required — the app refuses to boot without it in production.
 
-### 2.4 Deploy & get URL
-1. Railway auto-deploys on push. Watch **Deployments** → should turn **Active** in ~2 min.
-2. Go to **Settings** → **Networking** → **Generate Domain** → copy the Railway domain, e.g. `email-scanner-backend-production.up.railway.app`
-3. Test health:
+### 2.4 Deploy and Get Your Railway URL
 
-```bash
-curl https://<railway-domain>/health
-# {"status":"ok","app":"Email Threat & Forensics Platform"}
+1. Railway auto-deploys on every push to `main`. Watch **Deployments** — should turn **Active** in ~3-4 minutes (first build is slower due to pip + ML model training in the Dockerfile)
+2. Go to **Service → Settings → Networking → Generate Domain**
+3. Copy your Railway domain: `https://[something].up.railway.app`
+4. Verify:
+   ```bash
+   curl https://[your-railway-domain]/health
+   # Expected: {"status":"ok","app":"Email Threat & Forensics Platform"}
 
-curl https://<railway-domain>/health/detailed
+   curl https://[your-railway-domain]/health/detailed
+   # Expected: {"status":"ok","db":true, ...}
+   ```
+   If `"db":true` — Supabase Postgres is connected. ✅
+
+### 2.5 Run Alembic Migrations
+
+The `backend/alembic/versions/` directory has two revisions:
+- `834dc871451e` — initial schema
+- `b7c2d1a9e4f5` — Supabase auth migration
+
+These run automatically on startup because `init_db()` calls `_alembic_upgrade()`. Watch the Railway deployment logs for:
+```
+INFO  [alembic.runtime.migration] Running upgrade 834dc871451e -> b7c2d1a9e4f5
 ```
 
-If `/health/detailed` shows `db: true`, Postgres is wired.
-
-### 2.5 Railway notes
-- `backend/Dockerfile:12` uses JSON form `CMD ["sh","-c","uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]` so it respects Railway’s injected `$PORT` and handles OS signals correctly (fixes `JSONArgsRecommended` warning).
-- `railway.json:8` sets `healthcheckPath` to `/health` — Railway will restart on failure.
-- `docker-compose.yml:5` now uses `context: .` + `dockerfile: ./backend/Dockerfile` so local `docker compose up` and Railway (root context) use the **same** Dockerfile. Do not build with `docker build ./backend` — use `docker build -f backend/Dockerfile .` from repo root.
-- No `DATABASE_URL`? Backend falls back to SQLite (`sqlite:///./email_forensics.db`) — data will be ephemeral. Use Postgres for persistence.
+> **Tip:** If you need to run migrations manually (e.g., to debug), use the Railway CLI:
+> ```bash
+> npm i -g @railway/cli
+> railway login
+> railway link
+> railway run --service backend -- alembic upgrade head
+> ```
 
 ---
 
 ## 3. Deploy Frontend to Vercel
 
-### 3.1 Import project
-1. Vercel → **Add New...** → **Project** → **Import Git Repository** → select `Email_Scanner`
+### 3.1 Import the Project
+
+1. Go to vercel.com → **Add New** → **Project** → Import `Email_Scanner` from GitHub
 2. **Framework Preset:** Vite
-3. **Root Directory:** `frontend` ← click **Edit** and set to `frontend` (important, otherwise build fails)
-4. If you import from root with `vercel.json:1` at repo root, you can keep Root Directory empty and Vercel will use `vercel.json:4` `buildCommand: cd frontend && npm install && npm run build` and `outputDirectory: frontend/dist`. Either way works — pick one:
-   - **Option A (recommended):** Root Directory = `frontend` + leave `vercel.json` in `frontend/vercel.json:1` for SPA rewrite
-   - **Option B:** Root Directory = `./` (root) + rely on root `vercel.json:1`
+3. **Root Directory:** Click **Edit** → set to `frontend`
+4. **Build Command:** `npm run build` (runs `tsc -b && vite build`)
+5. **Output Directory:** `dist`
+6. **Node Version:** In Project Settings → General → set to `22.x`
 
-### 3.2 Build settings (if Root = frontend)
-- **Build Command:** `npm run build` (runs `tsc -b && vite build` → `frontend/package.json:8`, `sourcemap:false` `frontend/vite.config.ts:12`)
-- **Output Directory:** `dist`
-- **Install Command:** `npm install`
-- **Node Version:** 22.x (set in Vercel → Settings → General → Node Version)
+### 3.2 Set Environment Variables
 
-### 3.3 Environment variables
-Vercel → Project → **Settings** → **Environment Variables** → add:
+In Vercel → Project → **Settings → Environment Variables** → add:
 
-| Key | Value | Env |
-|-----|-------|-----|
-| `VITE_API_URL` | `https://<railway-domain>` (from 2.4, no trailing slash, e.g. `https://email-scanner-backend-production.up.railway.app`) | Production, Preview, Development |
-| `VITE_PROXY_TARGET` | leave empty (dev only) | — |
+| Key | Value | Environments |
+|-----|-------|--------------|
+| `VITE_API_URL` | `https://[your-railway-domain].up.railway.app` | Production, Preview, Development |
+| `VITE_SUPABASE_URL` | `https://[your-project-ref].supabase.co` | Production, Preview, Development |
+| `VITE_SUPABASE_ANON_KEY` | `[your-supabase-anon-key]` | Production, Preview, Development |
 
-> `frontend/src/api.ts:3` reads `VITE_API_URL` at build time. Changing it requires a redeploy (Vercel auto-redeploys on env change).
+> **Important:** `VITE_API_URL` must have **no trailing slash** and **no `/api/v1` suffix**. The frontend appends `/api/v1` automatically via `api.ts`.
 
-### 3.4 Deploy
-1. Click **Deploy** → Vercel builds in ~45s → you get `https://email-scanner-xxx.vercel.app`
-2. Visit it, open DevTools → Network → should call `https://<railway-domain>/api/v1/...` not `localhost`.
-3. Go back to Railway → update `CORS_ORIGINS` to include the new Vercel URL and redeploy backend:
+### 3.3 Deploy
 
-```
-CORS_ORIGINS=https://socforensics.io,https://www.socforensics.io,https://email-scanner-xxx.vercel.app
-```
-
-### 3.5 SPA rewrites
-- Root `vercel.json:7` and `frontend/vercel.json:1` both rewrite `/(.*)` → `/index.html` so hash routes (`#/campaigns`, `#/privacy`) and direct hits to `/sitemap.xml` still work. No extra config needed.
+1. Click **Deploy** — Vercel builds in ~45 seconds
+2. Your frontend will be live at: `https://email-scanner-[hash].vercel.app` (or your project name slug)
+3. Open DevTools → Network — confirm API calls go to your Railway domain, not localhost
 
 ---
 
-## 4. Custom Domain (socforensics.io)
+## 4. Wire Vercel ↔ Railway ↔ Supabase Together
 
-### 4.1 Frontend domain on Vercel
-1. Vercel → Project → **Settings** → **Domains** → Add `socforensics.io` and `www.socforensics.io`
-2. Vercel shows DNS records:
-   - Type `A` → `76.76.21.21` (or CNAME `cname.vercel-dns.com` — follow Vercel’s prompt)
-   - For `www`, add CNAME `www` → `cname.vercel-dns.com`
-3. Add records at Cloudflare:
-   - If using Cloudflare proxy, set to **DNS only** (grey cloud) for Vercel to issue cert, then you can re-enable proxy.
-   - `frontend/public/CNAME:1` already contains `socforensics.io` for GitHub Pages-style, also used as documentation for Vercel.
-4. Wait for cert → Vercel shows **Valid Configuration**
-5. Update `frontend/index.html:11` canonical and `vercel.json:1` headers already point to `https://socforensics.io/` — redeploy if you changed domain.
+### 4.1 Update Railway CORS (REQUIRED)
 
-### 4.2 Backend custom domain (optional)
-If you want `api.socforensics.io` instead of Railway’s `*.up.railway.app`:
-1. Railway → Backend → **Settings** → **Networking** → **Custom Domain** → add `api.socforensics.io`
-2. Add CNAME `api` → `<railway-domain>` at DNS
-3. Update Vercel env `VITE_API_URL=https://api.socforensics.io` → redeploy frontend
-4. Update Railway `CORS_ORIGINS` to include `https://socforensics.io`
+Now that you have your Vercel URL, go back to **Railway → Variables** and update:
 
-### 4.3 Keep domain in code consistent
-Search-replace `socforensics.io` if you use a different domain:
-- `frontend/index.html:11,20,47`
-- `frontend/public/CNAME:1`
-- `frontend/public/sitemap.xml:4`
-- `frontend/public/robots.txt:5`
-- `frontend/public/llms.txt:8`
-- `frontend/src/main.tsx:17`, `frontend/src/pages.tsx:7`
-- `frontend/nginx.conf:3`
+```env
+CORS_ORIGINS=https://[your-app].vercel.app
+FRONTEND_URL=https://[your-app].vercel.app
+```
+
+Then redeploy the Railway backend (click **Redeploy** in the Deployments tab).
+
+### 4.2 Update Supabase Redirect URLs
+
+Go to **Supabase → Authentication → URL Configuration**:
+
+- **Site URL:** `https://[your-app].vercel.app`
+- **Redirect URLs:** Add `https://[your-app].vercel.app/**`
+
+This is critical — Supabase will reject email confirmation redirects that point to unlisted domains.
+
+### 4.3 End-to-End Test Checklist
+
+- ✅ Visit `https://[your-app].vercel.app`
+- ✅ Register with a real email address
+- ✅ Check inbox — confirmation email arrives from Supabase
+- ✅ Click confirm link — redirected back to your Vercel app
+- ✅ Login with email + password
+- ✅ Dashboard loads with your user data
+- ✅ Upload a test `.eml` file — analyze completes
+- ✅ Logout — session cleared
 
 ---
 
-## 5. Local test before pushing
+## 5. CI/CD (Auto-Deploy on Push)
+
+Both platforms auto-deploy on git push to `main`. No additional setup needed.
 
 ```bash
-# Backend (needs Postgres or falls back to SQLite)
-cd backend
-cp .env.example .env
-# fill SECRET_KEY, CUSTODY_KEY, DATABASE_URL
-pip install -r requirements.txt
-python scripts/train_nlp.py || true
-uvicorn app.main:app --reload --port 8000
-# http://localhost:8000/health , http://localhost:8000/docs
-
-# Frontend (in another terminal)
-cd frontend
-npm install
-VITE_API_URL=http://localhost:8000 npm run dev
-# http://localhost:5173
-
-# Production build check (no sourcemaps, split chunks)
-npm run build
-npm run lint
-npm test
-# dist/ should have no *.map, favicon.svg, sitemap.xml, etc.
+# The one-liner that deploys both frontend and backend:
+git add . && git commit -m "deploy: <description>" && git push
 ```
 
----
-
-## 6. CI / Auto-deploy
-
-- **Vercel:** auto-deploys on every `git push` to `main` (preview deploys for PRs).
-- **Railway:** auto-deploys on every `git push` to `main` (watch Railway → Deployments). You can also `railway up` via CLI.
-
-Install CLIs (optional):
-
-```bash
-npm i -g vercel
-vercel login
-vercel --prod
-
-npm i -g @railway/cli
-railway login
-railway link
-railway up
-```
+- **Vercel** → detects changes in `frontend/` → rebuilds in ~45s
+- **Railway** → detects any push → rebuilds the Docker image in ~3-4 min
 
 ---
 
-## 7. Environment variable cheat sheet
+## 6. Environment Variables Master Reference
 
-### Backend (Railway → Variables)
-| Var | Required | Example |
-|-----|----------|---------|
-| `APP_ENV` | yes | `production` |
-| `SECRET_KEY` | yes | `k8s...32bytes...` |
-| `CUSTODY_KEY` | yes | `hmac...32bytes...` |
-| `DATABASE_URL` | yes prod | `postgresql+psycopg2://soc:pass@postgres:5432/soc` (Railway provides) |
-| `CORS_ORIGINS` | yes | `https://socforensics.io,https://<vercel>.vercel.app` |
-| `FRONTEND_URL` | yes | `https://socforensics.io` |
-| `TOKEN_ENCRYPTION_KEY` | if using OAuth | Fernet key |
-| `GOOGLE_CLIENT_ID/SECRET` | optional | Gmail OAuth |
-| `MS_CLIENT_ID/SECRET` | optional | Microsoft OAuth |
-| `ENABLE_LIVE_LOOKUPS` | optional | `0` (offline) or `1` |
+### Backend (Railway Variables)
 
-### Frontend (Vercel → Environment Variables)
-| Var | Required | Example |
-|-----|----------|---------|
-| `VITE_API_URL` | yes | `https://<railway-domain>` |
-| `VITE_PROXY_TARGET` | no (dev) | `http://localhost:8000` |
+| Variable | Required | Source |
+|----------|----------|--------|
+| `APP_ENV` | ✅ | `production` |
+| `DATABASE_URL` | ✅ | Supabase Transaction Pooler URL |
+| `SUPABASE_JWT_SECRET` | ✅ | Supabase → Settings → API → JWT Settings |
+| `SECRET_KEY` | ✅ | Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `CUSTODY_KEY` | ✅ | Generate: same as above |
+| `TOKEN_ENCRYPTION_KEY` | ✅ (if OAuth) | Generate: `from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())` |
+| `CORS_ORIGINS` | ✅ | Your Vercel URL |
+| `FRONTEND_URL` | ✅ | Your Vercel URL |
+| `GOOGLE_CLIENT_ID/SECRET` | ⬜ Optional | For Gmail OAuth |
+| `MS_CLIENT_ID/SECRET` | ⬜ Optional | For Microsoft OAuth |
+| `VIRUSTOTAL_API_KEY` | ⬜ Optional | For live threat intel |
+| `ENABLE_LIVE_LOOKUPS` | ⬜ | `0` (offline) default |
 
----
+### Frontend (Vercel Environment Variables)
 
-## 8. Troubleshooting
-
-- **Railway build: `"/scripts": not found`** → you set Root Directory to `backend`. Clear it: Service → Settings → Source → Root Directory = (empty) → Redeploy. `backend/Dockerfile:6` uses `COPY backend/requirements.txt` which needs repo-root context (`docker-compose.yml:5` shows `context: .`). Logs also show `uploading snapshot 137.4 KB` before the error — that confirms wrong context.
-- **Dockerfile warning `JSONArgsRecommended`:** fixed by `backend/Dockerfile:13` using `["sh","-c","uvicorn ... ${PORT}"]` (JSON form with shell for env expansion and signal handling).
-- **CORS error in browser:** `CORS_ORIGINS` on Railway does not include Vercel URL → add it, redeploy backend.
-- **Vite build fails `tsc -b`:** check `frontend/tsconfig.json:11` has `noEmit:true`; run `npm run build` locally first.
-- **Railway healthcheck fails:** check Logs → `require_custody_key()` fails if `CUSTODY_KEY` empty and `APP_ENV!=development`.
-- **404 on refresh:** ensure `vercel.json:7` rewrite `/(.*)` → `/index.html` exists (root or `frontend/vercel.json:1`).
-- **Frontend shows `API unreachable`:** `VITE_API_URL` must be the Railway public domain with `https`, no `/api` suffix (frontend appends `/api/v1` via `frontend/src/api.ts:5`).
-- **Mixed content:** always use `https` for both.
+| Variable | Required | Source |
+|----------|----------|--------|
+| `VITE_API_URL` | ✅ | Your Railway domain |
+| `VITE_SUPABASE_URL` | ✅ | Supabase → Settings → API |
+| `VITE_SUPABASE_ANON_KEY` | ✅ | Supabase → Settings → API |
 
 ---
 
-## 9. What was added for deployment
+## 7. Known Non-Blockers (Fix Anytime)
 
-- `vercel.json:1` (root) + `frontend/vercel.json:1` — SPA rewrites, cache headers, Vite build
-- `railway.json:1` + `backend/railway.toml:1` — Dockerfile builder, `$PORT` healthcheck
-- `backend/Dockerfile:12` — now respects `${PORT:-8000}` for Railway
-- This `DEPLOY.md:1` — step-by-step
-
-Your static SEO assets (`frontend/public/sitemap.xml:1`, `robots.txt`, `llms.txt`, `favicon.svg`, `og-image.svg`) are already output to `frontend/dist` and served by Vercel edge, no extra config.
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| `index.html` canonical URL hardcoded to `socforensics.io` | SEO only — app still works | Update when you get your domain |
+| `frontend/public/CNAME` says `socforensics.io` | Only matters for GitHub Pages (not used) | Ignore or delete the file |
+| `DEPLOY.md` references SQLite fallback + old auth routes | Documentation drift | Updated in this file |
+| `docker-compose.yml` had a local postgres service | Local dev only — doesn't affect Railway | Fixed in Phase 1 above |
 
 ---
 
-## 10. One-line redeploy
+## 8. Recommended First Deployment Order
 
-```bash
-git add . && git commit -m "deploy: update" && git push
-# Vercel + Railway both rebuild automatically
-```
+1. **Phase 0** → Secure secrets, verify Supabase
+2. **Phase 2** → Deploy Backend to Railway
+3. **Phase 3** → Deploy Frontend to Vercel
+4. **Phase 4** → Wire them together (CORS, Supabase redirects)
+5. **Phase 1** → Fix `docker-compose.yml` (only if doing local dev)
+
+Skip Phase 1 for now if you're not using it locally — it doesn't affect cloud deployment at all.
