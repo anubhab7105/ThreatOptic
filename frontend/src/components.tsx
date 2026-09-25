@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
 
@@ -183,7 +183,7 @@ export function FAQ({ items }: { items: { question: string; answer: React.ReactN
   );
 }
 
-export function PasswordToggle({ value, onChange, label = 'Password', ...props }: { value: string; onChange: (v: string) => void; label?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+export function PasswordToggle({ value, onChange, label = 'Password', ...props }: { value: string; onChange: (v: string) => void; label?: string } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'>) {
   const [show, setShow] = useState(false);
   return (
     <div className="password-wrapper">
@@ -215,12 +215,13 @@ export function PasswordToggle({ value, onChange, label = 'Password', ...props }
 }
 
 export function KeyboardShortcuts({ shortcuts }: { shortcuts: { key: string; description: string }[] }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   return (
-    <dialog className="shortcuts-dialog" id="shortcuts-dialog">
+    <dialog ref={dialogRef} className="shortcuts-dialog" id="shortcuts-dialog">
       <div className="shortcuts-content">
         <header>
           <h3>Keyboard Shortcuts</h3>
-          <button className="ghost small" onClick={() => document.getElementById('shortcuts-dialog')?.close()}>Close</button>
+          <button className="ghost small" onClick={() => dialogRef.current?.close()}>Close</button>
         </header>
         <dl>
           {shortcuts.map((s, i) => (
@@ -237,7 +238,10 @@ export function KeyboardShortcuts({ shortcuts }: { shortcuts: { key: string; des
 
 export function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
   const callbackRef = useRef(shortcuts);
-  callbackRef.current = shortcuts;
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    callbackRef.current = shortcuts;
+  }, [shortcuts]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
@@ -248,10 +252,11 @@ export function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
       }
       if (e.key === '?' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        document.getElementById('shortcuts-dialog')?.showModal();
+        dialogRef.current?.showModal();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+  return dialogRef;
 }

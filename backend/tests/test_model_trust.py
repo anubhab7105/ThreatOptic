@@ -79,6 +79,8 @@ def test_world_writable_always_refused(tmp_path, monkeypatch):
     p = _write(str(tmp_path / "m.pkl"))
     _sidecar(p, b"model-bytes")
     os.chmod(p, 0o666)
+    # Mock os.name to test world-writable check (normally skipped on Windows)
+    monkeypatch.setattr("app.modules.model_trust.os.name", "posix")
     try:
         with pytest.raises(ModelTrustError, match="world-writable"):
             verify_model_artifact(p, purpose="test")

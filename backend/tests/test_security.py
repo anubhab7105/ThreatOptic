@@ -1,9 +1,15 @@
 """Security posture tests: CORS lockdown (F2), custody-key gate (F4)."""
+import os
 import pytest
 from fastapi.testclient import TestClient
 
 
 def test_cors_allows_configured_origin_only():
+    # Configure CORS to allow the test origin BEFORE importing app
+    os.environ["CORS_ORIGINS"] = "http://localhost:5173"
+    # Need to clear settings cache and re-import app
+    from app.config import get_settings
+    get_settings.cache_clear()
     from app.main import app
 
     with TestClient(app) as c:

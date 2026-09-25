@@ -311,8 +311,8 @@ useEffect(() => {
     'ctrl+shift+m': () => { navigate('/mailboxes'); },
     'ctrl+shift+t': () => { navigate('/model'); },
     'ctrl+shift+l': () => { logout(); navigate('/'); },
-    'ctrl+/': () => { document.getElementById('shortcuts-dialog')?.showModal(); },
-    'escape': () => { setMobileMenuOpen(false); document.getElementById('shortcuts-dialog')?.close(); },
+    'ctrl+/': () => { (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.showModal(); },
+    'escape': () => { setMobileMenuOpen(false); (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.close(); },
   });
 
   if (loading) {
@@ -414,18 +414,20 @@ useEffect(() => {
 
       <ErrorBoundary>
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-          <Routes>
-            <Route path="/email/:id" element={<EmailRoute />} />
-            <Route path="/campaign/:id" element={<CampaignRoute />} />
-            <Route path="/campaigns" element={<Campaigns />} />
-            <Route path="/model" element={<ModelInfo />} />
-            <Route path="/mailboxes" element={<Mailboxes />} />
-            <Route path="/cases" element={<Cases />} />
-            <Route path="/privacy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<TermsConditions />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
+          <div id="main-content">
+            <Routes>
+              <Route path="/email/:id" element={<EmailRoute />} />
+              <Route path="/campaign/:id" element={<CampaignRoute />} />
+              <Route path="/campaigns" element={<Campaigns />} />
+              <Route path="/model" element={<ModelInfo />} />
+              <Route path="/mailboxes" element={<Mailboxes />} />
+              <Route path="/cases" element={<Cases />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsConditions />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </div>
         </Suspense>
       </ErrorBoundary>
 

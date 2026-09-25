@@ -162,6 +162,15 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
 async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode: bool = Query(False),
                         db: Session = Depends(get_db),
                         user: models.User = Depends(require_roles(*READ_WRITE))):
+    # Validate file type - only allow email formats
+    allowed_types = {'message/rfc822', 'application/octet-stream', 'text/plain', 'application/mime'}
+    content_type = (f.content_type or '').lower()
+    filename = (f.filename or '').lower()
+    allowed_exts = ('.eml', '.txt', '.mime')
+    
+    if content_type not in allowed_types and not any(filename.endswith(ext) for ext in allowed_exts):
+        raise HTTPException(400, "unsupported file type (expected .eml, .txt or .mime)")
+    
     raw = await f.read()
     if not raw or not raw.strip():
         raise HTTPException(400, "empty file")

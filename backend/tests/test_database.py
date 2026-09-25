@@ -14,6 +14,8 @@ def test_rebuild_engine_picks_up_fresh_settings(monkeypatch, tmp_path):
         assert dbmod.SessionLocal.kw["bind"] is dbmod.engine
     finally:
         monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        # Restore TEST_DATABASE_URL for the rebuild_engine call
+        monkeypatch.setenv("TEST_DATABASE_URL", url)
         dbmod.rebuild_engine()
 
 
@@ -55,28 +57,31 @@ def test_sqlite_pragmas_and_fk_enforcement(tmp_path, monkeypatch):
             assert mode and mode.lower() == "wal", mode
             assert conn.execute(text("PRAGMA foreign_keys")).scalar() == 1
             assert conn.execute(text("PRAGMA busy_timeout")).scalar() == 5000
-        # ondelete=CASCADE enforced: user delete removes refresh tokens
+        # ondelete=CASCADE enforced: user delete removes gmail accounts
         from app import models
         from app.database import Base
         Base.metadata.create_all(bind=dbmod.engine)
         db = dbmod.SessionLocal()
         try:
-            u = models.User(username="fkprobe", password_hash="x", role="Analyst")
+            import uuid
+            u = models.User(id=str(uuid.uuid4()), email="fkprobe@test.local", role="Analyst")
             db.add(u)
             db.flush()
-            from datetime import datetime, timezone, timedelta
-            db.add(models.RefreshToken(
-                user_id=u.id, token_hash="abc123",
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+            # Add a GmailAccount (has FK to users.id with ondelete=CASCADE)
+            ga = models.GmailAccount(
+                id=str(uuid.uuid4()), user_id=u.id, gmail_address="test@gmail.com"
+            )
+            db.add(ga)
             db.commit()
-            assert db.query(models.RefreshToken).filter_by(user_id=u.id).count() == 1
+            assert db.query(models.GmailAccount).filter_by(user_id=u.id).count() == 1
             db.delete(u)
             db.commit()
-            assert db.query(models.RefreshToken).filter_by(user_id=u.id).count() == 0
+            assert db.query(models.GmailAccount).filter_by(user_id=u.id).count() == 0
         finally:
             db.close()
     finally:
-        monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        # Restore TEST_DATABASE_URL for the rebuild_engine call
+        monkeypatch.setenv("TEST_DATABASE_URL", url)
         dbmod.rebuild_engine()
 
 
@@ -92,7 +97,8 @@ def test_managed_db_refuses_silent_fallback(monkeypatch):
         with pytest.raises(RuntimeError, match="migrations failed"):
             dbmod.init_db()
     finally:
-        monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        # Restore a valid TEST_DATABASE_URL for the rebuild_engine call
+        monkeypatch.setenv("TEST_DATABASE_URL", "sqlite:///:memory:")
         dbmod.rebuild_engine()
 
 
@@ -105,7 +111,7 @@ def test_sqlite_backfill_adds_missing_columns(tmp_path, monkeypatch):
     path = tmp_path / "legacy.db"
     con = sqlite3.connect(str(path))
     try:
-        con.execute("CREATE TABLE users (id VARCHAR(36) PRIMARY KEY, username VARCHAR(255))")
+        con.execute("CREATE TABLE users (id VARCHAR(36) PRIMARY KEY, email VARCHAR(320), role VARCHAR(32))")
         con.commit()
     finally:
         con.close()
@@ -117,7 +123,9 @@ def test_sqlite_backfill_adds_missing_columns(tmp_path, monkeypatch):
             cols = {r[1] for r in con.execute("PRAGMA table_info(users)").fetchall()}
         finally:
             con.close()
-        assert "password_hash" in cols and "role" in cols
+        # Current schema: email, role (password_hash removed, username replaced by email)
+        assert "email" in cols and "role" in cols
     finally:
-        monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        # Restore TEST_DATABASE_URL for the rebuild_engine call
+        monkeypatch.setenv("TEST_DATABASE_URL", f"sqlite:///{path}")
         dbmod.rebuild_engine()

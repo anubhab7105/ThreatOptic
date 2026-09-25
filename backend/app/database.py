@@ -34,12 +34,23 @@ def _make_engine():
     url = settings.resolved_db_url()
     if url.startswith("sqlite"):
         # Test-only path: plain SQLite engine for pytest isolation.
-        return create_engine(
+        # Enable WAL mode, foreign keys, and busy timeout for test reliability.
+        def _sqlite_connect(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+        
+        from sqlalchemy import event
+        engine = create_engine(
             url,
             connect_args={"check_same_thread": False},
             future=True,
             pool_pre_ping=True,
         )
+        event.listen(engine, "connect", _sqlite_connect)
+        return engine
     connect_args = {"connect_timeout": CONNECT_TIMEOUT_S,
                     "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}"}
     pool_kwargs = {}

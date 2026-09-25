@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
+import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
 import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -75,7 +75,7 @@ export function LandingPage() {
         </nav>
       </header>
 
-      <main>
+      <main id="main-content">
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-content">
             <h1 id="hero-title">Email threat detection that explains itself.</h1>
@@ -361,16 +361,15 @@ export function LoginPage() {
           </div>
 
           <div className="login-field-group">
-            <label htmlFor="login-password" className="login-field-label">Password</label>
-            <input
+            <PasswordToggle
               id="login-password"
-              type="password"
-              placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
+              label="Password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              onChange={setPassword}
+              placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               className="login-input"
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
             />
           </div>
 
