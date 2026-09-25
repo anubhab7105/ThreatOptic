@@ -342,8 +342,8 @@ function Shell() {
         <span className="spacer" />
         <AlertBell />
         <ThemeToggle />
-        <span className="health" title={`${user.username} - ${user.role}`}>
-          {user.username} ({user.role})
+        <span className="health" title={`${user.email} - ${user.role}`}>
+          {user.email} ({user.role})
         </span>
         <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }}>Sign out</Link>
         <span className="health" title="backend reachability">

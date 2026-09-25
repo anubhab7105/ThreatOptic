@@ -12,41 +12,11 @@ class OrganizationOut(BaseModel):
 
 class UserOut(BaseModel):
     id: str
-    username: str
+    email: str
     role: str
     organization_id: str | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
-
-
-class RegisterIn(BaseModel):
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[\w.\-@]+$")
-    password: str = Field(min_length=8, max_length=128)
-    role: str | None = None
-    # Out-of-band bootstrap secret; required ONLY when requesting Admin (C2).
-    setup_token: str | None = None
-
-
-class AdminCreateUserIn(BaseModel):
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[\w.\-@]+$")
-    password: str = Field(min_length=8, max_length=128)
-    role: str = "Analyst"
-    organization_id: str | None = None
-
-
-class LoginIn(BaseModel):
-    username: str
-    password: str
-
-
-class RefreshIn(BaseModel):
-    refresh_token: str
-
-
-class TokenPair(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
 
 
 class EmailIngestResponse(BaseModel):

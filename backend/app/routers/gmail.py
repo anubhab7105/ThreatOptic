@@ -314,7 +314,7 @@ async def sync(
         except Exception:
             pass
     from ..modules.auth.rate_limit import audit as _audit
-    _audit("gmail.sync", user=user.username, synced=out.synced)
+    _audit("gmail.sync", user=user.email, synced=out.synced)
     return out
 
 
@@ -350,5 +350,5 @@ def disconnect(user: models.User = Depends(get_current_user), db: Session = Depe
         db.delete(acct)
     db.commit()
     from ..modules.auth.rate_limit import audit as _audit
-    _audit("gmail.disconnect", user=user.username, removed=removed_mailboxes)
+    _audit("gmail.disconnect", user=user.email, removed=removed_mailboxes)
     return {"connected": False}

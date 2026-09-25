@@ -1,58 +1,16 @@
 /** API client — base URL configurable via VITE_API_URL (dev proxy falls back to ''). */
+import { supabase } from './supabaseClient';
+
 export const BASE: string =
   (import.meta as any).env?.VITE_API_URL ?? '';
 
 export const API = `${BASE}/api/v1`;
 
-export type TokenPair = { access_token: string; refresh_token: string; token_type: string };
-
-// P0: tokens are memory-first. The ONLY browser persistence is
-// sessionStorage (cleared on tab close) — never localStorage, where a
-// persistent XSS foothold could exfiltrate long-lived refresh tokens.
-// (Full httpOnly-cookie storage needs backend set-cookie support;
-// session-only storage is the documented minimum.) Logout clears both.
-const LEGACY_KEY = 'soc_tokens';
-
-function readStored(): TokenPair | null {
-  try {
-    const s = sessionStorage.getItem(LEGACY_KEY);
-    return s ? JSON.parse(s) : null;
-  } catch {
-    return null;
-  }
-}
-
-let _tokens: TokenPair | null = (() => {
-  try {
-    // One-time migration: drop any legacy persistent copy.
-    localStorage.removeItem(LEGACY_KEY);
-  } catch { /* storage unavailable */ }
-  return readStored();
-})();
-
-export function getTokens(): TokenPair | null {
-  if (!_tokens) _tokens = readStored();
-  return _tokens;
-}
-
-export function setTokens(pair: TokenPair) {
-  _tokens = pair;
-  try {
-    sessionStorage.setItem(LEGACY_KEY, JSON.stringify(pair));
-  } catch { /* storage unavailable */ }
-}
-
-export function clearTokens() {
-  _tokens = null;
-  try {
-    sessionStorage.removeItem(LEGACY_KEY);
-    localStorage.removeItem(LEGACY_KEY);
-  } catch { /* storage unavailable */ }
-}
-
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const t = getTokens();
-  return t?.access_token ? { ...extra, Authorization: `Bearer ${t.access_token}` } : { ...extra };
+async function authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { ...extra, Authorization: `Bearer ${session.access_token}` }
+    : { ...extra };
 }
 
 export class ApiError extends Error {
@@ -61,34 +19,6 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-// Single in-flight refresh shared by concurrent 401s (no stampede).
-let _refreshing: Promise<TokenPair | null> | null = null;
-
-async function tryRefresh(): Promise<boolean> {
-  const t = getTokens();
-  if (!t?.refresh_token) return false;
-  if (!_refreshing) {
-    _refreshing = (async () => {
-      try {
-        const rr = await fetch(API + '/auth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: getTokens()?.refresh_token }),
-        });
-        if (!rr.ok) return null;
-        const pair = (await rr.json()) as TokenPair;
-        setTokens(pair);
-        return pair;
-      } catch {
-        return null;
-      } finally {
-        _refreshing = null;
-      }
-    })();
-  }
-  return (await _refreshing) !== null;
 }
 
 async function handle(r: Response) {
@@ -109,23 +39,16 @@ async function handle(r: Response) {
   }
 }
 
-/** Core request: on 401, attempt ONE refresh and retry the ORIGINAL request
- * (method + body preserved); only a failed refresh drops the session (Step 6).
- * Auth endpoints themselves never retry (that would loop). */
-async function request(path: string, init: RequestInit, opts: { auth?: boolean; _retried?: boolean } = {}): Promise<any> {
+/** Core request: Supabase SDK owns session refresh — on 401 we surface
+ * `soc:unauthorized` so AuthProvider can drop to signed-out state. */
+async function request(path: string, init: RequestInit, opts: { auth?: boolean } = {}): Promise<any> {
   const headers = { ...(init.headers as Record<string, string> || {}) };
   const r = await fetch(API + path, {
     ...init,
-    headers: opts.auth === false ? headers : authHeaders(headers),
+    headers: opts.auth === false ? headers : await authHeaders(headers),
   });
-  if (r.status === 401 && opts.auth !== false && !opts._retried && !path.startsWith('/auth/')) {
-    if (await tryRefresh()) {
-      return request(path, init, { ...opts, _retried: true });
-    }
+  if (r.status === 401 && opts.auth !== false && !path.startsWith('/auth/')) {
     window.dispatchEvent(new Event('soc:unauthorized'));
-  } else if (r.status === 401 && (opts.auth === false || path.startsWith('/auth/') || opts._retried)) {
-    // Genuine auth failure (bad credentials, dead refresh): drop the session.
-    if (!path.startsWith('/auth/login') || opts._retried) window.dispatchEvent(new Event('soc:unauthorized'));
   }
   return handle(r);
 }

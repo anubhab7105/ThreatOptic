@@ -10,11 +10,6 @@ _env_path = os.path.join(_backend_dir, ".env")
 load_dotenv(_env_path, override=False)
 
 
-def _default_db_url() -> str:
-    # Anchor sqlite to backend/ dir so cwd doesn't create stray DB files.
-    return f"sqlite:///{os.path.join(_backend_dir, 'email_forensics.db')}"
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_env_path, extra="ignore")
 
@@ -24,9 +19,9 @@ class Settings(BaseSettings):
     # refuses to boot outside development when unset, default, or short.
     secret_key: str = ""
     access_token_expire_minutes: int = 20
-    # Explicit setup token that authorizes creation of the first Admin
-    # account via POST /auth/register (replaces first-registrant bootstrap).
-    setup_token: str = ""
+    # Supabase Auth JWT secret (Supabase → Settings → API → JWT Settings).
+    # Required for verifying Supabase access tokens in deps.get_current_user.
+    supabase_jwt_secret: str = ""
     # Separate key for the mailbox-token vault (never reuse secret_key).
     # Required (min 32 chars); fail closed when empty.
     token_encryption_key: str = ""
@@ -48,7 +43,7 @@ class Settings(BaseSettings):
                 out.append(cand)
         return out
 
-    database_url: str = ""
+    database_url: str = ""  # Required — set via DATABASE_URL env var (no SQLite fallback)
     # Optional production backends (empty = local fallback)
     neo4j_uri: str = ""
     neo4j_user: str = "neo4j"
@@ -158,7 +153,9 @@ class Settings(BaseSettings):
         # TEST_DATABASE_URL wins when set (CI + pytest isolation); it is
         # never read from .env files, only the real environment.
         test_url = os.environ.get("TEST_DATABASE_URL", "").strip()
-        url = test_url or self.database_url or _default_db_url()
+        url = test_url or self.database_url  # No SQLite default — fail-closed
+        if not url:
+            raise RuntimeError("DATABASE_URL is not set. Provide a Supabase/Postgres connection string.")
         # Normalize Supabase / Railway postgres URLs: Heroku-style `postgres://` and
         # bare `postgresql://` need the psycopg2 driver for SQLAlchemy.
         if url.startswith("postgres://"):

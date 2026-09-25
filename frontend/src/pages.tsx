@@ -116,29 +116,28 @@ export function LoginPage() {
   });
   const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!username.trim() || !password) return;
+    if (!email.trim() || !password) return;
     setBusy(true);
     setErr('');
+    setNotice('');
     try {
-      if (mode === 'login') await login(username.trim(), password);
-      else await register(username.trim(), password);
+      if (mode === 'login') await login(email.trim(), password);
+      else {
+        const res = await register(email.trim(), password);
+        if (res.needsConfirmation) setNotice('Account created — check your email to confirm, then sign in.');
+      }
     } catch (e) {
       setErr(e instanceof ApiError ? `Authentication failed (${e.status}): ${e.message}` : String(e));
     } finally {
       setBusy(false);
     }
-  };
-
-  const fillSeed = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setErr('');
   };
 
   return (
@@ -186,7 +185,7 @@ export function LoginPage() {
           </div>
 
           <h2 className="login-form-title">SOC Sign in</h2>
-          <p className="login-form-sub">JWT-secured analyst access. First-ever account becomes Admin.</p>
+          <p className="login-form-sub">Supabase-secured analyst access. Registration requires email confirmation.</p>
 
           <div className="login-tabs">
             <button
@@ -206,17 +205,18 @@ export function LoginPage() {
           </div>
 
           <Toast msg={err} />
+          {notice ? <div className="login-notice" role="status">{notice}</div> : null}
 
           <div className="login-field-group">
-            <label htmlFor="login-username" className="login-field-label">Username</label>
+            <label htmlFor="login-email" className="login-field-label">Email</label>
             <input
-              id="login-username"
-              type="text"
-              placeholder="e.g. analyst"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="login-email"
+              type="email"
+              placeholder="e.g. analyst@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-              autoComplete="username"
+              autoComplete="email"
               className="login-input"
             />
           </div>
@@ -239,33 +239,10 @@ export function LoginPage() {
             type="button"
             className="login-submit-btn"
             onClick={submit}
-            disabled={busy || !username.trim() || !password}
+            disabled={busy || !email.trim() || !password}
           >
             {busy ? 'Please wait…' : mode === 'login' ? '→ Sign in to console' : '→ Create analyst account'}
           </button>
-
-          <div className="login-seed-container">
-            <span>Demo seed:</span>
-            <span
-              className="login-seed-pill"
-              onClick={() => fillSeed('admin', 'admin123')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('admin', 'admin123'); }}
-            >
-              admin / admin123
-            </span>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <span
-              className="login-seed-pill"
-              onClick={() => fillSeed('analyst', 'analyst123')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('analyst', 'analyst123'); }}
-            >
-              analyst / analyst123
-            </span>
-          </div>
         </div>
       </div>
 
@@ -2050,7 +2027,7 @@ export function PrivacyPolicy() {
       <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
       <div className="card">
         <h3>What we collect</h3>
-        <p>Analyst credentials (username, hashed password, role), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
+        <p>Analyst credentials (email, role via Supabase Auth), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
         <h3>How we use email content</h3>
         <p>Uploaded mail is parsed, scored 0-100, checked for SPF/DKIM/DMARC and threat intel, then stored with PII masked previews and a SHA-256 hash for chain-of-custody. Raw content is retained per your retention setting and purged by the daily scheduler. See retention_audit.log.</p>
         <h3>Cookies</h3>
