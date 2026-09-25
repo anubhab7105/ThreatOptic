@@ -19,23 +19,90 @@ Please refer to the following markdown files in this repository to understand th
 
 ## Getting Started (Developer Setup)
 
-### Option A — local (SQLite, no infra)
+You need **Python 3.11+**, **Node 22+**, a **Postgres** database, and a
+**Supabase project** (Supabase owns all authentication — there is no local
+password login). Both Postgres and Supabase have free tiers; a throwaway
+Supabase project is the fastest route.
+
+### 1. Backend
+
+The backend reads **`backend/.env`**, not a repo-root `.env` — `config.py`
+anchors the path to its own directory, so cwd does not matter. A `.env` in
+the repo root is read by *nothing* and is the most common cause of "it boots
+as production and refuses to start".
+
 ```bash
-python3 backend/scripts/train_nlp.py
-PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
-# in another shell:
-cd frontend && npm install && npm run dev
-# API: http://localhost:8000/docs  UI: http://localhost:5173
+cp .env.example backend/.env
+$EDITOR backend/.env          # see the table below for what must be set
 ```
 
-### Option B — full stack (Postgres, Neo4j, Elastic, Kafka)
-```bash
-docker compose up --build
-# backend http://localhost:8000/docs  frontend http://localhost:5173
+Minimum viable `backend/.env`:
+
+```env
+APP_ENV=development          # REQUIRED. The default is "production" and boot is refused.
+DATABASE_URL=postgresql://USER:PASS@127.0.0.1:5432/socdev
+CORS_ORIGINS=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
+GOOGLE_REDIRECT_URI=http://localhost:5173
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_JWT_SECRET=...      # Supabase → Settings → API → JWT Settings
 ```
 
-### Key API (all `/api/v1/*` except `/auth/*` require a JWT bearer token)
-- Auth: POST `/auth/register` | POST `/auth/login` | POST `/auth/refresh` | GET `/auth/me` | POST `/auth/users` (Admin)
+There is **no SQLite fallback for the app** (only the pytest escape hatch via
+`TEST_DATABASE_URL`); `DATABASE_URL` is required and migrations run
+automatically at boot, so there is no `alembic upgrade head` step.
+
+```bash
+cd backend
+python3 -m pip install -r requirements.txt
+# optional: train the classifiers. Skipped => rules-only fallback, still works.
+python3 scripts/train_nlp.py
+PYTHONPATH=. APP_ENV=development uvicorn app.main:app --reload --port 8000
+# API docs: http://localhost:8000/docs
+```
+
+### 2. Frontend
+
+```bash
+cd frontend
+cp .env.example .env         # then set the two Supabase values below
+npm install
+npm run dev                  # UI: http://localhost:5173
+```
+
+Set in `frontend/.env`:
+
+```env
+VITE_API_URL=                # LEAVE EMPTY locally
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=...
+```
+
+**Leave `VITE_API_URL` empty.** The Vite dev server proxies `/api` and
+`/health` to `http://localhost:8000`, so the browser calls its own origin and
+CORS never applies. If you point it at a deployed backend instead, you are
+testing production from localhost and must add `http://localhost:5173` to that
+backend's `CORS_ORIGINS`. `frontend/.env.example` ships with the production
+Railway URL in it — overwrite it.
+
+### 3. Sign up
+
+Authentication is Supabase. Use **Sign up** on the login page, confirm the
+email, and a database trigger mirrors the row into the app's `users` table
+with role `Analyst` and a personal organization. There is no
+`/auth/register` or `/auth/login` endpoint to call directly; the only auth
+route left is `GET /auth/me`.
+
+### 4. Optional services
+
+Neo4j, Elasticsearch and Kafka are all optional — leave them unset and the app
+degrades gracefully (networkx instead of Neo4j, SQLite search instead of ES,
+synchronous pipeline instead of Celery). `docker compose up --build` starts
+them, but note it reads the **repo-root** `.env`; point that at a local
+database first or you will run local containers against production data.
+
+### Key API (all `/api/v1/*` require a Supabase JWT bearer token)
+- Auth: `GET /auth/me` (there is no local register/login — see §3)
 - POST /api/v1/emails/ingest {"raw": "<rfc822>"} | POST /api/v1/emails/upload (.eml)
 - GET /api/v1/emails/{id} (includes `score_breakdown`) | GET /api/v1/dashboard
 - GET /api/v1/campaigns | GET /api/v1/campaigns/{id}
