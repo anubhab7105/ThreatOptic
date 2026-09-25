@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ApiError, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
+import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
 import { ThemeToggle } from './main';
@@ -476,12 +476,15 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      setAuthUrl(r.auth_url);
+      // P1: never hand the browser to an unverified host — an analyst
+      // connecting a mailbox is exactly the moment a phishing hop lands.
+      const safeUrl = assertIdpUrl(r.auth_url, 'google');
+      setAuthUrl(safeUrl);
       setNotice('Redirecting to Google consent page… If not redirected, click the link below.');
       try {
-        window.location.assign(r.auth_url);
+        window.location.assign(safeUrl);
       } catch {
-        window.location.href = r.auth_url;
+        window.location.href = safeUrl;
       }
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
@@ -1917,7 +1920,9 @@ export function Mailboxes() {
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      window.location.href = r.auth_url;
+      // P1: see getUrl() — the consent hop is verified against the IdP
+      // allowlist before the browser leaves the dashboard.
+      window.location.href = assertIdpUrl(r.auth_url, provider);
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
 

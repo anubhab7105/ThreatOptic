@@ -21,6 +21,44 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Hosts the browser is ever allowed to be handed off to for OAuth consent.
+ * Mirrors the fixed endpoints in backend/app/modules/ingestion/connectors.py
+ * (GOOGLE_AUTH_URL / MS_AUTH_URL) — no wildcards, https only.
+ */
+const IDP_ORIGINS: Record<string, readonly string[]> = {
+  google: ['https://accounts.google.com'],
+  microsoft: ['https://login.microsoftonline.com'],
+};
+
+/**
+ * Validate a server-supplied `auth_url` before navigating to it (P1).
+ *
+ * The API builds this URL from fixed constants, so a host that is not the
+ * real IdP means something upstream is wrong or compromised. Refusing here
+ * keeps a "log in to connect your mailbox" flow from becoming a phishing
+ * hop off a domain analysts are trained to trust. Fails closed: the caller
+ * must handle the throw and must not navigate anyway.
+ */
+export function assertIdpUrl(url: unknown, provider: string): string {
+  const raw = typeof url === 'string' ? url.trim() : '';
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new ApiError(0, `Refusing to redirect: the API returned an unusable ${provider} authorization URL.`);
+  }
+  const allowed = IDP_ORIGINS[provider] ?? [];
+  if (parsed.protocol !== 'https:' || !allowed.includes(parsed.origin)) {
+    throw new ApiError(
+      0,
+      `Refusing to redirect to ${parsed.origin} for ${provider} sign-in. ` +
+        `Expected ${allowed.join(' or ') || 'a known identity provider'}.`
+    );
+  }
+  return parsed.toString();
+}
+
 async function handle(r: Response) {
   if (!r.ok) {
     const text = await r.text().catch(() => r.statusText);
