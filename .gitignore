@@ -13,3 +13,6 @@ dist/
 k8s/secret.yaml
 k8s/*secret*.yaml
 !k8s/secret.yaml.example
+
+# TypeScript incremental build artifact
+frontend/tsconfig.tsbuildinfo

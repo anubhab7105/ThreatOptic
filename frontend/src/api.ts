@@ -43,10 +43,29 @@ async function handle(r: Response) {
  * `soc:unauthorized` so AuthProvider can drop to signed-out state. */
 async function request(path: string, init: RequestInit, opts: { auth?: boolean } = {}): Promise<any> {
   const headers = { ...(init.headers as Record<string, string> || {}) };
-  const r = await fetch(API + path, {
-    ...init,
-    headers: opts.auth === false ? headers : await authHeaders(headers),
-  });
+  let r: Response;
+  try {
+    r = await fetch(API + path, {
+      ...init,
+      headers: opts.auth === false ? headers : await authHeaders(headers),
+    });
+  } catch (e) {
+    // A rejected fetch() means the browser never got a response: the host
+    // is down, the URL is wrong, or — the common split-deploy case — the
+    // API's CORS allowlist does not include this frontend's origin. The
+    // console says only "Failed to fetch", so name the likely cause here.
+    if (e instanceof TypeError) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'this page';
+      throw new ApiError(
+        0,
+        `Cannot reach the API at ${API || '(same origin)'} (${path}). ` +
+          `Check that it is running, that VITE_API_URL is correct, and that ` +
+          `the API's CORS_ORIGINS includes ${origin}. ` +
+          `See GET ${API || ''}/health for the allowlist it currently serves.`
+      );
+    }
+    throw e;
+  }
   if (r.status === 401 && opts.auth !== false && !path.startsWith('/auth/')) {
     window.dispatchEvent(new Event('soc:unauthorized'));
   }

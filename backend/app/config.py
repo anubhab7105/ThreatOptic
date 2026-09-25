@@ -32,19 +32,78 @@ class Settings(BaseSettings):
     # Comma-separated browser origins allowed to call the API. Credentials
     # are only safe with an explicit list — never "*".
     cors_origins: str = "https://email-scanner-chi.vercel.app"
+    # Optional regex origins for hosts that cannot be enumerated, e.g.
+    # `https://[a-z0-9-]+\.vercel\.app` for per-PR Vercel preview deploys.
+    # Opt-in only, and still refused at boot if it would match *any* origin
+    # (allow_credentials=True + a match-everything regex would send
+    # credentials to every site). Never a substitute for listing the
+    # production origins explicitly.
+    cors_origin_regex: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
         # Normalize: strip whitespace + trailing slash so browsers' Origin
-        # (which never carries a trailing slash) matches the setting.
+        # (which never carries a trailing slash) matches the setting, and
+        # fold scheme/host case the way the URL spec compares them.
         seen: set[str] = set()
         out: list[str] = []
         for raw in str(self.cors_origins).split(","):
             cand = raw.strip().rstrip("/")
-            if cand and cand not in seen:
+            if not cand:
+                continue
+            low = cand.lower()
+            if "://" in low:
+                scheme, _, host = low.partition("://")
+                cand = f"{scheme}://{host}"
+            if cand not in seen:
                 seen.add(cand)
                 out.append(cand)
         return out
+
+    @property
+    def cors_origin_regex_list(self) -> list[str]:
+        out: list[str] = []
+        for raw in str(self.cors_origin_regex or "").split(","):
+            cand = raw.strip()
+            if cand and cand not in out:
+                out.append(cand)
+        return out
+
+    @property
+    def cors_regex_pattern(self) -> str | None:
+        """Comma-separated patterns as one alternation for CORSMiddleware.
+
+        Starlette takes a single pattern and applies `fullmatch`, so the
+        list is joined with non-capturing groups. None when unset.
+        """
+        patterns = self.cors_origin_regex_list
+        if not patterns:
+            return None
+        if len(patterns) == 1:
+            return patterns[0]
+        return "|".join(f"(?:{p})" for p in patterns)
+
+    def cors_allows_remote_origins(self) -> bool:
+        """True when some configured origin/regex can serve a non-loopback browser.
+
+        A loopback-only allowlist is the most common split-deploy
+        misconfiguration: the API boots, Railway's health check passes, and
+        every real browser is blocked by CORS with nothing in the logs.
+        Callers use this to say so out loud at startup.
+        """
+        entries = self.cors_origin_list + self.cors_origin_regex_list
+        return any(not _is_loopback_origin(o) for o in entries)
+
+    def cors_allows(self, origin: str | None) -> bool:
+        """Mirror of what CORSMiddleware will decide — used for diagnostics."""
+        import re as _re
+        if not origin:
+            return False
+        cand = origin.rstrip("/")
+        if cand.lower() in self.cors_origin_list:
+            return True
+        return any(_re.fullmatch(p, origin) or _re.fullmatch(p, cand)
+                   for p in self.cors_origin_regex_list)
 
     database_url: str = ""  # Required — set via DATABASE_URL env var (no SQLite fallback)
     # Optional production backends (empty = local fallback)
@@ -183,6 +242,52 @@ class Settings(BaseSettings):
 
 FORGEABLE_SECRET_MARKERS = {"", "change-me-in-prod", "changeme", "secret", "test"}
 MIN_SECRET_BYTES = 32
+
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"}
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """True for http://localhost:5173-style entries.
+
+    Regex patterns are treated as remote-capable unless they are explicitly
+    loopback-only: a pattern's host can't be read off reliably, and
+    erring toward "remote" only means we skip a warning, never that we
+    widen the allowlist.
+    """
+    cand = (origin or "").strip().lower().rstrip("/")
+    if not cand:
+        return False
+    host = cand.partition("://")[2] or cand
+    host = host.split("/")[0].split("@")[-1]
+    if host.startswith("["):          # IPv6 literal, possibly with a port
+        hostname = host.split("]", 1)[0] + "]"
+    elif host.count(":") == 1:        # host:port
+        hostname = host.rsplit(":", 1)[0]
+    else:
+        hostname = host
+    if not hostname:                 # bare ":5173"-ish nonsense
+        return False
+    return hostname in LOOPBACK_HOSTS or hostname.endswith(".localhost")
+
+
+# A probe origin nothing legitimate would serve, used to detect a
+# match-everything CORS regex before credentials are attached to it.
+_CORS_PROBE = "https://cors-probe.invalid"
+
+
+def cors_regex_is_unbounded(settings: Settings) -> str | None:
+    """Return the offending pattern if any regex would match any origin."""
+    import re as _re
+    for pattern in settings.cors_origin_regex_list:
+        for probe in (_CORS_PROBE, "http://cors-probe.invalid", f"{_CORS_PROBE}:8443"):
+            try:
+                if _re.fullmatch(pattern, probe) or _re.fullmatch(pattern, probe.rstrip("/")):
+                    return pattern
+            except _re.error:
+                # An uncompilable pattern matches nothing; CORSMiddleware
+                # ignores it, so this is not a boot-blocking problem.
+                continue
+    return None
 
 
 def require_secrets() -> None:

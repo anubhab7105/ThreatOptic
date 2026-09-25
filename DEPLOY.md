@@ -183,7 +183,8 @@ In Vercel → Project → **Settings → Environment Variables** → add:
 
 ### 4.1 Update Railway CORS (REQUIRED)
 
-Now that you have your Vercel URL, go back to **Railway → Variables** and update:
+Now that you have your Vercel URL, go back to **Railway → Variables** and set —
+note the **exact** Vercel origin, no trailing slash:
 
 ```env
 CORS_ORIGINS=https://[your-app].vercel.app
@@ -191,6 +192,78 @@ FRONTEND_URL=https://[your-app].vercel.app
 ```
 
 Then redeploy the Railway backend (click **Redeploy** in the Deployments tab).
+
+#### Diagnosing `blocked by CORS policy` / `TypeError: Failed to fetch`
+
+This is by far the most common failure in a split deploy, and the browser
+says nothing useful about the cause. Work top to bottom:
+
+**1. Ask the API what it allows.** `/health` is the only endpoint you can
+curl from your own machine:
+
+```bash
+curl -s https://[your-railway-domain]/health | python3 -m json.tool
+```
+
+```json
+{
+  "status": "ok",
+  "cors_origins": ["https://your-app.vercel.app"],
+  "cors_allows_remote_origins": true,
+  "frontend_url": "https://your-app.vercel.app"
+}
+```
+
+Compare `cors_origins[0]` with the address in your browser bar, character for
+character. `https://` vs `http://`, a trailing `/`, a `www.`, or a stale
+`[your-app]` placeholder are all enough to block every request. The backend
+normalizes trailing slashes and case for you, but not a wrong host.
+
+**2. Check the Railway logs.** At startup the backend logs the allowlist it
+resolved, and warns loudly when the list contains no non-loopback origin:
+
+```
+CORS allowed origins: ['http://localhost:5173']
+WARNING main: CORS allowlist has no non-loopback origin ...
+```
+
+**3. Confirm the request itself.** The frontend sends `Authorization`, so the
+browser preflights. A working preflight returns 200 with the header:
+
+```bash
+curl -i -X OPTIONS "https://[your-railway-domain]/api/v1/emails" \
+  -H "Origin: https://[your-app].vercel.app" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: authorization"
+```
+
+Missing `access-control-allow-origin` in that response means the origin above
+is not in the allowlist — go back to step 1.
+
+**4. Check `VITE_API_URL` on Vercel** is your Railway domain with no trailing
+slash, and that you *rebuilt* the Vercel project after changing it (Vite
+bakes `VITE_*` values at build time, so a redeploy is required; editing the
+variable alone changes nothing).
+
+**5. Vercel preview deployments?** Per-branch previews get unique hostnames
+that cannot be enumerated. Opt in to a pattern rather than listing them one
+by one:
+
+```env
+# on Railway — add alongside CORS_ORIGINS
+CORS_ORIGIN_REGEX=https://[a-z0-9-]+\.vercel\.app
+```
+
+The pattern is matched with `fullmatch` against the whole origin, and boot is
+refused if it would match *any* origin (that is `'*'` in disguise, and with
+credentials enabled it would send them anywhere). Keep the production origin
+in `CORS_ORIGINS` regardless.
+
+> **Alternative — same-origin proxy.** If you would rather not deal with CORS
+> at all, add a rewrite to `vercel.json` so the SPA calls `/api/*` on its own
+> origin and Vercel forwards it to Railway:
+> `{ "source": "/api/(.*)", "destination": "https://[your-railway-domain]/api/$1" }`
+> and leave `VITE_API_URL` empty. Browser credentials then stay same-origin.
 
 ### 4.2 Update Supabase Redirect URLs
 
@@ -240,7 +313,8 @@ git add . && git commit -m "deploy: <description>" && git push
 | `SECRET_KEY` | ✅ | Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `CUSTODY_KEY` | ✅ | Generate: same as above |
 | `TOKEN_ENCRYPTION_KEY` | ✅ (if OAuth) | Generate: `from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())` |
-| `CORS_ORIGINS` | ✅ | Your Vercel URL |
+| `CORS_ORIGINS` | ✅ | Your Vercel URL (exact origin, no trailing slash) |
+| `CORS_ORIGIN_REGEX` | ⬜ Optional | Pattern for Vercel preview hosts, e.g. `https://[a-z0-9-]+\.vercel\.app`. Refused at boot if it matches every origin |
 | `FRONTEND_URL` | ✅ | Your Vercel URL |
 | `GOOGLE_CLIENT_ID/SECRET` | ⬜ Optional | For Gmail OAuth |
 | `MS_CLIENT_ID/SECRET` | ⬜ Optional | For Microsoft OAuth |
