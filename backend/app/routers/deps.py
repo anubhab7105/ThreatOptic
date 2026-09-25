@@ -16,11 +16,19 @@ bearer_scheme = HTTPBearer()
 _jwks_client: PyJWKClient | None = None
 
 
-def _get_jwks_client() -> PyJWKClient:
+def _get_jwks_client() -> PyJWKClient | None:
+    """JWKS client, or None when Supabase Auth is not configured.
+
+    Returning None (instead of a client pointed at a relative URI) keeps
+    the HS256 fallback path from paying a doomed network round-trip on
+    every request in deployments/tests without SUPABASE_URL.
+    """
     global _jwks_client
     if _jwks_client is None:
         settings = get_settings()
-        supabase_url = (settings.supabase_url or "").rstrip("/")
+        supabase_url = (settings.supabase_url or "").strip().rstrip("/")
+        if not supabase_url:
+            return None
         jwks_uri = f"{supabase_url}/auth/v1/.well-known/jwks.json"
         _jwks_client = PyJWKClient(jwks_uri, cache_keys=True)
     return _jwks_client
@@ -37,6 +45,8 @@ def get_current_user(
         # Falls back to the shared secret if JWKS lookup fails (e.g. offline).
         try:
             jwks_client = _get_jwks_client()
+            if jwks_client is None:
+                raise RuntimeError("SUPABASE_URL not configured — no JWKS")
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             payload = jwt.decode(
                 token,

@@ -1,142 +1,161 @@
 """add_rls_policies
 
 Row Level Security policies for tenant isolation (defense-in-depth).
-Application-level checks in _org_filter() remain the primary enforcement;
-RLS provides a second layer at the database level.
 
-Supabase requires RLS to be enabled per table, then policies created.
+IMPORTANT — what this migration does and does not buy you
+---------------------------------------------------------
+Application-level tenant checks (`_org_filter` / `_scope` in the routers)
+remain the ONLY enforced isolation for the backend's own connection: the
+app authenticates to Postgres with a single service connection string, not
+as a per-user Postgres role, so `auth.uid()` is NULL for every query it
+issues. A table owner also bypasses RLS by default.
+
+So these policies are inert unless queries run under a Postgres role that
+carries a Supabase JWT (`TO authenticated`). They are kept because they
+become real enforcement the moment that is true, and because they fail
+*closed* (zero rows) rather than open in the meantime. Do not treat them
+as a substitute for the application-layer checks.
+
+Two correctness rules this revision must keep:
+1. Dialect-guarded. `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is
+   PostgreSQL-only; without the guard a SQLite dev/CI database fails the
+   whole upgrade chain with a syntax error.
+2. Never wider than the application. The application treats
+   `organization_id IS NULL` as *private org-less scope* visible only to
+   the owning user; a policy that says `organization_id IS NULL OR ...`
+   would hand every authenticated user all org-less rows — strictly
+   wider than the app allows. Org-less rows are therefore Admin-only here.
 """
 from typing import Sequence, Union
+
 from alembic import op
-import sqlalchemy as sa
 
-
-revision: str = 'c9e8f7a6b3d2'
-down_revision: Union[str, None] = 'b7c2d1a9e4f5'
+revision: str = "c9e8f7a6b3d2"
+down_revision: Union[str, None] = "b7c2d1a9e4f5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+TABLES = [
+    "email_records",
+    "analysis_results",
+    "traceability_data",
+    "investigation_cases",
+    "mailbox_connections",
+    "gmail_accounts",
+    "oauth_states",
+]
+
+# Same visibility rule as the application, minus the org-less clause:
+# same org, or Admin. `auth.uid() IS NOT NULL` keeps a NULL uid
+# (service-role / unauthenticated connection) from matching anything.
+_ORG_RULE = """
+    USING (
+        auth.uid() IS NOT NULL
+        AND (
+            organization_id IS NOT NULL
+            AND organization_id = (
+                SELECT organization_id FROM users WHERE id = auth.uid()
+            )
+            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+    WITH CHECK (
+        auth.uid() IS NOT NULL
+        AND (
+            organization_id IS NOT NULL
+            AND organization_id = (
+                SELECT organization_id FROM users WHERE id = auth.uid()
+            )
+            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+"""
+
+# Child tables inherit visibility from their parent email row.
+_EMAIL_RULE = """
+    USING (
+        auth.uid() IS NOT NULL
+        AND email_id IN (
+            SELECT id FROM email_records
+            WHERE organization_id IS NOT NULL
+              AND organization_id = (
+                  SELECT organization_id FROM users WHERE id = auth.uid()
+              )
+              OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+    WITH CHECK (
+        auth.uid() IS NOT NULL
+        AND email_id IN (
+            SELECT id FROM email_records
+            WHERE organization_id IS NOT NULL
+              AND organization_id = (
+                  SELECT organization_id FROM users WHERE id = auth.uid()
+              )
+              OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+"""
+
+# Per-user tables have no organization_id.
+_USER_RULE = """
+    USING (
+        auth.uid() IS NOT NULL
+        AND (
+            user_id = auth.uid()
+            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+    WITH CHECK (
+        auth.uid() IS NOT NULL
+        AND (
+            user_id = auth.uid()
+            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+        )
+    )
+"""
+
+_ORG_TABLES = (
+    "email_records",
+    "investigation_cases",
+    "mailbox_connections",
+)
+_EMAIL_TABLES = ("analysis_results", "traceability_data")
+_USER_TABLES = ("gmail_accounts", "oauth_states")
+
+
+def _is_postgres() -> bool:
+    return op.get_bind().dialect.name == "postgresql"
+
 
 def upgrade() -> None:
-    # Enable RLS on all tenant-scoped tables
-    for table in [
-        'email_records',
-        'analysis_results',
-        'traceability_data',
-        'investigation_cases',
-        'mailbox_connections',
-        'gmail_accounts',
-        'oauth_states',
-    ]:
+    if not _is_postgres():
+        # SQLite (local dev / CI) has no RLS; the application-layer tenant
+        # checks are the enforcement there.
+        return
+    for table in TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-
-    # Policy: users can only see/modify their own org's data
-    # Using current_setting('app.current_user_id') and current_setting('app.current_user_role')
-    # which would be set by a PostgreSQL function or middleware.
-    # For Supabase, we use auth.uid() and check against user table.
-
-    # email_records: users can access rows where organization_id matches their org
-    op.execute("""
-        CREATE POLICY email_records_tenant_isolation ON email_records
-        FOR ALL
-        USING (
-            organization_id IS NULL
-            OR organization_id = (
-                SELECT organization_id FROM users WHERE id = auth.uid()
-            )
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+    for table in _ORG_TABLES:
+        op.execute(
+            f"CREATE POLICY {table}_tenant_isolation ON {table} "
+            f"FOR ALL TO authenticated {_ORG_RULE}"
         )
-    """)
-
-    # analysis_results: cascade via email_records
-    op.execute("""
-        CREATE POLICY analysis_results_tenant_isolation ON analysis_results
-        FOR ALL
-        USING (
-            email_id IN (
-                SELECT id FROM email_records WHERE
-                    organization_id IS NULL
-                    OR organization_id = (
-                        SELECT organization_id FROM users WHERE id = auth.uid()
-                    )
-                    OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-            )
+    for table in _EMAIL_TABLES:
+        op.execute(
+            f"CREATE POLICY {table}_tenant_isolation ON {table} "
+            f"FOR ALL TO authenticated {_EMAIL_RULE}"
         )
-    """)
-
-    # traceability_data: cascade via email_records
-    op.execute("""
-        CREATE POLICY traceability_data_tenant_isolation ON traceability_data
-        FOR ALL
-        USING (
-            email_id IN (
-                SELECT id FROM email_records WHERE
-                    organization_id IS NULL
-                    OR organization_id = (
-                        SELECT organization_id FROM users WHERE id = auth.uid()
-                    )
-                    OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-            )
+    for table in _USER_TABLES:
+        op.execute(
+            f"CREATE POLICY {table}_user_isolation ON {table} "
+            f"FOR ALL TO authenticated {_USER_RULE}"
         )
-    """)
-
-    # investigation_cases: org-scoped
-    op.execute("""
-        CREATE POLICY investigation_cases_tenant_isolation ON investigation_cases
-        FOR ALL
-        USING (
-            organization_id IS NULL
-            OR organization_id = (
-                SELECT organization_id FROM users WHERE id = auth.uid()
-            )
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-        )
-    """)
-
-    # mailbox_connections: org-scoped
-    op.execute("""
-        CREATE POLICY mailbox_connections_tenant_isolation ON mailbox_connections
-        FOR ALL
-        USING (
-            organization_id IS NULL
-            OR organization_id = (
-                SELECT organization_id FROM users WHERE id = auth.uid()
-            )
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-        )
-    """)
-
-    # gmail_accounts: per-user (not org-scoped)
-    op.execute("""
-        CREATE POLICY gmail_accounts_user_isolation ON gmail_accounts
-        FOR ALL
-        USING (
-            user_id = auth.uid()
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-        )
-    """)
-
-    # oauth_states: per-user
-    op.execute("""
-        CREATE POLICY oauth_states_user_isolation ON oauth_states
-        FOR ALL
-        USING (
-            user_id = auth.uid()
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
-        )
-    """)
 
 
 def downgrade() -> None:
-    for table in [
-        'email_records',
-        'analysis_results',
-        'traceability_data',
-        'investigation_cases',
-        'mailbox_connections',
-        'gmail_accounts',
-        'oauth_states',
-    ]:
-        op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
+    if not _is_postgres():
+        return
+    for table in TABLES:
         op.execute(f"DROP POLICY IF EXISTS {table}_tenant_isolation ON {table}")
         op.execute(f"DROP POLICY IF EXISTS {table}_user_isolation ON {table}")
+        op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")

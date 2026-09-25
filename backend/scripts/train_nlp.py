@@ -179,13 +179,17 @@ def build_pipeline() -> Pipeline:
     ])
 
 
-def out_paths() -> tuple[str, str]:
-    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ml_models")
+def out_paths(out_dir: str | None = None) -> tuple[str, str]:
+    """Artifact paths. `out_dir` overrides the repo's ml_models/ so callers
+    (notably the test suite) never rewrite the shipped, checksum-pinned model."""
+    if out_dir is None:
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ml_models")
+    out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     return os.path.join(out_dir, "phishing_clf.joblib"), os.path.join(out_dir, "metrics.json")
 
 
-def main() -> dict:
+def main(out_dir: str | None = None) -> dict:
     X, y, source = load_training_data()
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
@@ -220,7 +224,7 @@ def main() -> dict:
         "random_state": RANDOM_STATE,
         "classes": [str(c) for c in pipe.classes_],
     }
-    model_path, metrics_path = out_paths()
+    model_path, metrics_path = out_paths(out_dir)
     # Atomic write: tmp file + rename, then a pinned checksum sidecar that
     # the engine verifies before unpickling (Step 4, C10).
     import hashlib as _hashlib

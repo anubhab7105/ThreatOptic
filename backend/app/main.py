@@ -64,6 +64,7 @@ async def _smtp_consumer() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .config import require_secrets
+    from .database import SessionLocal
     from .modules.privacy.chain_of_custody import require_custody_key
 
     require_secrets()
