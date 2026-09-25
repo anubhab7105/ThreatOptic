@@ -36,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     hydrateUser();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, _session) => {
       hydrateUser();
     });

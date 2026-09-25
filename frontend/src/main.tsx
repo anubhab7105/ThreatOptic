@@ -64,7 +64,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
         <ol>
           {items.map((it, i) => (
             <li key={i}>
-              {it.href ? <a href={it.href}>{it.label}</a> : <span aria-current="page">{it.label}</span>}
+              {it.href ? <Link to={it.href}>{it.label}</Link> : <span aria-current="page">{it.label}</span>}
               {i < items.length - 1 ? <span className="sep" aria-hidden="true"> › </span> : null}
             </li>
           ))}

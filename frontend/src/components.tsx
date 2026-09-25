@@ -59,8 +59,8 @@ export function SkeletonList({ rows = 4 }: { rows?: number }) {
 
 export function AuthPill({ name, status }: { name: string; status: string }) {
   const s = (status || '').toLowerCase().trim();
-  let cls = 'auth-none';
-  let label = (status || 'NONE').toUpperCase();
+  let cls: string;
+  const label = (status || 'NONE').toUpperCase();
 
   if (s === 'pass' || s === 'found' || s === 'aligned') {
     cls = 'auth-pass';

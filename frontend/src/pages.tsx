@@ -294,12 +294,8 @@ const DEFAULT_GOOGLE_CLIENT_SECRET = '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';
 
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  const [clientId, setClientId] = useState(() => {
-    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_id')) || DEFAULT_GOOGLE_CLIENT_ID;
-  });
-  const [clientSecret, setClientSecret] = useState(() => {
-    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_secret')) || DEFAULT_GOOGLE_CLIENT_SECRET;
-  });
+  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
+  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -316,12 +312,10 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
 
   const updateClientId = (v: string) => {
     setClientId(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
   };
 
   const updateClientSecret = (v: string) => {
     setClientSecret(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
   };
 
   const refresh = async () => {
@@ -339,10 +333,6 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const getUrl = async () => {
     setBusy(true); setErr(''); setNotice(''); setAuthUrl('');
     try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
-        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
-      }
       const r = await jpost('/gmail/auth-url', {
         redirect_uri: redirectUri,
         client_id: clientId.trim() || undefined,
@@ -367,10 +357,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     }
     setBusy(true); setErr(''); setNotice('');
     try {
-      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
-      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
-      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
-      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+      // P0: client_id from state only, client_secret never from browser storage
+      const effectiveCid = clientId.trim() || undefined;
+      const effectiveSec = clientSecret.trim() || undefined;
 
       const r = await jpost('/gmail/callback', {
         code: c,
@@ -419,10 +408,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
-      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
-      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
-      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+      // P0: client_id from state only, client_secret never from browser storage
+      const effectiveCid = clientId.trim() || undefined;
+      const effectiveSec = clientSecret.trim() || undefined;
 
       const r = await jpost('/gmail/sync', {
         max_results: num,
@@ -1493,8 +1481,8 @@ export function EmailView({ id }: { id: string }) {
                   height="380"
                   style={{ border: 0, borderRadius: 8 }}
                   loading="lazy"
-                  sandbox="allow-scripts allow-same-origin"
-                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                  referrerPolicy="no-referrer-when-downgrade"
                   src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
                 />
                 <p style={{ marginTop: 8 }}>
@@ -1643,6 +1631,12 @@ export function CampaignDetail({ id }: { id: string }) {
         )}
       </div>
       <InternalLinks current="/campaigns" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: cardName,
+        description: `Campaign ${cardName} with ${d?.card?.email_count || 0} emails, confidence ${d?.card?.confidence ? Math.round(d.card.confidence * 100) : 0}%`,
+        url: `${CANONICAL_BASE}/campaign/${id}`,
+        author: { '@id': `${CANONICAL_BASE}/#organization` }
+      })}} />
     </div>
   );
 }
@@ -1751,13 +1745,9 @@ export function Mailboxes() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   // P0: OAuth client secrets are NEVER held in the browser — not in state,
-  // not in storage. Only the public client ID (optional) lives here.
-  const [clientId, setClientId] = useState(() => {
-    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_id')) || DEFAULT_GOOGLE_CLIENT_ID;
-  });
-  const [clientSecret, setClientSecret] = useState(() => {
-    return (typeof window !== 'undefined' && sessionStorage.getItem('soc_gmail_client_secret')) || DEFAULT_GOOGLE_CLIENT_SECRET;
-  });
+  // not in storage. Client ID is not persisted (user enters each session).
+  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
+  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -1765,11 +1755,9 @@ export function Mailboxes() {
 
   const updateClientId = (v: string) => {
     setClientId(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
   };
   const updateClientSecret = (v: string) => {
     setClientSecret(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
   };
 
   const fail = (e: unknown, what: string) =>
@@ -1786,10 +1774,6 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
-        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
-      }
       const r = await jpost(`/oauth/${provider}/authorize`, {
         redirect_uri: redirectUri,
         client_id: clientId.trim() || undefined,

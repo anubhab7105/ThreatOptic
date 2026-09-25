@@ -17,12 +17,12 @@ You may crawl and index all public pages listed in sitemap.xml. Do not attempt t
 
 ## Key Pages
 - https://socforensics.io/ - Global Threat Dashboard: ingest, search, score distribution, campaign stats
-- https://socforensics.io/#/campaigns - Campaign clusters by shared sender infrastructure
-- https://socforensics.io/#/cases - Case management kanban (Open / InProgress / Closed)
-- https://socforensics.io/#/mailboxes - Organization OAuth connectors (Google/Microsoft)
-- https://socforensics.io/#/model - Model transparency: accuracy, per-class metrics, confusion matrix
-- https://socforensics.io/#/privacy - Privacy Policy
-- https://socforensics.io/#/terms - Terms and Conditions
+- https://socforensics.io/campaigns - Campaign clusters by shared sender infrastructure
+- https://socforensics.io/cases - Case management kanban (Open / InProgress / Closed)
+- https://socforensics.io/mailboxes - Organization OAuth connectors (Google/Microsoft)
+- https://socforensics.io/model - Model transparency: accuracy, per-class metrics, confusion matrix
+- https://socforensics.io/privacy - Privacy Policy
+- https://socforensics.io/terms - Terms and Conditions
 
 ## Data Sources & Privacy
 - Ingested emails are masked (PII) before display; raw EML SHA-256 hashed for chain-of-custody
