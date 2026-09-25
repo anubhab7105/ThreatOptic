@@ -198,6 +198,29 @@ Then redeploy the Railway backend (click **Redeploy** in the Deployments tab).
 This is by far the most common failure in a split deploy, and the browser
 says nothing useful about the cause. Work top to bottom:
 
+**0. Check whether the host in the message even exists.** This is the step
+that is easy to miss, because the browser reports it as a CORS problem: if
+`VITE_API_URL` has a typo, the request lands on a *different* host that 404s
+with no CORS headers, and the console shows the identical
+"No 'Access-Control-Allow-Origin' header" message. A one-character
+difference between two similar-looking Railway hostnames is enough. So:
+
+```bash
+# read the API base the DEPLOYED bundle actually baked in
+curl -s https://[your-app].vercel.app/ \
+  | grep -oE '/assets/[^"]+\.js' | sort -u | while read -r a; do
+    curl -s "https://[your-app].vercel.app$a" | grep -oE 'https://[a-z0-9.-]+up\.railway\.app'
+  done | sort -u
+
+# then prove that host is alive
+curl -s https://[that-host]/health
+```
+
+`{"message":"Application not found"}` from Railway means the hostname in
+`VITE_API_URL` is not a real app. The dashboard keeps working (it is a
+static bundle) while every single API call fails, which is what makes this
+look like a CORS bug.
+
 **1. Ask the API what it allows.** `/health` is the only endpoint you can
 curl from your own machine:
 
