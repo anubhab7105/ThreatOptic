@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Comma-separated browser origins allowed to call the API. Credentials
     # are only safe with an explicit list — never "*".
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "https://email-scanner-chi.vercel.app"
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -88,13 +88,13 @@ class Settings(BaseSettings):
     # Gmail OAuth2 demo connector (optional; per-request overrides also accepted).
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = ""
+    google_redirect_uri: str = "https://email-scanner-chi.vercel.app"
 
     # Organization mailbox polling (F7): Microsoft Graph credentials,
     # frontend base URL for OAuth callbacks, poll interval (0 = disabled).
     ms_client_id: str = ""
     ms_client_secret: str = ""
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "https://email-scanner-chi.vercel.app"
     mail_poll_minutes: int = 0
     # Extra allowed OAuth redirect_uris, comma-separated, beyond the
     # configured frontend_url / google_redirect_uri (C3 allowlist).
