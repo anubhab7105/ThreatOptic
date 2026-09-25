@@ -156,6 +156,12 @@ class Settings(BaseSettings):
         url = test_url or self.database_url  # No SQLite default — fail-closed
         if not url:
             raise RuntimeError("DATABASE_URL is not set. Provide a Supabase/Postgres connection string.")
+        
+        # Remove pgbouncer query param as it causes psycopg2 ProgrammingError (invalid dsn)
+        if "pgbouncer=" in url:
+            import re
+            url = re.sub(r'([?&])pgbouncer=[^&]+&?', r'\1', url).rstrip('?&')
+
         # Normalize Supabase / Railway postgres URLs: Heroku-style `postgres://` and
         # bare `postgresql://` need the psycopg2 driver for SQLAlchemy.
         if url.startswith("postgres://"):
