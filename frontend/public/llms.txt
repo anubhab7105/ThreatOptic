@@ -7,7 +7,7 @@ SOC Forensics Lab provides real-time phishing, Business Email Compromise (BEC) a
 
 - Canonical domain: https://socforensics.io/
 - Primary UI: https://socforensics.io/
-- Docs: https://socforensics.io/#/model (model transparency)
+- Docs: https://socforensics.io/model (model transparency)
 - Contact: SOC Forensics Lab, 301 Congress Ave, Suite 400, Austin, TX 78701, USA - hello@socforensics.io - +1-512-555-0148
 - Sitemap: https://socforensics.io/sitemap.xml
 - Robots: https://socforensics.io/robots.txt

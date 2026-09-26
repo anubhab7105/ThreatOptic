@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { AvatarStack, KeyboardShortcuts, useKeyboardShortcuts } from './components';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
 import { BASE, jpost } from './api';
@@ -58,7 +58,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}${it.href.replace(/^\//, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\//, '')}` : undefined,
     })),
   };
   return (
@@ -134,7 +134,7 @@ function OAuthCallbackHandler() {
 
   useEffect(() => {
     // Forward OAuth parameters (code, state) to the Dashboard where listener completes the connection
-    navigate(`/${location.search}`, { replace: true });
+    navigate(`/dashboard${location.search}`, { replace: true });
   }, [location, navigate]);
 
   return (
@@ -146,6 +146,7 @@ function OAuthCallbackHandler() {
 }
 
 function NotFoundPage() {
+  const { user } = useAuth();
   useEffect(() => {
     document.title = 'Page Not Found - SOC Forensics Lab';
     setMeta('description', 'The requested forensic resource was not found. Return to the threat dashboard, campaigns, or case board.');
@@ -163,8 +164,9 @@ function NotFoundPage() {
           <p style={{ fontSize: 15, margin: '0 0 8px' }}>This investigation doesn&apos;t exist, or you don&apos;t have access to it.</p>
           <p className="sub">This is a routing miss, not a threat — nothing has been logged.</p>
           <div style={{ margin: '16px 0' }}>
-            <Link to="/dashboard" className="btn-new">Back to Dashboard</Link>
+            <Link to={user ? '/dashboard' : '/'} className="btn-new">{user ? 'Back to Dashboard' : 'Back to Home'}</Link>
           </div>
+          {user ? (
           <ul style={{ margin: '8px 0', paddingLeft: 18, fontSize: 13 }}>
             <li><Link to="/dashboard">Global Threat Dashboard</Link> - ingest and score emails</li>
             <li><Link to="/campaigns">Campaigns</Link> - shared infrastructure clusters</li>
@@ -172,6 +174,15 @@ function NotFoundPage() {
             <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
             <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
+          ) : (
+          <ul style={{ margin: '8px 0', paddingLeft: 18, fontSize: 13 }}>
+            <li><Link to="/">Home</Link> - product overview</li>
+            <li><Link to="/login">Sign In</Link> - analyst access</li>
+            <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
+            <li><Link to="/privacy">Privacy Policy</Link> - data handling</li>
+            <li><Link to="/terms">Terms</Link> - acceptable use</li>
+          </ul>
+          )}
         </div>
       </div>
       <div className="card" style={{ marginTop: 16 }}>
@@ -262,7 +273,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
           <h1>Something went wrong</h1>
           <p className="sub">An unexpected error occurred in the forensic UI. Reload or return to the dashboard.</p>
           <div className="toast">{this.state.msg.slice(0, 400)}</div>
-          <Link to="/">Back to Dashboard</Link>
+          <Link to="/dashboard">Back to Dashboard</Link>
         </div>
       );
     }
@@ -375,6 +386,7 @@ useEffect(() => {
               <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
+              <Route path="/model" element={<ModelInfo />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
               <Route path="*" element={<NotFoundPage />} />
@@ -419,7 +431,7 @@ useEffect(() => {
         <div className="ws-analysts">
           <AvatarStack names={[user.email, 'arka.analyst', 'soc.ir', 'threat.hunt', 'case.lead', 'forensics.ai']} />
         </div>
-        <button type="button" className="ws-invite" onClick={() => { setWsOpen(false); navigate('/login'); }}>+ Invite analyst</button>
+        <button type="button" className="ws-invite" onClick={() => { setWsOpen(false); navigate('/dashboard'); }}>+ Invite analyst</button>
         <div className="health" title="backend reachability" style={{ marginTop: 14 }}>
           <span className="dot" style={{ background: health === 'ok' ? '#22c55e' : health === 'down' ? '#ef4444' : '#eab308' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
@@ -466,6 +478,8 @@ useEffect(() => {
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsConditions />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/login" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </div>

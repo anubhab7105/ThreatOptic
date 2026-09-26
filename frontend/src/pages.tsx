@@ -205,9 +205,9 @@ export function LandingPage() {
           <nav className="footer-links" aria-label="Resources">
             <h4>Resources</h4>
             <ul>
-              <li><Link to="/sitemap.xml">Sitemap</Link></li>
-              <li><Link to="/robots.txt">Robots</Link></li>
-              <li><Link to="/llms.txt">LLMs.txt</Link></li>
+              <li><a href="/sitemap.xml">Sitemap</a></li>
+              <li><a href="/robots.txt">Robots</a></li>
+              <li><a href="/llms.txt">LLMs.txt</a></li>
             </ul>
           </nav>
         </div>
@@ -254,13 +254,24 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
 }
 
 function InternalLinks({ current }: { current: string }) {
-  const links = [
-    { href: '/', label: 'Dashboard', desc: 'Threat overview' },
+  // Public visitors can only reach public routes — linking them to
+  // auth-gated pages (/dashboard, /campaigns, ...) would 404.
+  const { user } = useAuth();
+  const authLinks = [
+    { href: '/dashboard', label: 'Dashboard', desc: 'Threat overview' },
     { href: '/campaigns', label: 'Campaigns', desc: 'Infrastructure clusters' },
     { href: '/cases', label: 'Cases', desc: 'Kanban investigation' },
     { href: '/mailboxes', label: 'Mailboxes', desc: 'OAuth connectors' },
     { href: '/model', label: 'Model Info', desc: 'Transparency & metrics' },
-  ].filter(l => l.href !== current);
+  ];
+  const publicLinks = [
+    { href: '/', label: 'Home', desc: 'Product overview' },
+    { href: '/login', label: 'Sign In', desc: 'Analyst access' },
+    { href: '/model', label: 'Model Info', desc: 'Transparency & metrics' },
+    { href: '/privacy', label: 'Privacy', desc: 'Data handling' },
+    { href: '/terms', label: 'Terms', desc: 'Acceptable use' },
+  ];
+  const links = (user ? authLinks : publicLinks).filter(l => l.href !== current);
   return (
     <div className="card" style={{ marginTop: 18 }}>
       <h3>Explore the platform</h3>
@@ -708,7 +719,7 @@ export function Dashboard() {
   usePageMeta({
     title: 'Global Threat Dashboard - SOC Forensics Lab | Real-Time Email Threats',
     description: 'Real-time phishing, BEC and spoofing detection across ingested mail. Analyze emails, view fraud scores, track campaigns and export chain-of-custody reports.',
-    canonical: '/',
+    canonical: '/dashboard',
     image: 'https://socforensics.io/og-image.svg',
   });
   const [stats, setStats] = useState<any>(null);
@@ -999,10 +1010,10 @@ export function Dashboard() {
         </div>
       </div>
 
-      <InternalLinks current="/" />
+      <InternalLinks current="/dashboard" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
-        description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
+        description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/dashboard`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -1539,8 +1550,8 @@ export function EmailView({ id }: { id: string }) {
     }
   }, [d, id]);
 
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email', href: '/dashboard' }, { label: 'Error' }]} /><Link to="/dashboard">← back</Link><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email' }]} /><Link to="/dashboard">← back</Link><SkeletonList /></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
   const auth = a.authentication_results || {};
@@ -1876,8 +1887,8 @@ export function CampaignDetail({ id }: { id: string }) {
       .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)); });
     return () => { cancelled = true; };
   }, [id]);
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><SkeletonList /></div>;
+  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><Toast msg={err} /></div>;
+  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><SkeletonList /></div>;
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns', href: '/campaigns' }, { label: cardName }]} />

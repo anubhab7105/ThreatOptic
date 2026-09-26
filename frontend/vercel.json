@@ -3,7 +3,10 @@
     { "source": "/assets/(.*)", "destination": "/assets/$1" },
     { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
     { "source": "/robots.txt", "destination": "/robots.txt" },
+    { "source": "/llms.txt", "destination": "/llms.txt" },
     { "source": "/favicon.svg", "destination": "/favicon.svg" },
+    { "source": "/og-image.svg", "destination": "/og-image.svg" },
+    { "source": "/site.webmanifest", "destination": "/site.webmanifest" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
