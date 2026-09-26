@@ -902,6 +902,12 @@ def _run_migrations(url: str, revision: str) -> None:
     A subprocess with DATABASE_URL set in its own environment cannot inherit
     the parent's cached settings, so the URL passed in is provably the URL
     used. A mismatch is asserted, not assumed.
+
+    `TEST_DATABASE_URL` is removed from that environment as well, and this is
+    not incidental: `config.resolved_db_url()` (config.py:254-257) prefers
+    `TEST_DATABASE_URL` over `DATABASE_URL` for pytest isolation. Inheriting
+    it makes alembic migrate a throwaway SQLite file, exit 0, and leave the
+    named PostgreSQL untouched — a green test that asserts nothing.
     """
     import subprocess
     import sys
@@ -909,6 +915,7 @@ def _run_migrations(url: str, revision: str) -> None:
     root = pathlib.Path(__file__).resolve().parents[1]
     env = dict(os.environ)
     env["DATABASE_URL"] = url
+    env.pop("TEST_DATABASE_URL", None)
     env["PYTHONPATH"] = str(root)
     # alembic only needs a URL here; the app's own secret checks are not in
     # scope for this fixture and would only add a way to fail.
@@ -950,6 +957,18 @@ def populated_db():
     engine.dispose()
 
     _run_migrations(DRIFT_URL, "b7c2d1a9e4f5")
+
+    # Prove the chain landed here before seeding, so a misdirected migration
+    # fails on this line rather than as a confusing UndefinedTable further down.
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.connect() as conn:
+        stamped = conn.execute(
+            sa.text("SELECT version_num FROM alembic_version")
+        ).scalar()
+    assert stamped == "b7c2d1a9e4f5", (
+        f"expected the chain to be at b7c2d1a9e4f5, found {stamped!r} — the "
+        f"migration ran against a different database than DRIFT_TEST_DATABASE_URL"
+    )
 
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.begin() as conn:
