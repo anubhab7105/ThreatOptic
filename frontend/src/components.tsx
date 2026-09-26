@@ -19,12 +19,142 @@ export function severityColor(s: string): string {
   return '#6b7280';
 }
 
-export function ScoreBadge({ v }: { v: number }) {
+export function verdictLabel(score: number): string {
+  const sev = severityOf(score);
+  if (sev === 'critical') return 'Critical';
+  if (sev === 'high') return 'High';
+  if (sev === 'medium') return 'Medium';
+  if (sev === 'low') return 'Low';
+  return 'Draft';
+}
+
+export function ScoreBadge({ v, showLabel = true }: { v: number; showLabel?: boolean }) {
   const sev = severityOf(v ?? 0);
+  const label = verdictLabel(v ?? 0);
   return (
-    <span className={`badge ${sev}`} title={`fraud score ${v}`}>
-      {v}
+    <span className={`badge ${sev}`} title={`fraud score ${v} — ${label}`}>
+      {showLabel && sev !== 'unknown' ? `${label} ${v}` : v}
     </span>
+  );
+}
+
+export function VerdictPill({ score, classification }: { score: number; classification?: string | null }) {
+  const sev = severityOf(score ?? 0);
+  const label = classification && classification !== '—' ? classification : verdictLabel(score ?? 0);
+  return (
+    <span className={`verdict-pill verdict-${sev === 'unknown' ? 'draft' : sev}`} title={`verdict ${label}, score ${score}`}>
+      {sev === 'unknown' ? label : `${label} ${score}`}
+    </span>
+  );
+}
+
+const AVATAR_COLORS = ['#5B6CFF', '#F472B6', '#FB923C', '#22C55E', '#8A90A8', '#6C7CFF'];
+
+export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
+  const shown = names.slice(0, max);
+  const extra = names.length - shown.length;
+  return (
+    <span className="avatar-stack" aria-label={`${names.length} analysts`}>
+      {shown.map((n, i) => (
+        <span key={i} className={i === 0 ? 'presence-wrap' : undefined} style={{ display: 'inline-flex' }}>
+          <span className="avatar" title={n} style={{ background: AVATAR_COLORS[i % AVATAR_COLORS.length] }}>
+            {n.trim().charAt(0).toUpperCase() || 'A'}
+          </span>
+          {i === 0 ? <span className="presence-dot" aria-hidden="true" /> : null}
+        </span>
+      ))}
+      {extra > 0 ? <span className="avatar-more">+{extra}</span> : null}
+    </span>
+  );
+}
+
+export function AISparkle({ onClick, title = 'Explain / summarize with AI' }: { onClick?: () => void; title?: string }) {
+  return (
+    <button type="button" className="ai-sparkle" onClick={onClick} title={title} aria-label={title}>
+      <span aria-hidden="true">✦</span>
+    </button>
+  );
+}
+
+export function greetingFor(date = new Date()): string {
+  const h = date.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function ThreatGauge({ dist }: { dist: { critical: number; high: number; medium: number; low: number } }) {
+  const c = dist.critical || 0;
+  const h = dist.high || 0;
+  const m = dist.medium || 0;
+  const l = dist.low || 0;
+  const total = Math.max(1, c + h + m + l);
+  const highRisk = c + h;
+  const pct = Math.round((100 * highRisk) / total);
+  const segs = [
+    { v: c, color: '#DC2626' },
+    { v: h, color: '#EA580C' },
+    { v: m, color: '#F59E0B' },
+    { v: l, color: '#22C55E' },
+  ];
+  const R = 54;
+  const CIRC = 2 * Math.PI * R;
+  let acc = 0;
+  const label = `Threat overview: ${pct}% high-risk, ${highRisk} of ${total} emails. Critical ${c}, High ${h}, Medium ${m}, Low ${l}.`;
+  return (
+    <div className="gauge-card">
+      <svg className="gauge-svg" width="132" height="132" viewBox="0 0 132 132" role="img" aria-label={label}>
+        <title>Threat overview gauge</title>
+        <circle cx="66" cy="66" r={R} fill="none" stroke="#EDF0F7" strokeWidth="16" />
+        {segs.map((s, i) => {
+          if (!s.v) return null;
+          const frac = s.v / total;
+          const dash = frac * CIRC;
+          const gap = CIRC - dash;
+          const rot = (acc / total) * 360;
+          acc += s.v;
+          return (
+            <circle
+              key={i}
+              cx="66" cy="66" r={R} fill="none"
+              stroke={s.color} strokeWidth="16"
+              strokeDasharray={`${dash} ${gap}`}
+              transform={`rotate(${rot - 90} 66 66)`}
+              strokeLinecap="butt"
+            />
+          );
+        })}
+        <text x="66" y="64" textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text)">{pct}%</text>
+        <text x="66" y="82" textAnchor="middle" fontSize="10" fill="var(--muted)">high-risk</text>
+      </svg>
+      <div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{highRisk} / {total} emails</div>
+        <div className="gauge-legend" style={{ marginTop: 8 }}>
+          <span><span className="sev" style={{ background: '#DC2626' }} />Critical <b>{c}</b></span>
+          <span><span className="sev" style={{ background: '#EA580C' }} />High <b>{h}</b></span>
+          <span><span className="sev" style={{ background: '#F59E0B' }} />Medium <b>{m}</b></span>
+          <span><span className="sev" style={{ background: '#22C55E' }} />Low <b>{l}</b></span>
+        </div>
+        <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+export function MetricRing({ pct, size = 120 }: { pct: number; size?: number }) {
+  const R = 48;
+  const CIRC = 2 * Math.PI * R;
+  const frac = Math.max(0, Math.min(1, pct / 100));
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={`${pct.toFixed(1)} percent`}>
+      <circle cx="60" cy="60" r={R} fill="none" stroke="#EDF0F7" strokeWidth="13" />
+      <circle
+        cx="60" cy="60" r={R} fill="none" stroke="#5B6CFF" strokeWidth="13"
+        strokeDasharray={`${frac * CIRC} ${CIRC}`} strokeLinecap="round"
+        transform="rotate(-90 60 60)"
+      />
+      <text x="60" y="67" textAnchor="middle" fontSize="21" fontWeight="800" fill="var(--text)">{pct.toFixed(1)}%</text>
+    </svg>
   );
 }
 
