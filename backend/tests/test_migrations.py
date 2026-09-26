@@ -901,7 +901,6 @@ def _run_migrations(url: str, revision: str) -> None:
     directly means the URL passed in is the URL used.
     """
     from alembic.config import Config
-    from alembic.runtime.environment import EnvironmentContext
     from alembic.runtime.migration import MigrationContext
     from alembic.script import ScriptDirectory
 
@@ -913,17 +912,16 @@ def _run_migrations(url: str, revision: str) -> None:
     engine = sa.create_engine(url, future=True)
     try:
         with engine.connect() as conn:
-            ctx = MigrationContext.configure(conn)
-            # This is what alembic.command.upgrade() does, minus the
-            # EnvironmentContext that would execute env.py — and env.py is
-            # exactly what resolves its own URL from ambient settings.
-            with EnvironmentContext(
-                cfg,
-                script,
-                fn=lambda heads, context: script._upgrade(heads, revision),
-            ):
-                with ctx.begin_transaction():
-                    ctx.run_migrations()
+            # `fn` is what alembic.command.upgrade() supplies via
+            # EnvironmentContext.configure(), which only env.py ever calls.
+            # Passing it here is what lets run_migrations() do the work while
+            # skipping env.py — and env.py is exactly what resolves its own
+            # URL from ambient settings instead of the one we were given.
+            ctx = MigrationContext.configure(
+                conn, fn=lambda heads, context: script._upgrade(heads, revision)
+            )
+            with ctx.begin_transaction():
+                ctx.run_migrations()
     finally:
         engine.dispose()
 
