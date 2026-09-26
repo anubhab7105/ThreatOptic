@@ -112,18 +112,14 @@ def upgrade() -> None:
     #   * an inspector guard, because production predates these columns and one
     #     may have been added out of band, which would abort the chain;
     #   * a server default, because `ADD COLUMN ... NOT NULL` fails on Postgres
-    #     as soon as the table holds one row;
-    #   * that default dropped straight after, so the schema matches
-    #     Base.metadata and the drift check can pass.
+    #     as soon as the table holds one row. The default is what backfills
+    #     existing rows to ''; it is dropped again below.
     if "encrypted_client_id" not in _columns(_inspector(), "gmail_accounts"):
         op.add_column(
             "gmail_accounts",
             sa.Column(
                 "encrypted_client_id", sa.Text(), nullable=False, server_default=sa.text("''")
             ),
-        )
-        op.alter_column(
-            "gmail_accounts", "encrypted_client_id", server_default=None, existing_type=sa.Text()
         )
     if "encrypted_client_secret" not in _columns(_inspector(), "gmail_accounts"):
         op.add_column(
@@ -132,18 +128,12 @@ def upgrade() -> None:
                 "encrypted_client_secret", sa.Text(), nullable=False, server_default=sa.text("''")
             ),
         )
-        op.alter_column(
-            "gmail_accounts", "encrypted_client_secret", server_default=None, existing_type=sa.Text()
-        )
     if "encrypted_client_id" not in _columns(_inspector(), "mailbox_connections"):
         op.add_column(
             "mailbox_connections",
             sa.Column(
                 "encrypted_client_id", sa.Text(), nullable=False, server_default=sa.text("''")
             ),
-        )
-        op.alter_column(
-            "mailbox_connections", "encrypted_client_id", server_default=None, existing_type=sa.Text()
         )
     if "encrypted_client_secret" not in _columns(_inspector(), "mailbox_connections"):
         op.add_column(
@@ -152,18 +142,33 @@ def upgrade() -> None:
                 "encrypted_client_secret", sa.Text(), nullable=False, server_default=sa.text("''")
             ),
         )
-        op.alter_column(
-            "mailbox_connections",
-            "encrypted_client_secret",
-            server_default=None,
-            existing_type=sa.Text(),
-        )
     if "encrypted_client_secret" not in _columns(_inspector(), "oauth_states"):
         op.add_column(
             "oauth_states",
             sa.Column(
                 "encrypted_client_secret", sa.Text(), nullable=False, server_default=sa.text("''")
             ),
+        )
+
+    # Drop the backfill default so the schema matches Base.metadata exactly.
+    # SQLite has no `ALTER TABLE ... ALTER COLUMN`, so the default is left in
+    # place there; that is harmless, because the SQLite path is dev/test only
+    # and builds its schema from Base.metadata rather than from this chain.
+    if op.get_bind().dialect.name != "sqlite":
+        op.alter_column(
+            "gmail_accounts", "encrypted_client_id", server_default=None, existing_type=sa.Text()
+        )
+        op.alter_column(
+            "gmail_accounts", "encrypted_client_secret", server_default=None, existing_type=sa.Text()
+        )
+        op.alter_column(
+            "mailbox_connections", "encrypted_client_id", server_default=None, existing_type=sa.Text()
+        )
+        op.alter_column(
+            "mailbox_connections",
+            "encrypted_client_secret",
+            server_default=None,
+            existing_type=sa.Text(),
         )
         op.alter_column(
             "oauth_states", "encrypted_client_secret", server_default=None, existing_type=sa.Text()

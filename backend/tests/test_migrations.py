@@ -868,6 +868,13 @@ def test_the_drift_fix_covers_exactly_the_five_vault_columns() -> None:
         "every server default must be dropped afterwards, or the schema never "
         "matches Base.metadata and this drift check fails forever"
     )
+    # The drop is a bare ALTER COLUMN, which SQLite does not implement, and a
+    # fresh-SQLite migration is covered by test_step5_reliability.py.
+    assert 'if op.get_bind().dialect.name != "sqlite":' in upgrade_body, (
+        "the default drop must be dialect-guarded: SQLite has no ALTER TABLE "
+        "... ALTER COLUMN and would raise NotImplementedError, breaking the "
+        "fresh-SQLite migration test"
+    )
 
 
 # ---------------------------------------------------------------------------
