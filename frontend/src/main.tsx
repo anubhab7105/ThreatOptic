@@ -125,6 +125,23 @@ function CookieConsent() {
   );
 }
 
+function OAuthCallbackHandler() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Forward OAuth parameters (code, state) to the Dashboard where listener completes the connection
+    navigate(`/${location.search}`, { replace: true });
+  }, [location, navigate]);
+
+  return (
+    <div className="page" style={{ textAlign: 'center', paddingTop: 60 }}>
+      <h2>Connecting your account...</h2>
+      <p className="sub">Please wait while we complete the Google authorization flow.</p>
+    </div>
+  );
+}
+
 function NotFoundPage() {
   useEffect(() => {
     document.title = 'Page Not Found - SOC Forensics Lab';
@@ -319,6 +336,8 @@ function Shell() {
         <ErrorBoundary>
           <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
             <Routes>
+              <Route path="/api/v1/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
+              <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
               <Route path="*" element={<LoginPage />} />
@@ -355,6 +374,8 @@ function Shell() {
       <ErrorBoundary>
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
           <Routes>
+            <Route path="/api/v1/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
+            <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
             <Route path="/email/:id" element={<EmailRoute />} />
             <Route path="/campaign/:id" element={<CampaignRoute />} />
             <Route path="/campaigns" element={<Campaigns />} />

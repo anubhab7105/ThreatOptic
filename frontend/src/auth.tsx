@@ -26,10 +26,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      setUser(await jget('/auth/me'));
+      const res = await jget('/auth/me');
+      if (res && typeof res === 'object' && 'username' in res) {
+        setUser(res);
+      } else {
+        clearTokens();
+        setUser(null);
+      }
     } catch (e) {
-      // Step 6: only an actual 401 drops the session — transient 500s or
-      // network blips keep tokens so the next attempt can still refresh.
       if (e instanceof ApiError && e.status === 401) {
         clearTokens();
       }

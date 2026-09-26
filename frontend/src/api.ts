@@ -47,6 +47,8 @@ export function clearTokens() {
   try {
     sessionStorage.removeItem(LEGACY_KEY);
     localStorage.removeItem(LEGACY_KEY);
+    sessionStorage.removeItem('soc_gmail_client_id');
+    sessionStorage.removeItem('soc_gmail_client_secret');
   } catch { /* storage unavailable */ }
 }
 

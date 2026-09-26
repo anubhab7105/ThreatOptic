@@ -315,14 +315,20 @@ async def callback(
     try:
         if p == "google":
             tokens = await connectors.exchange_gmail_code(code, cid, sec, r_uri, code_verifier=verifier)
-            address = await connectors.get_gmail_profile_email(tokens["access_token"])
         else:
             tokens = await connectors.exchange_microsoft_code(code, cid, sec, r_uri, code_verifier=verifier)
-            address = await connectors.get_microsoft_profile_email(tokens["access_token"])
     except httpx.HTTPError as e:
         raise HTTPException(400, f"{p} token exchange failed: {e}")
     if not tokens.get("refresh_token"):
         raise HTTPException(400, "provider did not return a refresh token")
+
+    try:
+        if p == "google":
+            address = await connectors.get_gmail_profile_email(tokens["access_token"])
+        else:
+            address = await connectors.get_microsoft_profile_email(tokens["access_token"])
+    except httpx.HTTPError as e:
+        raise HTTPException(400, f"could not read {p} profile: {e}")
 
     encrypted_refresh = encrypt_secret(tokens["refresh_token"])
     encrypted_cid = encrypt_secret(cid) if cid else ""

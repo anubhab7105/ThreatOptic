@@ -75,7 +75,15 @@ async def get_gmail_profile_email(access_token: str) -> str:
             "https://gmail.googleapis.com/gmail/v1/users/me/profile",
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        r.raise_for_status()
+        if r.is_error:
+            msg = r.text
+            try:
+                err_data = r.json()
+                if "error" in err_data and "message" in err_data["error"]:
+                    msg = err_data["error"]["message"]
+            except Exception:
+                pass
+            raise httpx.HTTPError(f"Gmail API error ({r.status_code}): {msg}")
         return r.json().get("emailAddress", "")
 
 
