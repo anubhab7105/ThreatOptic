@@ -4,13 +4,11 @@ import threading
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 
 def _auth(c: TestClient, role: str = "Analyst") -> dict:
-    uname = f"dash-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register",
-                 json={"username": uname, "password": "Str0ngPass!", "role": role}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login(role=role)[0]
 
 
 def _seed_scored_mail(db, org_id, band_scores):

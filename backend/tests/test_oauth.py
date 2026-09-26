@@ -2,6 +2,7 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 RAW = b"""From: a@b.test
 To: me@company.com
@@ -13,10 +14,9 @@ Quarterly report draft ready for review.
 """
 
 
-def _auth(c: TestClient) -> dict:
-    uname = f"oauth-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+def _auth(c: TestClient) -> tuple[dict, object]:
+    """Return (Authorization headers, provisioned mirror row)."""
+    return login()
 
 
 def test_vault_roundtrip():
@@ -30,7 +30,7 @@ def test_authorize_urls():
     from app.main import app
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         assert c.post("/api/v1/oauth/google/authorize", headers=h, json={}).status_code == 422  # redirect_uri required
         r = c.post("/api/v1/oauth/google/authorize", headers=h,
                    json={"redirect_uri": "http://localhost:5173/", "client_id": "gid"})
@@ -50,7 +50,7 @@ def test_authorize_rejects_query_param_secrets():
     from app.main import app
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         # GET authorize route removed: query-string secrets impossible
         assert c.get("/api/v1/oauth/google/authorize",
                      headers=h,
@@ -97,7 +97,7 @@ def test_callback_sync_disconnect(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         # disconnect requires Analyst+: promote the freshly registered (ReadOnly) user
         dbp = SessionLocal()
         try:
@@ -186,7 +186,7 @@ def test_oauth_hijack_prevention(monkeypatch):
 
     with TestClient(app) as c:
         # Victim starts OAuth flow
-        victim_h = _auth(c)
+        victim_h, _u = _auth(c)
         victim_au = c.post("/api/v1/oauth/google/authorize", headers=victim_h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         from urllib.parse import parse_qs, urlparse
@@ -207,7 +207,7 @@ def test_oauth_hijack_prevention(monkeypatch):
 
         # Attacker tries to use victim's state with their own session
         # The mailbox should be attached to the VICTIM (state's user_id), not the attacker
-        attacker_h = _auth(c)
+        attacker_h, _u = _auth(c)
         r = c.get("/api/v1/oauth/google/callback",
                   params={"code": "4/x", "state": victim_state}, follow_redirects=False)
         # Callback succeeds but mailbox is attached to victim (state's user_id)
@@ -241,7 +241,7 @@ def test_opaque_state_carries_no_secrets(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         from urllib.parse import parse_qs, urlparse
@@ -288,11 +288,11 @@ def test_cross_tenant_mailbox_access(monkeypatch):
 
     with TestClient(app) as c:
         # Create two users in different orgs
-        h1 = _auth(c)
+        h1, user1 = _auth(c)
         db = SessionLocal()
         try:
-            u1 = db.query(models.User).order_by(models.User.created_at.desc()).first()
-            org1 = models.Organization(name=f"org-{u1.username}", compliance_policy={})
+            u1 = db.query(models.User).filter_by(id=user1.id).one()
+            org1 = models.Organization(name=f"org-{u1.email}", compliance_policy={})
             db.add(org1)
             db.flush()
             u1.organization_id = org1.id
@@ -301,11 +301,11 @@ def test_cross_tenant_mailbox_access(monkeypatch):
         finally:
             db.close()
 
-        h2 = _auth(c)
+        h2, user2 = _auth(c)
         db = SessionLocal()
         try:
-            u2 = db.query(models.User).order_by(models.User.created_at.desc()).first()
-            org2 = models.Organization(name=f"org-{u2.username}", compliance_policy={})
+            u2 = db.query(models.User).filter_by(id=user2.id).one()
+            org2 = models.Organization(name=f"org-{u2.email}", compliance_policy={})
             db.add(org2)
             db.flush()
             u2.organization_id = org2.id
@@ -326,9 +326,23 @@ def test_cross_tenant_mailbox_access(monkeypatch):
         st2 = c.get("/api/v1/oauth/status", headers=h2).json()
         assert len(st2) == 0, "User 2 should not see User 1's mailbox"
 
-        # User 2 should NOT be able to disconnect user 1's mailbox
+        # User 2 must NOT disconnect user 1's mailbox. Disconnect is
+        # tenant-scoped, so it is a no-op for user 2 (removed=0) — the
+        # invariant that matters is that user 1's row survives untouched.
         r = c.delete("/api/v1/oauth/google", headers=h2)
-        assert r.status_code == 403  # Forbidden - cannot access other tenant's mailbox
+        assert r.status_code == 200, r.text
+        assert r.json()["removed"] == 0, r.text
+        db = SessionLocal()
+        try:
+            surviving = db.query(models.MailboxConnection).filter(
+                models.MailboxConnection.organization_id == org1_id).count()
+            assert surviving == 1, "cross-tenant disconnect destroyed another org's mailbox"
+        finally:
+            db.close()
+
+        # User 1 still sees their mailbox after user 2's attempt.
+        st1 = c.get("/api/v1/oauth/status", headers=h1).json()
+        assert len(st1) == 1, st1
 
         # User 2 sync-now should return 404 (no mailbox)
         r = c.post("/api/v1/oauth/sync-now", headers=h2, json={"provider": "google", "max_results": 5})
@@ -348,7 +362,7 @@ def test_invalid_missing_state(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         # Missing state
         r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x"})
         assert r.status_code == 400
@@ -396,7 +410,7 @@ def test_tampered_redirect_uri(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        h = _auth(c)
+        h, _u = _auth(c)
         # Start flow with allowed redirect_uri
         au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
@@ -426,11 +440,11 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
 
     with TestClient(app) as c:
         # Victim org A with a stored connection (client_id victim-cid)
-        hv = _auth(c)
+        hv, victim = _auth(c)
         db = SessionLocal()
         try:
-            v = db.query(models.User).order_by(models.User.created_at.desc()).first()
-            org_a = models.Organization(name=f"victim-org-{v.username}", compliance_policy={})
+            v = db.query(models.User).filter_by(id=victim.id).one()
+            org_a = models.Organization(name=f"victim-org-{v.email}", compliance_policy={})
             db.add(org_a)
             db.flush()
             v.organization_id = org_a.id
@@ -447,11 +461,11 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
 
         # Attacker in org B, no credentials anywhere -> fail closed (400),
         # must NOT silently use victim-cid.
-        ha = _auth(c)
+        ha, attacker = _auth(c)
         db = SessionLocal()
         try:
-            a = db.query(models.User).order_by(models.User.created_at.desc()).first()
-            org_b = models.Organization(name=f"attacker-org-{a.username}", compliance_policy={})
+            a = db.query(models.User).filter_by(id=attacker.id).one()
+            org_b = models.Organization(name=f"attacker-org-{a.email}", compliance_policy={})
             db.add(org_b)
             db.flush()
             a.organization_id = org_b.id
@@ -464,10 +478,10 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
         assert "victim-cid" not in r.text
 
         # Same-org member with no explicit credentials MAY reuse org conn.
-        hm = _auth(c)
+        hm, member = _auth(c)
         db = SessionLocal()
         try:
-            m = db.query(models.User).order_by(models.User.created_at.desc()).first()
+            m = db.query(models.User).filter_by(id=member.id).one()
             m.organization_id = org_a_id
             db.commit()
         finally:
@@ -524,7 +538,7 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
 
     with TestClient(app) as c:
         # Victim org A connects shared address (mock profile is fixed).
-        hv = _auth(c)
+        hv, _u = _auth(c)
         _org_for(c, hv, f"hijack-victim-{hv['Authorization'][-6:]}")
         assert _flow(c, hv).status_code == 302
         db = SessionLocal()
@@ -535,7 +549,7 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
             db.close()
 
         # Attacker org B attempts same address -> 403, no reassignment.
-        ha = _auth(c)
+        ha, _u = _auth(c)
         _org_for(c, ha, f"hijack-attacker-{ha['Authorization'][-6:]}")
         r = _flow(c, ha)
         assert r.status_code == 403, r.text
@@ -556,9 +570,9 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
             db.commit()
         finally:
             db.close()
-        hv2 = _auth(c)  # org-less
+        hv2, _u = _auth(c)  # org-less
         assert _flow(c, hv2).status_code == 302
-        ha2 = _auth(c)  # org-less attacker, same fixed address
+        ha2, _u = _auth(c)  # org-less attacker, same fixed address
         assert _flow(c, ha2).status_code == 403
 
         db = SessionLocal()

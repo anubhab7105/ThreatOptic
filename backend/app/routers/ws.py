@@ -22,7 +22,7 @@ router = APIRouter()
 
 class ConnectionManager:
     def __init__(self) -> None:
-        # websocket -> {"org": org_id|None, "role": role, "user": username}
+        # websocket -> {"org": org_id|None, "role": role, "user": email}
         self._conns: dict[object, dict] = {}
 
     async def connect(self, ws: WebSocket, info: dict) -> None:
@@ -80,7 +80,7 @@ def mint_ticket(user: models.User = Depends(get_current_user)):
     are bounded to a minute of read-only alert stream)."""
     from ..modules.auth.security import create_ws_ticket
 
-    return {"ticket": create_ws_ticket(user.id, user.username, user.role, get_settings().secret_key)}
+    return {"ticket": create_ws_ticket(user.id, user.email, user.role, get_settings().secret_key)}
 
 
 @router.websocket("/ws/alerts")
@@ -89,7 +89,7 @@ async def alerts_socket(ws: WebSocket, ticket: str = Query("")):
     if not user:
         await ws.close(code=4401)
         return
-    await manager.connect(ws, {"org": user.organization_id, "role": user.role, "user": user.username})
+    await manager.connect(ws, {"org": user.organization_id, "role": user.role, "user": user.email})
     try:
         while True:
             # keep-alive / client pings; we only push server -> client

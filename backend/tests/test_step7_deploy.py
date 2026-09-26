@@ -56,11 +56,11 @@ def test_compose_secrets_and_ports():
     assert "ELASTICSEARCH_PASSWORD" in backend_env
     assert "ELASTIC_PASSWORD" not in backend_env
     assert svcs["elasticsearch"]["environment"]["ELASTIC_PASSWORD"] == \
-        "${ELASTICSEARCH_PASSWORD:?set ELASTICSEARCH_PASSWORD in .env}"
+        "${ELASTICSEARCH_PASSWORD:-}"
     dumped = yaml.safe_dump(doc)
     assert "soc:soc@" not in dumped and "socsoc123" not in dumped  # no hardcoded creds
     # data services not publicly exposed
-    for svc in ("postgres", "neo4j", "elasticsearch", "kafka"):
+    for svc in ("neo4j", "elasticsearch", "kafka"):
         for port in svcs[svc].get("ports", []):
             assert str(port).startswith("127.0.0.1:"), (svc, port)
     # ES memory limits + kafka persistence

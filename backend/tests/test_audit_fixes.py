@@ -1,15 +1,13 @@
 """Tests verifying the Phase 1 audit remediation fixes."""
 from fastapi.testclient import TestClient
+from helpers import login
 from app.main import app
 from app.modules.forensics.received_chain import detect_routing_anomalies
 from app.modules.reporting.generator import build_report_pdf
 
 
 def _auth(client: TestClient) -> dict:
-    import uuid
-    uname = f"audit-{uuid.uuid4().hex[:8]}"
-    tok = client.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPassword!", "role": "Analyst"}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login()[0]
 
 
 def test_pdf_report_with_xml_special_characters():

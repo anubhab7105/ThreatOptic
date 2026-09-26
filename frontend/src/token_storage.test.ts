@@ -1,22 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import apiSrc from './api.ts?raw';
 
-// P0: auth tokens must never persist in localStorage (survives tab close,
-// exfiltratable by persistent XSS). Memory-first, sessionStorage minimum,
-// cleared on logout. Theme/consent prefs in localStorage are fine.
-describe('auth token storage hygiene (P0)', () => {
+// Supabase migration: the SDK (supabaseClient.ts) owns session persistence
+// (localStorage, auto-refresh) — api.ts must never manage tokens itself.
+describe('auth token storage hygiene (Supabase)', () => {
   const api: string = apiSrc as unknown as string;
 
-  it('never writes tokens to localStorage', () => {
-    expect(api).not.toMatch(/localStorage\.setItem\(['"]soc_tokens['"]/);
+  it('does not manage tokens manually', () => {
+    expect(api).not.toMatch(/soc_tokens/);
+    expect(api).not.toMatch(/sessionStorage\.setItem/);
+    expect(api).not.toMatch(/getTokens|setTokens|clearTokens/);
   });
 
-  it('never reads tokens back from localStorage', () => {
-    expect(api).not.toMatch(/localStorage\.getItem\(['"]soc_tokens['"]/);
+  it('does not implement its own refresh flow', () => {
+    expect(api).not.toMatch(/\/auth\/refresh/);
+    expect(api).not.toMatch(/tryRefresh/);
   });
 
-  it('persists session-only and clears on logout', () => {
-    expect(api).toMatch(/sessionStorage\.setItem/);
-    expect(api).toMatch(/sessionStorage\.removeItem/);
+  it('derives the bearer token from the Supabase session', () => {
+    expect(api).toMatch(/supabase\.auth\.getSession/);
+    expect(api).toMatch(/Authorization/);
   });
 });

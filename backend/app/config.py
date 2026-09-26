@@ -4,15 +4,49 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Anchor environment file to backend/.env so cwd doesn't matter
+# Locate the environment file(s) relative to this file, never to the process
+# working directory, so `uvicorn` behaves the same whether it is launched from
+# the repo root or from backend/.
+#
+# Search order (first hit wins, later files do not override earlier ones):
+#
+#   1. backend/.env  — a per-service override, for when the backend must diverge
+#                      from the shared file (e.g. a local Postgres the rest of
+#                      the stack does not use).
+#   2. <repo>/.env   — the shared file. This is the one you normally edit; it
+#                      is also what docker-compose.yml injects, so the container
+#                      stack and a locally-run backend read the same values
+#                      instead of two hand-synced copies.
+#
+# Both may be absent: production supplies variables from the platform's
+# environment (Railway / Vercel), not from a file on disk, so requiring a file
+# here would break a correct deployment. require_secrets() is what enforces
+# that the resulting values are actually usable.
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_env_path = os.path.join(_backend_dir, ".env")
-load_dotenv(_env_path, override=False)
 
 
-def _default_db_url() -> str:
-    # Anchor sqlite to backend/ dir so cwd doesn't create stray DB files.
-    return f"sqlite:///{os.path.join(_backend_dir, 'email_forensics.db')}"
+def resolve_env_files(backend_dir: str) -> list[str]:
+    """Environment files that apply, highest precedence first.
+
+    Split out from the import-time wiring below so the search order is
+    testable without reimporting this module.
+    """
+    repo_root = os.path.dirname(backend_dir)
+    candidates = [
+        os.path.join(backend_dir, ".env"),
+        os.path.join(repo_root, ".env"),
+    ]
+    return [p for p in candidates if os.path.isfile(p)]
+
+
+_env_files = resolve_env_files(_backend_dir)
+# First existing file is the pydantic-settings source of record; the rest are
+# still loaded into os.environ below, with the earlier ones taking precedence
+# (load_dotenv's override=False, and os.environ outranks env_file in
+# pydantic-settings' priority order).
+_env_path = _env_files[0] if _env_files else os.path.join(_backend_dir, ".env")
+for _path in _env_files:
+    load_dotenv(_path, override=False)
 
 
 class Settings(BaseSettings):
@@ -24,31 +58,93 @@ class Settings(BaseSettings):
     # refuses to boot outside development when unset, default, or short.
     secret_key: str = ""
     access_token_expire_minutes: int = 20
-    # Explicit setup token that authorizes creation of the first Admin
-    # account via POST /auth/register (replaces first-registrant bootstrap).
-    setup_token: str = ""
+    # Supabase Auth JWT secret (kept for HS256 fallback / local dev).
+    # Required for verifying Supabase access tokens in deps.get_current_user.
+    supabase_jwt_secret: str = ""
+    # Supabase project URL (e.g. https://<ref>.supabase.co).
+    # Used to fetch the JWKS public keys for ES256/HS256 token verification.
+    supabase_url: str = ""
     # Separate key for the mailbox-token vault (never reuse secret_key).
     # Required (min 32 chars); fail closed when empty.
     token_encryption_key: str = ""
 
     # Comma-separated browser origins allowed to call the API. Credentials
     # are only safe with an explicit list — never "*".
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "https://email-scanner-chi.vercel.app"
+    # Optional regex origins for hosts that cannot be enumerated, e.g.
+    # `https://[a-z0-9-]+\.vercel\.app` for per-PR Vercel preview deploys.
+    # Opt-in only, and still refused at boot if it would match *any* origin
+    # (allow_credentials=True + a match-everything regex would send
+    # credentials to every site). Never a substitute for listing the
+    # production origins explicitly.
+    cors_origin_regex: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:
         # Normalize: strip whitespace + trailing slash so browsers' Origin
-        # (which never carries a trailing slash) matches the setting.
+        # (which never carries a trailing slash) matches the setting, and
+        # fold scheme/host case the way the URL spec compares them.
         seen: set[str] = set()
         out: list[str] = []
         for raw in str(self.cors_origins).split(","):
             cand = raw.strip().rstrip("/")
-            if cand and cand not in seen:
+            if not cand:
+                continue
+            low = cand.lower()
+            if "://" in low:
+                scheme, _, host = low.partition("://")
+                cand = f"{scheme}://{host}"
+            if cand not in seen:
                 seen.add(cand)
                 out.append(cand)
         return out
 
-    database_url: str = ""
+    @property
+    def cors_origin_regex_list(self) -> list[str]:
+        out: list[str] = []
+        for raw in str(self.cors_origin_regex or "").split(","):
+            cand = raw.strip()
+            if cand and cand not in out:
+                out.append(cand)
+        return out
+
+    @property
+    def cors_regex_pattern(self) -> str | None:
+        """Comma-separated patterns as one alternation for CORSMiddleware.
+
+        Starlette takes a single pattern and applies `fullmatch`, so the
+        list is joined with non-capturing groups. None when unset.
+        """
+        patterns = self.cors_origin_regex_list
+        if not patterns:
+            return None
+        if len(patterns) == 1:
+            return patterns[0]
+        return "|".join(f"(?:{p})" for p in patterns)
+
+    def cors_allows_remote_origins(self) -> bool:
+        """True when some configured origin/regex can serve a non-loopback browser.
+
+        A loopback-only allowlist is the most common split-deploy
+        misconfiguration: the API boots, Railway's health check passes, and
+        every real browser is blocked by CORS with nothing in the logs.
+        Callers use this to say so out loud at startup.
+        """
+        entries = self.cors_origin_list + self.cors_origin_regex_list
+        return any(not _is_loopback_origin(o) for o in entries)
+
+    def cors_allows(self, origin: str | None) -> bool:
+        """Mirror of what CORSMiddleware will decide — used for diagnostics."""
+        import re as _re
+        if not origin:
+            return False
+        cand = origin.rstrip("/")
+        if cand.lower() in self.cors_origin_list:
+            return True
+        return any(_re.fullmatch(p, origin) or _re.fullmatch(p, cand)
+                   for p in self.cors_origin_regex_list)
+
+    database_url: str = ""  # Required — set via DATABASE_URL env var (no SQLite fallback)
     # Optional production backends (empty = local fallback)
     neo4j_uri: str = ""
     neo4j_user: str = "neo4j"
@@ -93,13 +189,13 @@ class Settings(BaseSettings):
     # Gmail OAuth2 demo connector (optional; per-request overrides also accepted).
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_redirect_uri: str = ""
+    google_redirect_uri: str = "https://email-scanner-chi.vercel.app"
 
     # Organization mailbox polling (F7): Microsoft Graph credentials,
     # frontend base URL for OAuth callbacks, poll interval (0 = disabled).
     ms_client_id: str = ""
     ms_client_secret: str = ""
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "https://email-scanner-chi.vercel.app"
     mail_poll_minutes: int = 0
     # Extra allowed OAuth redirect_uris, comma-separated, beyond the
     # configured frontend_url / google_redirect_uri (C3 allowlist).
@@ -158,7 +254,15 @@ class Settings(BaseSettings):
         # TEST_DATABASE_URL wins when set (CI + pytest isolation); it is
         # never read from .env files, only the real environment.
         test_url = os.environ.get("TEST_DATABASE_URL", "").strip()
-        url = test_url or self.database_url or _default_db_url()
+        url = test_url or self.database_url  # No SQLite default — fail-closed
+        if not url:
+            raise RuntimeError("DATABASE_URL is not set. Provide a Supabase/Postgres connection string.")
+        
+        # Remove pgbouncer query param as it causes psycopg2 ProgrammingError (invalid dsn)
+        if "pgbouncer=" in url:
+            import re
+            url = re.sub(r'([?&])pgbouncer=[^&]+&?', r'\1', url).rstrip('?&')
+
         # Normalize Supabase / Railway postgres URLs: Heroku-style `postgres://` and
         # bare `postgresql://` need the psycopg2 driver for SQLAlchemy.
         if url.startswith("postgres://"):
@@ -177,6 +281,52 @@ class Settings(BaseSettings):
 
 FORGEABLE_SECRET_MARKERS = {"", "change-me-in-prod", "changeme", "secret", "test"}
 MIN_SECRET_BYTES = 32
+
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"}
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """True for http://localhost:5173-style entries.
+
+    Regex patterns are treated as remote-capable unless they are explicitly
+    loopback-only: a pattern's host can't be read off reliably, and
+    erring toward "remote" only means we skip a warning, never that we
+    widen the allowlist.
+    """
+    cand = (origin or "").strip().lower().rstrip("/")
+    if not cand:
+        return False
+    host = cand.partition("://")[2] or cand
+    host = host.split("/")[0].split("@")[-1]
+    if host.startswith("["):          # IPv6 literal, possibly with a port
+        hostname = host.split("]", 1)[0] + "]"
+    elif host.count(":") == 1:        # host:port
+        hostname = host.rsplit(":", 1)[0]
+    else:
+        hostname = host
+    if not hostname:                 # bare ":5173"-ish nonsense
+        return False
+    return hostname in LOOPBACK_HOSTS or hostname.endswith(".localhost")
+
+
+# A probe origin nothing legitimate would serve, used to detect a
+# match-everything CORS regex before credentials are attached to it.
+_CORS_PROBE = "https://cors-probe.invalid"
+
+
+def cors_regex_is_unbounded(settings: Settings) -> str | None:
+    """Return the offending pattern if any regex would match any origin."""
+    import re as _re
+    for pattern in settings.cors_origin_regex_list:
+        for probe in (_CORS_PROBE, "http://cors-probe.invalid", f"{_CORS_PROBE}:8443"):
+            try:
+                if _re.fullmatch(pattern, probe) or _re.fullmatch(pattern, probe.rstrip("/")):
+                    return pattern
+            except _re.error:
+                # An uncompilable pattern matches nothing; CORSMiddleware
+                # ignores it, so this is not a boot-blocking problem.
+                continue
+    return None
 
 
 def require_secrets() -> None:

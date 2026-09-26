@@ -2,6 +2,7 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 RAW = b"""From: "CFO" <cfo@xn--companny.top>
 To: me@gmail.com
@@ -16,9 +17,8 @@ Kindly wire $9000 immediately, do not disclose. Pay at http://malicious-example.
 
 
 def _auth(c: TestClient) -> tuple[dict, str]:
-    uname = f"gmail-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}, uname
+    h, user = login(email=f"gmail-{uuid.uuid4().hex[:8]}@test.local")
+    return h, user.email
 
 
 async def _fake_exchange(code, client_id, client_secret, redirect_uri, code_verifier=""):

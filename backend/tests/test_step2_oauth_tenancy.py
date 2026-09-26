@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from helpers import auth_headers, login, make_user
 
 from app import models
 from app.config import get_settings
@@ -20,21 +21,18 @@ def _uname(prefix: str) -> str:
 
 
 def _register(c: TestClient, username: str, role: str | None = None) -> dict:
-    body = {"username": username, "password": "Str0ngPass!"}
-    if role:
-        body["role"] = role
-    r = c.post("/api/v1/auth/register", json=body)
-    assert r.status_code == 201, r.text
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    """Provision the `users` mirror row (what the Supabase trigger does) and
+    return a matching Authorization header. Sign-up itself is Supabase-side."""
+    return login(role=role or "ReadOnly", email=f"{username}@test.local")[0]
 
 
 def _make_org_with_user(c: TestClient, role: str = "Analyst") -> tuple[dict, str, str]:
-    """Two-step: register, then move user into a fresh org. Returns (headers, user_id, org_id)."""
+    """Provision a user, then move them into a fresh org. Returns (headers, user_id, org_id)."""
     uname = _uname("tenant")
-    h = _register(c, uname, role=role)
+    h, user = login(role=role, email=f"{uname}@test.local")
     db = _session()
     try:
-        u = db.query(models.User).filter_by(username=uname).first()
+        u = db.query(models.User).filter_by(id=user.id).first()
         org = models.Organization(name=f"org-{uname}", compliance_policy={})
         db.add(org)
         db.flush()
@@ -103,16 +101,10 @@ def test_tenant_isolation_emails_cases_dashboard():
         assert c.get(f"/api/v1/emails/{eid}", headers=ha).status_code == 200
         db = _session()
         try:
-            admin = models.User(username=_uname("root"), password_hash="x", role="Admin", organization_id=org_b)
-            db.add(admin)
-            db.commit()
-            db.refresh(admin)
-            admin_id = admin.id
+            admin = make_user(db, role="Admin", org_id=org_b)
+            admin_id, dh = admin.id, auth_headers(admin)
         finally:
             db.close()
-        from app.modules.auth.security import create_access_token
-        atok = create_access_token(admin_id, "root", "Admin", get_settings().secret_key, 20)
-        dh = {"Authorization": f"Bearer {atok}"}
         assert c.get(f"/api/v1/emails/{eid}", headers=dh).status_code == 200
         assert c.get("/api/v1/dashboard", headers=dh).json()["total_emails"] >= 1
         # cleanup
@@ -122,7 +114,7 @@ def test_tenant_isolation_emails_cases_dashboard():
                 db.query(m).filter(getattr(m, col) == eid).delete()
             db.query(models.EmailRecord).filter_by(id=eid).delete()
             db.query(models.InvestigationCase).filter_by(id=cid).delete()
-            db.query(models.User).filter(models.User.username.like("tenant-%")).delete(synchronize_session=False)
+            db.query(models.User).filter(models.User.email.like("tenant-%@test.local")).delete(synchronize_session=False)
             db.query(models.User).filter_by(id=admin_id).delete()
             db.query(models.Organization).filter(models.Organization.id.in_([org_a, org_b])).delete(synchronize_session=False)
             db.commit()
@@ -179,9 +171,7 @@ def test_provider_refresh_persisted(monkeypatch):
     import asyncio
     db = _session()
     try:
-        u = models.User(username=_uname("pol"), password_hash="x", role="Analyst")
-        db.add(u)
-        db.flush()
+        u = make_user(db)
         conn_row = models.MailboxConnection(user_id=u.id, provider="google", account_email="p@t.test",
                                             encrypted_refresh_token=encrypt_secret("1//old"))
         db.add(conn_row)
@@ -206,6 +196,7 @@ def test_provider_refresh_persisted(monkeypatch):
 def test_gmail_client_id_pinned_and_reused(monkeypatch):
     import app.modules.ingestion.connectors as conn
     from app.main import app
+    from app.modules.auth.vault import decrypt_secret
 
     seen = {}
 
@@ -244,7 +235,10 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
         try:
             u = db.query(models.User).order_by(models.User.created_at.desc()).first()
             acct = db.query(models.GmailAccount).filter_by(user_id=u.id).first()
+            # Pinned at connect time AND stored as vault ciphertext, never
+            # plaintext-only (the legacy column is a cache, not the source).
             assert acct.client_id == "override-id"
+            assert decrypt_secret(acct.encrypted_client_id) == "override-id"
             uid = u.id
         finally:
             db.close()
@@ -255,7 +249,6 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
         db = _session()
         try:
             db.query(models.GmailAccount).filter_by(user_id=uid).delete()
-            db.query(models.RefreshToken).filter_by(user_id=uid).delete()
             db.query(models.User).filter_by(id=uid).delete()
             db.commit()
         finally:
@@ -263,6 +256,12 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
 
 
 def test_rate_limit_and_lockout(monkeypatch):
+    """Limiter must actually gate a live endpoint once enabled.
+
+    Local password login moved to Supabase (which rate-limits its own auth
+    endpoints), so the backend's remaining limiter coverage is the API/OAuth
+    surface — proved here against /oauth/sync-now (10/minute).
+    """
     from app.config import get_settings as gs
     from app.main import app
     from app.modules.auth import rate_limit as rl
@@ -273,21 +272,28 @@ def test_rate_limit_and_lockout(monkeypatch):
     rl.limiter._storage.reset()
     try:
         with TestClient(app) as c:
-            uname = _uname("flood")
-            c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"})
-            # lockout: 5 wrong -> 401s, 6th -> 429
-            codes = [c.post("/api/v1/auth/login",
-                            json={"username": uname, "password": "wrong-wrong"}).status_code for _ in range(6)]
-            assert codes[:5] == [401] * 5 and codes[5] == 429
-            rl.limiter._storage.reset()
-            # slowapi: 11 rapid correct logins -> 11th is 429
-            uname2 = _uname("steady")
-            c.post("/api/v1/auth/register", json={"username": uname2, "password": "Str0ngPass!"})
-            ok = [c.post("/api/v1/auth/login",
-                         json={"username": uname2, "password": "Str0ngPass!"}).status_code for _ in range(11)]
-            assert ok[:10] == [200] * 10 and ok[10] == 429
+            h = _register(c, _uname("flood"), role="Analyst")
+            codes = [c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code
+                     for _ in range(11)]
+            assert 429 not in codes[:10], codes
+            assert codes[10] == 429, codes
     finally:
         rl.limiter.enabled = False
+        rl.limiter._storage.reset()
+
+
+def test_rate_limiter_disabled(monkeypatch):
+    """RATE_LIMIT_ENABLED=0 turns the limiter off (conftest posture)."""
+    from app.main import app
+    from app.modules.auth import rate_limit as rl
+
+    rl.limiter.enabled = False
+    rl.limiter._storage.reset()
+    with TestClient(app) as c:
+        h = _register(c, _uname("nolimit"), role="Analyst")
+        codes = [c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code
+                 for _ in range(12)]
+        assert 429 not in codes, codes
 
 
 def test_audit_log_emitted(caplog):

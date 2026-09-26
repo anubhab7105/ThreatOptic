@@ -1,6 +1,6 @@
-"""Step 1 (C1/C2/C5/C6/C7): secrets boot gate, short JWTs + rotation/reuse
-detection, setup-token bootstrap, vault KDF fail-closed, custody v1 payload,
-server-side Gmail secrets."""
+"""Step 1 (C1/C2/C5/C6/C7): secrets boot gate, vault KDF fail-closed, custody
+v1 payload, server-side Gmail secrets, and the invariants that replaced
+local session handling after the Supabase migration."""
 import uuid
 
 import pytest
@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import models
 from app.config import get_settings
+from helpers import login, make_user
 
 
 
@@ -67,79 +68,63 @@ def test_access_lifetime_default_20_minutes():
     assert Settings().access_token_expire_minutes == 20
 
 
-def test_refresh_rotation_and_reuse_detection():
+def test_no_local_session_store():
+    """No backend-owned refresh tokens (C2 follow-up).
+
+    Reuse detection only works if there is a server-side token family to
+    revoke; with Supabase owning sessions there must be no such table
+    here, otherwise a half-implemented one would look like a control while
+    being bypassable. Guard the removal.
+    """
+    assert not hasattr(models, "RefreshToken")
+    db = _session()
+    try:
+        names = set(db.execute(__import__("sqlalchemy").text(
+            "SELECT name FROM sqlite_master WHERE type='table'")).scalars())
+    finally:
+        db.close()
+    assert "refresh_tokens" not in names
+
+
+def test_role_is_constrained_at_the_database():
+    """role must be one of the three RBAC values, enforced by the DB too.
+
+    The mirror row is written by a Supabase trigger, so an out-of-range
+    value (bad trigger mapping, manual fix-up) must not be able to create
+    an unnameable privilege level.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    db = _session()
+    try:
+        db.execute(__import__("sqlalchemy").text(
+            "INSERT INTO users (id, email, role) VALUES ('badrole', 'bad@test.local', 'Superuser')"))
+        db.commit()
+        raise AssertionError("unconstrained role value was accepted")
+    except IntegrityError:
+        db.rollback()
+    finally:
+        db.close()
+
+
+def test_admin_role_is_not_self_assignable():
+    """No endpoint may hand a caller a role; the mirror row is the only source.
+
+    The Supabase trigger decides role at signup. If any API could write it,
+    privilege escalation would be a single request away.
+    """
     from app.main import app
 
     with TestClient(app) as c:
-        uname = _uname("rot")
-        pair = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()
-        r1 = c.post("/api/v1/auth/refresh", json={"refresh_token": pair["refresh_token"]})
-        assert r1.status_code == 200, r1.text
-        rotated = r1.json()
-        assert rotated["refresh_token"] != pair["refresh_token"]
-        # old access token still valid until expiry
-        assert c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {pair['access_token']}"}).status_code == 200
-        # reuse of the rotated-out token -> 401 and family kill
-        r2 = c.post("/api/v1/auth/refresh", json={"refresh_token": pair["refresh_token"]})
-        assert r2.status_code == 401
-        assert "reused" in r2.json()["detail"]
-        # the rotated token is dead too (whole family revoked on reuse)
-        r3 = c.post("/api/v1/auth/refresh", json={"refresh_token": rotated["refresh_token"]})
-        assert r3.status_code == 401
-        db = _session()
-        try:
-            u = db.query(models.User).filter_by(username=uname).first()
-            rows = db.query(models.RefreshToken).filter_by(user_id=u.id).all()
-            assert rows and all(r.revoked for r in rows)
-        finally:
-            db.close()
-        # fresh login still works after the incident
-        assert c.post("/api/v1/auth/login", json={"username": uname, "password": "Str0ngPass!"}).status_code == 200
-        db = _session()
-        try:
-            u = db.query(models.User).filter_by(username=uname).first()
-            db.query(models.RefreshToken).filter_by(user_id=u.id).delete()
-            db.delete(u)
-            db.commit()
-        finally:
-            db.close()
-
-
-def test_setup_token_bootstrap(monkeypatch):
-    from app.main import app
-
-    _fresh_settings(monkeypatch, SETUP_TOKEN="s3tup-ok")
-    with TestClient(app) as c:
-        # no token -> Admin forbidden
-        assert c.post("/api/v1/auth/register",
-                      json={"username": _uname("a"), "password": "Str0ngPass!", "role": "Admin"}).status_code == 403
-        # wrong token -> forbidden
-        assert c.post("/api/v1/auth/register",
-                      json={"username": _uname("b"), "password": "Str0ngPass!",
-                            "role": "Admin", "setup_token": "wrong"}).status_code == 403
-        # valid token -> Admin, default stays lowest privilege otherwise
-        u = _uname("root")
-        r = c.post("/api/v1/auth/register",
-                   json={"username": u, "password": "Str0ngPass!", "role": "Admin", "setup_token": "s3tup-ok"})
-        assert r.status_code == 201, r.text
-        me = c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"}).json()
-        assert me["role"] == "Admin"
-        u2 = _uname("pleb")
-        r2 = c.post("/api/v1/auth/register", json={"username": u2, "password": "Str0ngPass!"})
-        assert r2.json() and c.get(
-            "/api/v1/auth/me",
-            headers={"Authorization": f"Bearer {r2.json()['access_token']}"}).json()["role"] == "ReadOnly"
-        db = _session()
-        try:
-            for name in (u, u2):
-                row = db.query(models.User).filter_by(username=name).first()
-                if row:
-                    db.query(models.RefreshToken).filter_by(user_id=row.id).delete()
-                    db.delete(row)
-            db.commit()
-        finally:
-            db.close()
-    get_settings.cache_clear()
+        h, _user = login(role="ReadOnly")
+        for method, path, body in (
+            ("patch", "/api/v1/auth/me", {"role": "Admin"}),
+            ("put", "/api/v1/auth/me", {"role": "Admin"}),
+            ("post", "/api/v1/auth/me", {"role": "Admin"}),
+        ):
+            r = getattr(c, method)(path, headers=h, json=body)
+            assert r.status_code in (404, 405, 422), (method, path, r.status_code)
+        assert c.get("/api/v1/auth/me", headers=h).json()["role"] == "ReadOnly"
 
 
 def test_vault_kdf_fail_closed(monkeypatch):
@@ -200,36 +185,38 @@ def test_gmail_server_side_secret_and_corrupt_token(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "google_client_id", "demo-id")
     monkeypatch.setattr(settings, "google_client_secret", "")
+    db = _session()
+    try:
+        user = make_user(db)
+        uid = user.id
+        headers = {"Authorization": f"Bearer {__import__('helpers').mint_token(uid)}"}
+    finally:
+        db.close()
+
     with TestClient(app) as c:
-        uname = _uname("gmailsec")
-        tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
         # server-side secret missing -> clear 400 (no per-request secret accepted anymore)
         # P0: callback requires the opaque state minted via auth-url first.
-        au = c.post("/api/v1/gmail/auth-url", headers=h, json={
+        au = c.post("/api/v1/gmail/auth-url", headers=headers, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"}).json()["auth_url"]
         from urllib.parse import parse_qs as _pqs, urlparse as _up
         _st = _pqs(_up(au).query)["state"][0]
-        r = c.post("/api/v1/gmail/callback", headers=h, json={
+        r = c.post("/api/v1/gmail/callback", headers=headers, json={
             "code": "x", "state": _st, "redirect_uri": "http://localhost:5173/"})
         assert r.status_code == 400 and "GOOGLE_CLIENT_SECRET" in r.text
         # corrupt stored credential -> forced re-auth, not silent plaintext fallback
         db = _session()
         try:
-            u = db.query(models.User).filter_by(username=uname).first()
-            db.add(models.GmailAccount(user_id=u.id, gmail_address="x@y.test", refresh_token="not-a-vault-value"))
+            db.add(models.GmailAccount(user_id=uid, gmail_address="x@y.test", refresh_token="not-a-vault-value"))
             db.commit()
         finally:
             db.close()
         monkeypatch.setattr(settings, "google_client_secret", "s" * 16)
-        r = c.post("/api/v1/gmail/sync", headers=h, json={})
+        r = c.post("/api/v1/gmail/sync", headers=headers, json={})
         assert r.status_code == 400 and "reconnect" in r.text
         db = _session()
         try:
-            u = db.query(models.User).filter_by(username=uname).first()
-            db.query(models.GmailAccount).filter_by(user_id=u.id).delete()
-            db.query(models.RefreshToken).filter_by(user_id=u.id).delete()
-            db.delete(u)
+            db.query(models.GmailAccount).filter_by(user_id=uid).delete()
+            db.delete(db.query(models.User).filter_by(id=uid).one())
             db.commit()
         finally:
             db.close()

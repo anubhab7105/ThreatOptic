@@ -4,13 +4,11 @@ errors, ingest dedup."""
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 
 def _auth(c: TestClient, role: str = "Analyst") -> dict:
-    uname = f"rel-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register",
-                 json={"username": uname, "password": "Str0ngPass!", "role": role}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login(role=role)[0]
 
 
 def test_cors_star_with_credentials_refuses_boot(monkeypatch):
@@ -23,11 +21,21 @@ def test_cors_star_with_credentials_refuses_boot(monkeypatch):
         asyncio.run(lifespan(app).__aenter__())
 
 
-def test_token_url_follows_api_prefix():
-    from app.routers import deps
+def test_bearer_scheme_is_bearer():
+    """Auth is Supabase-issued Bearer tokens only — no local tokenUrl/login flow.
+
+    After the Supabase migration there is no password endpoint to point a
+    flow at; the scheme must still reject non-Bearer credentials with 401
+    (and never fall back to accepting a query-string token).
+    """
+    from fastapi.testclient import TestClient
     from app.config import get_settings
-    flow = deps.oauth2_scheme.model.flows.password
-    assert flow is not None and flow.tokenUrl == f"{get_settings().api_prefix}/auth/login"
+    from app.main import app
+
+    assert get_settings().api_prefix == "/api/v1"
+    with TestClient(app) as c:
+        assert c.get("/api/v1/emails", headers={"Authorization": "Basic dXNlcjpwdw=="}).status_code == 401
+        assert c.get("/api/v1/emails", params={"token": "anything"}).status_code == 401
 
 
 def test_smtp_auth_size_and_rcpt(monkeypatch):
@@ -215,7 +223,11 @@ def test_alembic_upgrade_fresh_db(tmp_path):
         os.environ.pop("TEST_DATABASE_URL", None)
         get_settings.cache_clear()
     tables = {r[0] for r in sqlite3.connect(db).execute("select name from sqlite_master where type='table'")}
-    assert {"users", "email_records", "refresh_tokens", "mailbox_connections", "oauth_states"} <= tables
+    # refresh_tokens is gone since the Supabase migration (Supabase owns
+    # session refresh); gmail_accounts/organizations replaced it.
+    assert {"users", "organizations", "email_records", "mailbox_connections",
+            "gmail_accounts", "oauth_states"} <= tables
+    assert "alembic_version" in tables  # chain reached head
 
 
 def test_tz_aware_model_defaults():
@@ -228,7 +240,7 @@ def test_tz_aware_model_defaults():
     Base.metadata.create_all(bind=eng)
     db = sessionmaker(bind=eng)()
     try:
-        u = models.User(username="x", password_hash="y")
+        u = models.User(id="tzprobe", email="tzprobe@test.local")
         db.add(u)
         db.flush()
         assert u.created_at.tzinfo is not None

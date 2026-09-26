@@ -34,31 +34,18 @@ class Organization(Base):
 
 
 class User(Base):
+    """
+    Mirror of auth.users from Supabase. Row is created by the
+    on_auth_user_created trigger when a user confirms their email.
+    The `id` matches the Supabase auth UUID (sub claim in JWT).
+    """
     __tablename__ = "users"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # no default — set by trigger
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(32), default="Analyst")  # Admin, Analyst, ReadOnly
-    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     organization: Mapped[Organization | None] = relationship(back_populates="users")
-
-
-class RefreshToken(Base):
-    """Server-side refresh-token ledger for rotation + reuse detection (C1).
-
-    Only the SHA-256 fingerprint of each token is stored — never the token.
-    A row is single-use: rotation marks it revoked and links the replacement.
-    Re-presenting a revoked token signals theft: the whole family is revoked.
-    """
-    __tablename__ = "refresh_tokens"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    expires_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False, index=True)
-    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
-    replaced_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
 
 
 class InvestigationCase(Base):

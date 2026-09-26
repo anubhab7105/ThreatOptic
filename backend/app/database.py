@@ -1,6 +1,6 @@
-"""SQLAlchemy engine/session/Base. SQLite by default, Postgres via DATABASE_URL."""
+"""SQLAlchemy engine/session/Base. Postgres (Supabase) via DATABASE_URL."""
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import get_settings
 
@@ -21,50 +21,43 @@ def as_utc(dt: datetime | None) -> datetime | None:
 
 STATEMENT_TIMEOUT_MS = 15_000
 CONNECT_TIMEOUT_S = 5
-SQLITE_BUSY_TIMEOUT_MS = 5_000
 
 
 def _make_engine():
-    """Build from FRESH settings (called at startup/test time, not frozen)."""
+    """Build from FRESH settings (called at startup/test time, not frozen).
+
+    Postgres-only. A minimal SQLite branch is kept SOLELY for the pytest
+    escape hatch (TEST_DATABASE_URL=sqlite:///... set by tests/conftest.py);
+    production (DATABASE_URL) has no SQLite fallback and fails closed.
+    """
     settings = get_settings()
     url = settings.resolved_db_url()
-    is_sqlite = url.startswith("sqlite")
-    connect_args: dict = {}
-    pool_kwargs: dict = {}
-    execution_options: dict = {}
-    if is_sqlite:
-        connect_args = {"check_same_thread": False, "timeout": CONNECT_TIMEOUT_S}
-    else:
-        # Fail fast on dead DB / runaway queries instead of hanging workers.
-        connect_args = {"connect_timeout": CONNECT_TIMEOUT_S,
-                        "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}"}
-        # Supabase via PgBouncer (port 6543, ?pgbouncer=true) uses transaction mode;
-        # keep pool small and pre-ping to avoid stale connections.
-        if "pgbouncer=true" in url or "supabase" in url or ":6543" in url:
-            pool_kwargs = {"pool_size": 5, "max_overflow": 5, "pool_recycle": 300}
-    engine = create_engine(
-        url,
-        connect_args=connect_args,
-        future=True,
-        pool_pre_ping=True,
-        execution_options=execution_options,
-        **pool_kwargs,
-    )
-    if is_sqlite:
-        # WAL for concurrent readers + busy timeout instead of instant
-        # "database is locked"; foreign keys ON so ondelete=CASCADE in the
-        # models actually enforces (SQLite defaults it OFF).
-        @event.listens_for(engine, "connect")
-        def _sqlite_pragmas(dbapi_conn, _record):
-            try:
-                cur = dbapi_conn.cursor()
-                cur.execute("PRAGMA journal_mode=WAL")
-                cur.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
-                cur.execute("PRAGMA foreign_keys=ON")
-                cur.close()
-            except Exception:
-                pass
-    return engine
+    if url.startswith("sqlite"):
+        # Test-only path: plain SQLite engine for pytest isolation.
+        # Enable WAL mode, foreign keys, and busy timeout for test reliability.
+        def _sqlite_connect(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+        
+        from sqlalchemy import event
+        engine = create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            future=True,
+            pool_pre_ping=True,
+        )
+        event.listen(engine, "connect", _sqlite_connect)
+        return engine
+    connect_args = {"connect_timeout": CONNECT_TIMEOUT_S,
+                    "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}"}
+    pool_kwargs = {}
+    if "pgbouncer=true" in url or "supabase" in url or ":6543" in url:
+        pool_kwargs = {"pool_size": 5, "max_overflow": 5, "pool_recycle": 300}
+    return create_engine(url, connect_args=connect_args, future=True,
+                         pool_pre_ping=True, **pool_kwargs)
 
 
 def _make_session_factory(bind):
@@ -74,7 +67,13 @@ def _make_session_factory(bind):
 # Import-time defaults so `from app.database import engine` keeps working
 # (and stays monkeypatchable in tests); init_db() rebuilds both from fresh
 # settings at startup so post-import env changes are never frozen in.
-engine = _make_engine()
+# If DATABASE_URL is unset at import time, keep a placeholder (in-memory
+# SQLite) so imports don't crash — init_db()/rebuild_engine() still fail
+# closed with a clear RuntimeError when the real URL is missing.
+try:
+    engine = _make_engine()
+except RuntimeError:
+    engine = create_engine("sqlite:///:memory:", future=True, pool_pre_ping=True)
 SessionLocal = _make_session_factory(engine)
 Base = declarative_base()
 
@@ -119,45 +118,23 @@ def _alembic_upgrade() -> bool:
         command.upgrade(cfg, "head")
         return True
     except Exception as e:
-        logging.getLogger("database").warning("alembic upgrade failed, using create_all fallback: %s", type(e).__name__)
+        logging.getLogger("database").warning("alembic upgrade failed: %s", type(e).__name__)
         return False
 
 
 def init_db():
+    """Boot the database: Alembic migrations only (no create_all fallback).
+
+    A create_all path is kept SOLELY for the pytest SQLite escape hatch
+    (TEST_DATABASE_URL=sqlite:///...); managed Postgres/Supabase fails
+    boot loudly when migrations fail instead of masking it.
+    """
     from . import models  # noqa: F401
-    from sqlalchemy import text
-    from .config import get_settings
-
-    # Rebuild from fresh settings first: the import-time engine may predate
-    # post-import env changes (tests, containers).
     rebuild_engine()
-
-    if not get_settings().resolved_db_url().startswith("sqlite"):
-        # Managed Postgres etc: real migrations, no silent fallback — a
-        # failed migration must fail boot loudly instead of being masked by
-        # create_all (which also cannot add/alter columns safely there).
-        if not _alembic_upgrade():
-            raise RuntimeError(
-                "Database migrations failed and create_all fallback is disabled "
-                "on managed databases — fix Alembic state before booting."
-            )
+    if get_settings().resolved_db_url().startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
         return
-    Base.metadata.create_all(bind=engine)
-    # Additive migration for pre-existing SQLite files: create_all never adds
-    # columns to tables that already exist, so backfill any missing ones.
-    # (NOT NULL/DEFAULT/FK changes still require a real Alembic revision.)
-    # Identifiers are dialect-quoted — never interpolated raw.
-    try:
-        from sqlalchemy import inspect as _inspect
-        with engine.begin() as conn:
-            insp = _inspect(conn)
-            qp = engine.dialect.identifier_preparer.quote
-            existing = {t: {c["name"] for c in insp.get_columns(t)} for t in insp.get_table_names()}
-            for table in Base.metadata.sorted_tables:
-                missing = [c for c in table.columns if c.name not in existing.get(table.name, set())]
-                for col in missing:
-                    coltype = col.type.compile(dialect=engine.dialect)
-                    conn.execute(text(f"ALTER TABLE {qp(table.name)} ADD COLUMN {qp(col.name)} {coltype}"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_records_timestamp ON email_records (timestamp)"))
-    except Exception:
-        pass  # fresh DBs need nothing
+    if not _alembic_upgrade():
+        raise RuntimeError(
+            "Database migrations failed. Fix Alembic state before booting."
+        )

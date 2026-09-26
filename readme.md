@@ -19,23 +19,100 @@ Please refer to the following markdown files in this repository to understand th
 
 ## Getting Started (Developer Setup)
 
-### Option A — local (SQLite, no infra)
+You need **Python 3.11+**, **Node 22+**, a **Postgres** database, and a
+**Supabase project** (Supabase owns all authentication — there is no local
+password login). Both Postgres and Supabase have free tiers; a throwaway
+Supabase project is the fastest route.
+
+### 1. Backend
+
+The backend reads the **repo-root `.env`** — the same file `docker-compose.yml`
+injects, so a locally-run backend and the container stack agree instead of
+drifting apart. `config.py` anchors the path to its own location, so cwd does
+not matter.
+
 ```bash
-python3 backend/scripts/train_nlp.py
-PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
-# in another shell:
-cd frontend && npm install && npm run dev
-# API: http://localhost:8000/docs  UI: http://localhost:5173
+cp .env.example .env
+$EDITOR .env                   # see the table below for what must be set
 ```
 
-### Option B — full stack (Postgres, Neo4j, Elastic, Kafka)
-```bash
-docker compose up --build
-# backend http://localhost:8000/docs  frontend http://localhost:5173
+`backend/.env` is also read, and takes precedence, if you need the backend to
+diverge from the shared file (for example a local Postgres nothing else uses).
+You normally do not need it.
+
+Minimum viable `.env`:
+
+```env
+APP_ENV=development          # REQUIRED. The default is "production" and boot is refused.
+DATABASE_URL=postgresql://USER:PASS@127.0.0.1:5432/socdev
+CORS_ORIGINS=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
+GOOGLE_REDIRECT_URI=http://localhost:5173
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_JWT_SECRET=...      # Supabase → Settings → API → JWT Settings
 ```
 
-### Key API (all `/api/v1/*` except `/auth/*` require a JWT bearer token)
-- Auth: POST `/auth/register` | POST `/auth/login` | POST `/auth/refresh` | GET `/auth/me` | POST `/auth/users` (Admin)
+> **Keep development values in this file.** Production does not read it:
+> Railway and Vercel supply variables from their own environment. A root
+> `.env` left holding production credentials means a local `uvicorn` run
+> connects to the live database, runs migrations against it, and authenticates
+> real users — the failure mode `APP_ENV=development` exists to prevent.
+
+There is **no SQLite fallback for the app** (only the pytest escape hatch via
+`TEST_DATABASE_URL`); `DATABASE_URL` is required and migrations run
+automatically at boot, so there is no `alembic upgrade head` step.
+
+```bash
+cd backend
+python3 -m pip install -r requirements.txt
+# optional: train the classifiers. Skipped => rules-only fallback, still works.
+python3 scripts/train_nlp.py
+PYTHONPATH=. APP_ENV=development uvicorn app.main:app --reload --port 8000
+# API docs: http://localhost:8000/docs
+```
+
+### 2. Frontend
+
+```bash
+cd frontend
+cp .env.example .env         # then set the two Supabase values below
+npm install
+npm run dev                  # UI: http://localhost:5173
+```
+
+Set in `frontend/.env`:
+
+```env
+VITE_API_URL=                # LEAVE EMPTY locally
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=...
+```
+
+**Leave `VITE_API_URL` empty.** The Vite dev server proxies `/api` and
+`/health` to `http://localhost:8000`, so the browser calls its own origin and
+CORS never applies. If you point it at a deployed backend instead, you are
+testing production from localhost and must add `http://localhost:5173` to that
+backend's `CORS_ORIGINS`. `frontend/.env.example` ships with the production
+Railway URL in it — overwrite it.
+
+### 3. Sign up
+
+Authentication is Supabase. Use **Sign up** on the login page, confirm the
+email, and a database trigger mirrors the row into the app's `users` table
+with role `Analyst` and a personal organization. There is no
+`/auth/register` or `/auth/login` endpoint to call directly; the only auth
+route left is `GET /auth/me`.
+
+### 4. Optional services
+
+Neo4j, Elasticsearch and Kafka are all optional — leave them unset and the app
+degrades gracefully (networkx instead of Neo4j, SQLite search instead of ES,
+synchronous pipeline instead of Celery). `docker compose up --build` starts
+them, but note it reads the **repo-root** `.env`; point that at a local
+database first or you will run local containers against production data.
+
+### Key API (all `/api/v1/*` require a Supabase JWT bearer token)
+- Auth: `GET /auth/me` (there is no local register/login — see §3)
 - POST /api/v1/emails/ingest {"raw": "<rfc822>"} | POST /api/v1/emails/upload (.eml)
 - GET /api/v1/emails/{id} (includes `score_breakdown`) | GET /api/v1/dashboard
 - GET /api/v1/campaigns | GET /api/v1/campaigns/{id}
@@ -49,10 +126,10 @@ Public self-registration creates **ReadOnly** accounts by default (Analyst also 
 
 ### Gmail live demo
 1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
-2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `backend/.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
 3. Dashboard → "Gmail live import" → fill client ID → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline. (The OAuth client secret lives server-side in `GOOGLE_CLIENT_SECRET` only — the UI never sends it.)
 
-Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
+Optional integrations (VirusTotal/MISP/Slack/Neo4j/Kafka) are off when unset — fill the relevant keys in `.env` to enable them.
 
 ### NLP model dataset
 ```bash
@@ -72,7 +149,7 @@ Raw email bodies are **never persisted** — only the masked version is stored (
 `services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Old clean mail is body-blanked (metadata kept); old malicious mail is fully deleted (email + analysis + trace + ES doc + graph node) in batches with per-batch rollback. Manual run: `POST /api/v1/admin/retention` (Admin).
 
 ### Secrets (compose / k8s)
-No credentials are committed. For compose: `cp backend/.env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
+No credentials are committed. For compose: `cp .env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). This is the same file the backend reads, so there is one set of values to maintain. For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
 
 ### Mailbox polling
 Organization connectors live under "Mailboxes" in the UI (Google/Microsoft OAuth, encrypted refresh tokens). `MAIL_POLL_MINUTES=0` (default) means manual "Sync now" only; set e.g. `60` for hourly background polling.
@@ -98,7 +175,7 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 - High-risk mail (score ≥75) is pushed over WebSocket `/api/v1/ws/alerts?token=<jwt>` to same-org clients (Admins get all); the nav bell shows the live stream.
 - `KNOWN_LEGIT_DOMAINS` (comma-separated) — extra brands for lookalike-domain detection, appended to the built-in list.
 - Operator blocklist lives in `backend/data/local_blocklist.txt` (one domain per line), not in code; hard-coded demo domains only fire in development.
-- `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `http://localhost:5173`).
+- `CORS_ORIGINS` — comma-separated browser origins allowed to call the API (default `https://email-scanner-chi.vercel.app`, the deployed frontend). Origins are matched on scheme + host + port, case-insensitively, with trailing slashes stripped; `*` is refused at boot because `allow_credentials` is on. `CORS_ORIGIN_REGEX` adds opt-in patterns (e.g. Vercel preview hosts), `fullmatch`ed against the whole origin and refused at boot if a pattern would match every origin. **`GET /health` reports the effective allowlist** — the fastest way to diagnose "blocked by CORS policy" in a split deploy, since the browser says nothing useful. `DEPLOY.md` §4.1 has the full triage runbook.
 - `CUSTODY_KEY` — HMAC key for chain-of-custody report signatures. **Must be provisioned from a secrets manager in any non-local deployment**; the app refuses to start when `APP_ENV` is not `development` and no key is set. (`APP_ENV=development` is the local default and keeps an explicit dev fallback.)
 - `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task. Harden with `SMTP_REQUIRE_AUTH=1` + `SMTP_USERNAME`/`SMTP_PASSWORD`, `SMTP_TLS_CERT`/`SMTP_TLS_KEY` (STARTTLS), `SMTP_DATA_LIMIT_BYTES`.
 - Managed Postgres: `alembic upgrade head` from `backend/` (SQLite dev uses the fast built-in path). Ingest is idempotent per tenant (duplicate bytes return the stored verdict).
@@ -107,11 +184,11 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 
 ### Present-Stage Notes (September 2026)
 - "AI" scope: the running ML is TF-IDF + LogisticRegression (30% of fraud score) plus hand-written linguistic cues; transformer reranking is a dormant hook, not installed. See PRD § Present-Stage Scope Note.
-- Seed demo accounts when missing: `ALLOW_SEED=1 APP_ENV=development PYTHONPATH=backend python -m app.seed` (creates `admin/admin123`, `analyst/analyst123`; refuses to run otherwise).
+- Accounts come from Supabase, not from a seed script: sign up in the UI, and a trigger mirrors the row into the app's `users` table (which is where role and organization are read from — never from the token). There is no `app.seed` module; if you were told to run one, it was removed in the Supabase migration.
 - Quirk: API returns transient 500s while `uvicorn --reload` restarts on file saves — wait ~10s and retry.
 - Sync speed: large real emails take tens of seconds each through the pipeline; multi-mail syncs complete but slowly (background-job fix queued).
-- Split deploy (Vercel + Render): set `VITE_API_URL` to the Render backend; register exactly `https://<app>.vercel.app/` as the Google OAuth redirect URI; mirror it in `GOOGLE_REDIRECT_URI`, `FRONTEND_URL`, `CORS_ORIGINS`.
-- Tests: 64 passing; `test_gmail`/`test_oauth` validation tests fail only with real Google credentials/mailbox rows in dev `.env`/DB (environment-dependent).
+- Split deploy (Vercel + Railway): set `VITE_API_URL` to the Railway backend (baked at build time — editing the variable requires a Vercel rebuild, not just a redeploy); register `https://<app>.vercel.app` as the Google OAuth redirect URI; mirror that exact origin in `GOOGLE_REDIRECT_URI`, `FRONTEND_URL` and `CORS_ORIGINS`. Copying a `[your-app]` placeholder literally into `CORS_ORIGINS` is the usual cause of a total frontend outage — the app builds, health checks pass, and only browsers fail.
+- Tests: `cd backend && APP_ENV=development python -m pytest tests/ -q` (231 passing; `APP_ENV=development` is required or startup refuses). `cd frontend && npm test && npm run build` (40 passing).
 
 ## Contributing
 Please adhere to the coding standards defined in the repository wiki. Ensure all commits referencing feature additions are tied to tasks in `Tracker.md`.

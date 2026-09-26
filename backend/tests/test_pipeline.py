@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base
 from app import models  # noqa
 from app.services.pipeline import process_raw_email
+from helpers import login
 
 PHISH = b"""From: "CFO" <cfo@xn--companny.top>
 To: ap@company.com
@@ -90,8 +91,7 @@ def test_api_validation():
         assert c.post("/api/v1/cases", json={"title": ""}).status_code == 401
 
         uname = f"validator-{uuid.uuid4().hex[:8]}"
-        tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
+        h = login(email=f"{uname}@test.local")[0]
         assert c.post("/api/v1/emails/ingest", headers=h, json={"raw": ""}).status_code == 422
         assert c.get("/api/v1/emails/does-not-exist", headers=h).status_code == 404
         assert c.post("/api/v1/cases", headers=h, json={"title": ""}).status_code == 400

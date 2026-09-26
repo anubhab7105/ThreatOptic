@@ -1,9 +1,11 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { KeyboardShortcuts, useKeyboardShortcuts } from './components';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
 import { BASE, jpost } from './api';
+import { BackToTop, ScrollProgress, SkipToContent } from './components';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -12,6 +14,7 @@ const Cases = lazy(() => import('./pages').then(m => ({ default: m.Cases })));
 const Campaigns = lazy(() => import('./pages').then(m => ({ default: m.Campaigns })));
 const CampaignDetail = lazy(() => import('./pages').then(m => ({ default: m.CampaignDetail })));
 const LoginPage = lazy(() => import('./pages').then(m => ({ default: m.LoginPage })));
+const LandingPage = lazy(() => import('./pages').then(m => ({ default: m.LandingPage })));
 const ModelInfo = lazy(() => import('./pages').then(m => ({ default: m.ModelInfo })));
 const Mailboxes = lazy(() => import('./pages').then(m => ({ default: m.Mailboxes })));
 const PrivacyPolicy = lazy(() => import('./pages').then(m => ({ default: m.PrivacyPolicy })));
@@ -64,7 +67,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
         <ol>
           {items.map((it, i) => (
             <li key={i}>
-              {it.href ? <a href={it.href}>{it.label}</a> : <span aria-current="page">{it.label}</span>}
+              {it.href ? <Link to={it.href}>{it.label}</Link> : <span aria-current="page">{it.label}</span>}
               {i < items.length - 1 ? <span className="sep" aria-hidden="true"> › </span> : null}
             </li>
           ))}
@@ -75,7 +78,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
   );
 }
 
-function ThemeToggle() {
+export function ThemeToggle() {
   const [theme, setTheme] = useState<string>(() => {
     try {
       const s = localStorage.getItem('soc-theme');
@@ -307,16 +310,33 @@ function Shell() {
     return () => ac.abort();
   }, []);
 
-  useEffect(() => {
+useEffect(() => {
     setCanonical(location.pathname);
   }, [location.pathname]);
 
   const on = (path: string) => (location.pathname === path ? ' active' : '');
   const onCampaigns = location.pathname.startsWith('/campaign') ? ' active' : '';
+  const onDashboard = location.pathname === '/dashboard' ? ' active' : '';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Global keyboard shortcuts
+  useKeyboardShortcuts({
+    'ctrl+k': () => { document.getElementById('search-input')?.focus(); },
+    'ctrl+shift+d': () => { navigate('/dashboard'); },
+    'ctrl+shift+c': () => { navigate('/campaigns'); },
+    'ctrl+shift+i': () => { navigate('/cases'); },
+    'ctrl+shift+m': () => { navigate('/mailboxes'); },
+    'ctrl+shift+t': () => { navigate('/model'); },
+    'ctrl+shift+l': () => { logout(); navigate('/'); },
+    'ctrl+/': () => { (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.showModal(); },
+    'escape': () => { setMobileMenuOpen(false); (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.close(); },
+  });
 
   if (loading) {
     return (
       <div>
+        <SkipToContent />
+        <ScrollProgress />
         <nav className="nav" aria-label="Primary">
           <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
         </nav>
@@ -326,11 +346,13 @@ function Shell() {
   }
 
   if (!user) {
-    // Public pages like privacy/terms should be accessible without login
+    // Public pages: landing, login, privacy, terms
     return (
       <div>
+        <SkipToContent />
+        <ScrollProgress />
         <nav className="nav" aria-label="Primary" style={{ justifyContent: 'space-between' }}>
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
           <ThemeToggle />
         </nav>
         <ErrorBoundary>
@@ -338,9 +360,11 @@ function Shell() {
             <Routes>
               <Route path="/api/v1/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
               <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
-              <Route path="*" element={<LoginPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
@@ -351,9 +375,12 @@ function Shell() {
 
   return (
     <div>
+      <SkipToContent />
+      <ScrollProgress />
+      <BackToTop />
       <nav className="nav" aria-label="Primary">
-        <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
-        <Link to="/" className={`nl${on('/')}`} aria-current={on('/') ? 'page' : undefined}>Dashboard</Link>
+        <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+        <Link to="/dashboard" className={`nl${onDashboard}`} aria-current={onDashboard ? 'page' : undefined}>Dashboard</Link>
         <Link to="/campaigns" className={`nl${onCampaigns}`}>Campaigns</Link>
         <Link to="/cases" className={`nl${on('/cases')}`}>Cases</Link>
         <Link to="/mailboxes" className={`nl${on('/mailboxes')}`}>Mailboxes</Link>
@@ -361,19 +388,53 @@ function Shell() {
         <span className="spacer" />
         <AlertBell />
         <ThemeToggle />
-        <span className="health" title={`${user.username} - ${user.role}`}>
-          {user.username} ({user.role})
+        <span className="health" title={`${user.email} - ${user.role}`}>
+          {user.email} ({user.role})
         </span>
         <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }}>Sign out</Link>
         <span className="health" title="backend reachability">
           <span className="dot" style={{ background: health === 'ok' ? '#22c55e' : health === 'down' ? '#ef4444' : '#eab308' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
         </span>
+        <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" aria-expanded={mobileMenuOpen}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
       </nav>
+
+      <div className={`mobile-menu${mobileMenuOpen ? ' open' : ''}`} role="dialog" aria-modal="true" aria-label="Navigation menu">
+        <div className="mobile-menu-panel">
+          <div className="mobile-menu-header">
+            <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+            <button className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <nav className="mobile-menu-nav" aria-label="Main navigation">
+            <Link to="/dashboard" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link>
+            <Link to="/campaigns" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Campaigns</Link>
+            <Link to="/cases" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Cases</Link>
+            <Link to="/mailboxes" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Mailboxes</Link>
+            <Link to="/model" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Model Info</Link>
+          </nav>
+          <div className="mobile-menu-footer">
+            <Link to="/privacy" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Privacy Policy</Link>
+            <Link to="/terms" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Terms of Service</Link>
+            <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); setMobileMenuOpen(false); }}>Sign out</Link>
+          </div>
+        </div>
+      </div>
 
       <ErrorBoundary>
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-          <Routes>
+          <div id="main-content">
+            <Routes>
             <Route path="/api/v1/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
             <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
             <Route path="/email/:id" element={<EmailRoute />} />
@@ -384,16 +445,17 @@ function Shell() {
             <Route path="/cases" element={<Cases />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsConditions />} />
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<NotFoundPage />} />
-          </Routes>
+            </Routes>
+          </div>
         </Suspense>
       </ErrorBoundary>
 
       <footer className="footer">
         <div>Email Threat Detection - GeoLocation - Forensic Intelligence - chain-of-custody reports via PDF/JSON</div>
         <div style={{ marginTop: 6 }}>
-          <Link to="/">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
+          <Link to="/dashboard">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
           {' - '}<Link to="/privacy">Privacy Policy</Link> - <Link to="/terms">Terms</Link>
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
           {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>
@@ -401,6 +463,17 @@ function Shell() {
         <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
       </footer>
       <CookieConsent />
+      <KeyboardShortcuts shortcuts={[
+        { key: 'Ctrl+K', description: 'Focus search' },
+        { key: 'Ctrl+Shift+D', description: 'Go to Dashboard' },
+        { key: 'Ctrl+Shift+C', description: 'Go to Campaigns' },
+        { key: 'Ctrl+Shift+I', description: 'Go to Cases' },
+        { key: 'Ctrl+Shift+M', description: 'Go to Mailboxes' },
+        { key: 'Ctrl+Shift+T', description: 'Go to Model Info' },
+        { key: 'Ctrl+Shift+L', description: 'Sign out' },
+        { key: 'Ctrl+/', description: 'Show shortcuts' },
+        { key: 'Esc', description: 'Close dialogs / mobile menu' },
+      ]} />
     </div>
   );
 }

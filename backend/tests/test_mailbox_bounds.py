@@ -2,16 +2,16 @@
 import asyncio
 import uuid
 
+from helpers import login, make_user
 
-def _mk_user_with_conn(db, username, provider="google", email=None):
+
+def _mk_user_with_conn(db, tag, provider="google", email=None):
     from app import models
     from app.modules.auth.vault import encrypt_secret
-    u = models.User(username=username, password_hash="x", role="Analyst")
-    db.add(u)
-    db.flush()
+    u = make_user(db)
     conn = models.MailboxConnection(
         user_id=u.id, provider=provider,
-        account_email=email or f"{username}@t.local",
+        account_email=email or f"{tag}@t.local",
         encrypted_refresh_token=encrypt_secret("1//tok"))
     db.add(conn)
     db.commit()
@@ -118,10 +118,7 @@ def test_gmail_sync_rejects_huge_max_results():
     from fastapi.testclient import TestClient
     from app.main import app
 
-    uname = f"bound-{uuid.uuid4().hex[:8]}"
     with TestClient(app) as c:
-        tok = c.post("/api/v1/auth/register",
-                     json={"username": uname, "password": "Str0ngPass!"}).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
+        h = login()[0]
         r = c.post("/api/v1/gmail/sync", headers=h, json={"max_results": 1000000})
         assert r.status_code == 422, r.text

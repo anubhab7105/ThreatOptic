@@ -262,7 +262,7 @@ def authorize(
         url = connectors.build_gmail_auth_url(cid, uri, state=state, code_challenge=challenge)
     else:
         url = connectors.build_microsoft_auth_url(cid, uri, state=state, code_challenge=challenge)
-    audit("oauth.authorize", user=user.username, provider=p)
+    audit("oauth.authorize", user=user.email, provider=p)
     return {"auth_url": url}
 
 
@@ -436,5 +436,5 @@ async def sync_now(
     )
     if result["polled"] == 0:
         raise HTTPException(404, "no mailbox connected")
-    audit("oauth.sync", user=user.username, synced=result["synced"])
+    audit("oauth.sync", user=user.email, synced=result["synced"])
     return result

@@ -2,12 +2,11 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 
 def _auth(c: TestClient) -> dict:
-    uname = f"search-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login()[0]
 
 
 def test_index_skipped_without_es():

@@ -64,14 +64,39 @@ async def _smtp_consumer() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from .config import require_secrets
+    from .database import SessionLocal
     from .modules.privacy.chain_of_custody import require_custody_key
 
     require_secrets()
     from .config import get_settings as _fresh_settings
-    if "*" in _fresh_settings().cors_origin_list:
+    from .config import cors_regex_is_unbounded
+    boot_settings = _fresh_settings()
+    if "*" in boot_settings.cors_origin_list:
         # allow_credentials=True + "*" is a real misconfiguration: browsers
         # would send credentials anywhere. Refuse to boot like this.
         raise RuntimeError("Refusing to boot: CORS_ORIGINS contains '*' with credentials enabled.")
+    unbounded = cors_regex_is_unbounded(boot_settings)
+    if unbounded:
+        # Same hazard as "*", wearing a regex costume: allow_credentials
+        # would follow the caller to any site that matches.
+        raise RuntimeError(
+            f"Refusing to boot: CORS_ORIGIN_REGEX pattern {unbounded!r} matches every origin "
+            "while credentials are enabled. Narrow it, e.g. "
+            r"CORS_ORIGIN_REGEX=https://[a-z0-9-]+\.vercel\.app"
+        )
+    log.info("CORS allowed origins: %s", boot_settings.cors_origin_list or "(none)")
+    if boot_settings.cors_origin_regex_list:
+        log.info("CORS allowed origin patterns: %s", boot_settings.cors_origin_regex_list)
+    if not boot_settings.cors_allows_remote_origins():
+        # Not fatal — a server-to-server-only deployment legitimately needs
+        # no browser origins — but this exact state is why split deploys
+        # fail with an unexplained CORS error in the browser console.
+        log.warning(
+            "CORS allowlist has no non-loopback origin (%s): browsers served from any other "
+            "host will be blocked. Set CORS_ORIGINS to your frontend origin, e.g. "
+            "CORS_ORIGINS=https://your-app.vercel.app",
+            boot_settings.cors_origin_list or "empty",
+        )
     apply_limiter_setting()
     init_db()
     log.info("DB ready at %s", settings.resolved_db_url())
@@ -142,6 +167,9 @@ async def _ratelimit_exceeded(request: Request, exc: RateLimitExceeded):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
+    # Preview/ephemeral deploy hosts can't be enumerated; opt-in only, and
+    # lifespan() refuses to boot on a match-everything pattern.
+    allow_origin_regex=settings.cors_regex_pattern,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -164,7 +192,17 @@ async def unhandled(request: Request, exc: Exception):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": settings.app_name}
+    # `cors_origins` is here on purpose: "blocked by CORS" is undiagnosable
+    # from a browser console, and this is the one endpoint a deployer can
+    # curl from their own machine to see what the API actually allows.
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "cors_origins": settings.cors_origin_list,
+        "cors_origin_regex": settings.cors_origin_regex_list,
+        "cors_allows_remote_origins": settings.cors_allows_remote_origins(),
+        "frontend_url": settings.frontend_url,
+    }
 
 
 @app.get("/health/detailed")

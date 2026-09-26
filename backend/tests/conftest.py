@@ -11,6 +11,17 @@ os.environ.setdefault("SECRET_KEY", "pytest-only-secret-key-32-chars-minimum")
 os.environ.setdefault("CUSTODY_KEY", "pytest-only-custody-key-32-chars-min")
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "pytest-only-vault-key-32-chars-min!")
 os.environ.setdefault("SETUP_TOKEN", "pytest-setup-token")
+# Supabase HS256 verification secret — deps.get_current_user falls back to it
+# whenever the JWKS endpoint is unavailable. tests/helpers.mint_token() signs
+# with the same value. No SUPABASE_URL: the JWKS path is skipped by design.
+os.environ.setdefault("SUPABASE_JWT_SECRET", "pytest-supabase-jwt-secret-32-chars-min")
+os.environ.pop("SUPABASE_URL", None)
+# Browser-origin / OAuth-redirect allowlists default to the deployed Vercel
+# origin. Tests pin the local dev origin instead so they never depend on
+# whatever a deployment happens to set.
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
+os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
+os.environ.setdefault("GOOGLE_REDIRECT_URI", "http://localhost:5173/")
 # Rate limiting is opt-out in tests (per-test opt-in proves the gates).
 os.environ.setdefault("RATE_LIMIT_ENABLED", "0")
 
@@ -69,6 +80,11 @@ def _clear_global_state():
         from app.routers.ws import manager
         for ws in list(manager._conns):
             manager.disconnect(ws)
+    except Exception:
+        pass
+    try:
+        from app.routers import deps
+        deps._jwks_client = None
     except Exception:
         pass
     try:

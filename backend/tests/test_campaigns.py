@@ -2,6 +2,7 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 A_TMPL = """From: crew@{dom}
 To: victim@company.com
@@ -27,9 +28,7 @@ Quarterly report draft ready for review, no action needed.
 
 
 def _auth(c: TestClient) -> dict:
-    uname = f"campaign-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": "Analyst"}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login()[0]
 
 
 def test_campaign_cards_and_detail():
@@ -70,17 +69,17 @@ def test_campaign_cards_and_detail():
 
 
 def _auth_org(c, role="Analyst"):
-    """Register a user and move them into a fresh org. Returns (headers, org_id)."""
+    """Provision a user inside a fresh org. Returns (headers, org_id)."""
     from app import models
     from app.database import SessionLocal
-    h = _auth(c)
     db = SessionLocal()
     try:
-        u = db.query(models.User).order_by(models.User.created_at.desc()).first()
-        org = models.Organization(name=f"tcamp-{u.username}", compliance_policy={})
+        h, user = login(role=role)
+        org = models.Organization(name=f"tcamp-{user.id[:8]}", compliance_policy={})
         db.add(org)
         db.flush()
-        u.organization_id = org.id
+        row = db.query(models.User).filter_by(id=user.id).first()
+        row.organization_id = org.id
         db.commit()
         return h, org.id
     finally:

@@ -1,17 +1,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { ApiError, clearTokens, getTokens, jget, jpost, setTokens } from './api';
+import { supabase } from './supabaseClient';
+import { jget } from './api';
 
-export type AuthUser = { id: string; username: string; role: string; organization_id: string | null };
+export type AuthUser = { id: string; email: string; role: string; organization_id: string | null };
 
 type AuthCtx = {
   user: AuthUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  logout: () => Promise<void>;
 };
 
-const Ctx = createContext<AuthCtx>({ user: null, loading: true, login: async () => {}, register: async () => {}, logout: () => {} });
+const Ctx = createContext<AuthCtx>({ user: null, loading: true, login: async () => {}, register: async () => ({ needsConfirmation: true }), logout: async () => {} });
 
 export const useAuth = () => useContext(Ctx);
 
@@ -19,24 +20,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchMe = useCallback(async () => {
-    if (!getTokens()) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
+  const hydrateUser = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setUser(null); setLoading(false); return; }
     try {
-      const res = await jget('/auth/me');
-      if (res && typeof res === 'object' && 'username' in res) {
-        setUser(res);
-      } else {
-        clearTokens();
-        setUser(null);
-      }
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
-        clearTokens();
-      }
+      // Fetch app-level role + org from our public users table via the backend
+      const profile = await jget('/auth/me');
+      setUser(profile);
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -44,29 +35,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    fetchMe();
-    const on401 = () => {
-      clearTokens();
-      setUser(null);
-    };
-    window.addEventListener('soc:unauthorized', on401);
-    return () => window.removeEventListener('soc:unauthorized', on401);
-  }, [fetchMe]);
+    hydrateUser();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, _session) => {
+      hydrateUser();
+    });
+    return () => subscription.unsubscribe();
+  }, [hydrateUser]);
 
-  const login = async (username: string, password: string) => {
-    const pair = await jpost('/auth/login', { username, password }, { auth: false });
-    setTokens(pair);
-    setUser(await jget('/auth/me'));
+  const login = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    await hydrateUser();
   };
 
-  const register = async (username: string, password: string) => {
-    const pair = await jpost('/auth/register', { username, password }, { auth: false });
-    setTokens(pair);
-    setUser(await jget('/auth/me'));
+  const register = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) throw new Error(error.message);
+    return { needsConfirmation: true }; // User must verify email before logging in
   };
 
-  const logout = () => {
-    clearTokens();
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
   };
 

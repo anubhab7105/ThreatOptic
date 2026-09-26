@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
+from helpers import login
 
 from app import models
 
@@ -15,9 +16,7 @@ def _session():
 
 
 def _auth(c: TestClient, role: str = "Analyst") -> dict:
-    uname = f"priv-{uuid.uuid4().hex[:8]}"
-    tok = c.post("/api/v1/auth/register", json={"username": uname, "password": "Str0ngPass!", "role": role}).json()["access_token"]
-    return {"Authorization": f"Bearer {tok}"}
+    return login(role=role)[0]
 
 
 def test_raw_body_never_persisted():

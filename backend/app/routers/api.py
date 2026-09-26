@@ -140,7 +140,7 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
         task = analyze_email_task.delay(base64.b64encode(payload.raw.encode()).decode(),
                                         payload.source or "api", "", user.organization_id)
         _record_task_owner(task.id, user)
-        audit("email.ingest.queued", user=user.username, task_id=task.id)
+        audit("email.ingest.queued", user=user.email, task_id=task.id)
         return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
         res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api",
@@ -150,7 +150,7 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
     except Exception:
         log.exception("ingest failed")
         raise HTTPException(500, "analysis failed")
-    audit("email.ingest", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
+    audit("email.ingest", user=user.email, email_id=res["email_id"], score=res["fraud_score"])
     from ..modules.cache import cache_delete_prefix
     cache_delete_prefix("dash:")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],
@@ -162,6 +162,15 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
 async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode: bool = Query(False),
                         db: Session = Depends(get_db),
                         user: models.User = Depends(require_roles(*READ_WRITE))):
+    # Validate file type - only allow email formats
+    allowed_types = {'message/rfc822', 'application/octet-stream', 'text/plain', 'application/mime'}
+    content_type = (f.content_type or '').lower()
+    filename = (f.filename or '').lower()
+    allowed_exts = ('.eml', '.txt', '.mime')
+    
+    if content_type not in allowed_types and not any(filename.endswith(ext) for ext in allowed_exts):
+        raise HTTPException(400, "unsupported file type (expected .eml, .txt or .mime)")
+    
     raw = await f.read()
     if not raw or not raw.strip():
         raise HTTPException(400, "empty file")
@@ -174,7 +183,7 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode:
         import base64
         task = analyze_email_task.delay(base64.b64encode(raw).decode(), "upload", "", user.organization_id)
         _record_task_owner(task.id, user)
-        audit("email.upload.queued", user=user.username, task_id=task.id)
+        audit("email.upload.queued", user=user.email, task_id=task.id)
         return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
         res = await process_raw_email(db, raw, source="upload", organization_id=user.organization_id)
@@ -183,7 +192,7 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode:
     except Exception:
         log.exception("upload ingest failed")
         raise HTTPException(500, "analysis failed")
-    audit("email.upload", user=user.username, email_id=res["email_id"], score=res["fraud_score"])
+    audit("email.upload", user=user.email, email_id=res["email_id"], score=res["fraud_score"])
     from ..modules.cache import cache_delete_prefix
     cache_delete_prefix("dash:")
     return {"email_id": res["email_id"], "fraud_score": res["fraud_score"],

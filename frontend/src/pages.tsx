@@ -1,42 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ApiError, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
+import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor } from './components';
+import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
+import { ThemeToggle } from './main';
 
-export function formatDateTime(ts: string | null | undefined): string {
-  if (!ts) return '—';
-  const iso = ts.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(ts) ? ts : ts + 'Z';
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
-}
-
-/* ---------- SEO helpers (custom domain: socforensics.io) ---------- */
 const CANONICAL_BASE = 'https://socforensics.io';
-/** Serialize for <script> injection: escape `</` so a crafted subject can
- * never break out of the script tag (C14 stored-XSS). `<\/` is valid JSON
- * and parses to the identical string. */
+
 function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
 }
+
 function setCanonical(path: string) {
-  // History-API routes are real URLs: the canonical is the clean path itself.
   const clean = path.split(/[?#]/)[0] || '/';
   const href = `${CANONICAL_BASE}${clean.startsWith('/') ? clean : `/${clean}`}`;
   let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (!el) { el = document.createElement('link'); el.rel = 'canonical'; document.head.appendChild(el); }
   el.href = href;
 }
+
 function setMeta(name: string, content: string) {
   let el = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
   if (!el) { el = document.createElement('meta'); el.name = name; document.head.appendChild(el); }
   el.content = content;
 }
+
 function setOG(prop: string, content: string) {
   let el = document.querySelector<HTMLMetaElement>(`meta[property="${prop}"]`);
   if (!el) { el = document.createElement('meta'); el.setAttribute('property', prop); document.head.appendChild(el); }
   el.content = content;
 }
+
 function usePageMeta(opts: { title: string; description: string; canonical: string; image?: string }) {
   useEffect(() => {
     document.title = opts.title;
@@ -46,10 +40,189 @@ function usePageMeta(opts: { title: string; description: string; canonical: stri
     setOG('og:description', opts.description);
     setOG('og:url', `${CANONICAL_BASE}${opts.canonical}`);
     if (opts.image) setOG('og:image', opts.image);
-    // twitter
     setMeta('twitter:title', opts.title);
     setMeta('twitter:description', opts.description);
   }, [opts.title, opts.description, opts.canonical, opts.image]);
+}
+
+export function formatDateTime(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  const iso = ts.endsWith('Z') || /[+-]\d{2}(:\d{2})?$/.test(ts) ? ts : ts + 'Z';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
+}
+
+/* ---------------- Landing Page (Public) ---------------- */
+
+export function LandingPage() {
+  usePageMeta({
+    title: 'SOC Forensics Lab | Email Threat Detection & Forensic Intelligence',
+    description: 'Real-time phishing, BEC, and spoofing detection for SOC analysts. Header forensics, geolocation, identity correlation, and chain-of-custody reporting.',
+    canonical: '/',
+    image: 'https://socforensics.io/og-image.svg',
+  });
+
+  return (
+    <div className="landing-page">
+      <header className="landing-header">
+        <nav className="landing-nav" aria-label="Primary">
+          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+          <div className="landing-nav-links">
+            <Link to="/login" className="nav-link">Sign In</Link>
+            <Link to="/login" className="nav-link btn-primary">Get Started</Link>
+          </div>
+          <ThemeToggle />
+        </nav>
+      </header>
+
+      <main id="main-content">
+        <section className="hero" aria-labelledby="hero-title">
+          <div className="hero-content">
+            <h1 id="hero-title">Email threat detection that explains itself.</h1>
+            <p className="hero-subtitle">Score every message 0&ndash;100 with SPF/DKIM/DMARC, URL and attachment intelligence, geolocation, and identity graphs. Export chain-of-custody PDF/JSON reports.</p>
+            <div className="hero-actions">
+              <Link to="/login" className="btn-primary">Start Free Trial</Link>
+              <Link to="/model" className="btn-secondary">View Model Transparency</Link>
+            </div>
+            <p className="hero-trust">Self-hosted. No vendor lock-in. Used by incident response teams worldwide.</p>
+          </div>
+          <div className="hero-visual" aria-hidden="true">
+            <svg viewBox="0 0 600 400" className="hero-illustration" role="img" aria-label="Email threat analysis dashboard showing fraud score, authentication results, and geolocation">
+              <defs>
+                <linearGradient id="gridGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#0b1220" stopOpacity="0" />
+                  <stop offset="100%" stopColor="#16233f" stopOpacity="0.3" />
+                </linearGradient>
+              </defs>
+              <rect x="20" y="20" width="560" height="360" rx="12" fill="url(#gridGradient)" stroke="#24365c" strokeWidth="1.5" />
+              <rect x="40" y="40" width="200" height="120" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
+              <text x="50" y="65" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">FRAUD SCORE</text>
+              <text x="50" y="95" fill="#ef4444" fontSize="48" fontWeight="800" fontFamily="ui-monospace">94</text>
+              <text x="50" y="125" fill="#93a1bd" fontSize="11" fontFamily="system-ui">Critical &mdash; BEC Detected</text>
+              <rect x="40" y="180" width="200" height="120" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
+              <text x="50" y="205" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">AUTHENTICATION</text>
+              <g fontSize="11" fontFamily="system-ui">
+                <text x="50" y="230" fill="#ef4444">SPF: Fail</text>
+                <text x="50" y="250" fill="#ef4444">DKIM: Fail</text>
+                <text x="50" y="270" fill="#ef4444">DMARC: Fail</text>
+              </g>
+              <rect x="260" y="40" width="300" height="260" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
+              <text x="280" y="65" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">GEOLOCATION & IDENTITY GRAPH</text>
+              <circle cx="410" cy="180" r="80" fill="none" stroke="#24365c" strokeWidth="1.5" />
+              <circle cx="410" cy="180" r="45" fill="#ef4444" fillOpacity="0.15" />
+              <circle cx="410" cy="180" r="45" fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="4,4" />
+              <circle cx="410" cy="180" r="8" fill="#ef4444" />
+              <text x="410" y="280" fill="#93a1bd" fontSize="11" fontFamily="system-ui" textAnchor="middle">Origin: 45.148.10.88 (VPN)</text>
+              <g fontSize="10" fill="#38bdf8" fontFamily="system-ui">
+                <circle cx="320" cy="140" r="6" fill="#38bdf8" />
+                <text x="330" y="144" fill="#e5e7eb">sender@domain</text>
+                <circle cx="480" cy="120" r="6" fill="#f59e0b" />
+                <text x="490" y="124" fill="#e5e7eb">malicious.example</text>
+                <circle cx="480" cy="240" r="6" fill="#a855f7" />
+                <text x="490" y="244" fill="#e5e7eb">Campaign #C-2026-0892</text>
+              </g>
+            </svg>
+          </div>
+        </section>
+
+        <section className="features" aria-labelledby="features-title">
+          <h2 id="features-title" className="section-title">Built for forensic analysis</h2>
+          <div className="features-grid">
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" /><line x1="12" y1="22" x2="12" y2="15.5" /><line x1="22" y1="8.5" x2="12" y2="15.5" /><line x1="2" y1="8.5" x2="12" y2="15.5" /></svg>
+              </div>
+              <h3>Header Forensics</h3>
+              <p>Full RFC822 parsing with SPF, DKIM, DMARC, ARC, and alignment checks. Relay chain reconstruction with IP geolocation.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="6" x2="12" y2="18" /><line x1="6" y1="12" x2="18" y2="12" /></svg>
+              </div>
+              <h3>Identity Correlation</h3>
+              <p>Graph-based clustering links shared infrastructure across campaigns. Detect coordinated attacks by IP, domain, and sender overlap.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
+              </div>
+              <h3>Chain-of-Custody Reports</h3>
+              <p>SHA-256 hashed originals. PDF and JSON exports with timestamps, scores, and evidence references for legal proceedings.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+              </div>
+              <h3>Model Transparency</h3>
+              <p>Open metrics: accuracy, macro F1, per-class precision/recall, confusion matrix. Retrained on your data with audit logs.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+              </div>
+              <h3>Real-Time Ingestion</h3>
+              <p>Paste RFC822, upload .eml, or connect Gmail/Microsoft mailboxes via OAuth. Background Celery queue for high-volume pipelines.</p>
+            </article>
+            <article className="feature-card">
+              <div className="feature-icon" aria-hidden="true">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+              </div>
+              <h3>Self-Hosted First</h3>
+              <p>Deploy on your infrastructure. SQLite, Postgres, Elastic, or Neo4j backends. Air-gapped friendly with offline GeoIP.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="cta" aria-labelledby="cta-title">
+          <h2 id="cta-title">Ready to analyze your first email?</h2>
+          <p>Create an account in seconds. No credit card required.</p>
+          <Link to="/login" className="btn-primary btn-large">Create Free Account</Link>
+        </section>
+      </main>
+
+      <footer className="landing-footer">
+        <div className="footer-grid">
+          <div className="footer-brand">
+            <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+            <p>Email threat detection, geolocation, and forensic intelligence for security operations teams.</p>
+          </div>
+          <nav className="footer-links" aria-label="Product">
+            <h4>Product</h4>
+            <ul>
+              <li><Link to="/model">Model Transparency</Link></li>
+              <li><Link to="/login">Dashboard Demo</Link></li>
+              <li><a href="https://github.com" target="_blank" rel="noopener">GitHub</a></li>
+            </ul>
+          </nav>
+          <nav className="footer-links" aria-label="Company">
+            <h4>Company</h4>
+            <ul>
+              <li><Link to="/privacy">Privacy Policy</Link></li>
+              <li><Link to="/terms">Terms of Service</Link></li>
+              <li><a href="mailto:hello@socforensics.io">Contact</a></li>
+            </ul>
+          </nav>
+          <nav className="footer-links" aria-label="Resources">
+            <h4>Resources</h4>
+            <ul>
+              <li><Link to="/sitemap.xml">Sitemap</Link></li>
+              <li><Link to="/robots.txt">Robots</Link></li>
+              <li><Link to="/llms.txt">LLMs.txt</Link></li>
+            </ul>
+          </nav>
+        </div>
+        <div className="footer-bottom">
+          <p>&copy; 2026 SOC Forensics Lab. 301 Congress Ave, Austin, TX 78701.</p>
+        </div>
+      </footer>
+
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'SOC Forensics Lab | Email Threat Detection',
+        description: 'Real-time phishing, BEC, and spoofing detection with header forensics, geolocation, and chain-of-custody reporting.',
+        url: `${CANONICAL_BASE}/`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
+      })}} />
+    </div>
+  );
 }
 
 function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
@@ -116,18 +289,23 @@ export function LoginPage() {
   });
   const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!username.trim() || !password) return;
+    if (!email.trim() || !password) return;
     setBusy(true);
     setErr('');
+    setNotice('');
     try {
-      if (mode === 'login') await login(username.trim(), password);
-      else await register(username.trim(), password);
+      if (mode === 'login') await login(email.trim(), password);
+      else {
+        const res = await register(email.trim(), password);
+        if (res.needsConfirmation) setNotice('Account created — check your email to confirm, then sign in.');
+      }
     } catch (e) {
       setErr(e instanceof ApiError ? `Authentication failed (${e.status}): ${e.message}` : String(e));
     } finally {
@@ -135,49 +313,9 @@ export function LoginPage() {
     }
   };
 
-  const fillSeed = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setErr('');
-  };
-
   return (
     <div className="login-page-wrapper">
       <div className="login-card">
-        {/* Left Side: Gradient Hero */}
-        <div className="login-hero-pane">
-          <div>
-            <div className="login-hero-badge">
-              <span style={{ fontSize: 13, marginRight: 4 }}>✦</span> SIH 2026 · LIVE DEMO READY
-            </div>
-            <h1 className="login-hero-title">Catch phishing before it catches you.</h1>
-            <p className="login-hero-desc">
-              Sentinel scores every email 0-100 with SPF/DKIM/DMARC, URL + attachment intel, geolocation and identity graphs — with chain-of-custody PDF/JSON.
-            </p>
-            <div className="login-hero-features">
-              <div className="login-hero-pill">
-                <span className="login-hero-icon">⚡</span>
-                <span>Paste RFC822 or upload .eml → verdict in seconds</span>
-              </div>
-              <div className="login-hero-pill">
-                <span className="login-hero-icon">◉</span>
-                <span>Explainable breakdown — every point accounted for</span>
-              </div>
-              <div className="login-hero-pill">
-                <span className="login-hero-icon">⬡</span>
-                <span>Campaign clustering across shared IPs & domains</span>
-              </div>
-            </div>
-          </div>
-          <div className="login-hero-watermark" aria-hidden="true">
-            <svg width="120" height="120" viewBox="0 0 100 100" fill="none">
-              <rect x="50" y="8" width="46" height="46" rx="4" transform="rotate(45 50 8)" stroke="rgba(255,255,255,0.2)" strokeWidth="5" />
-              <rect x="50" y="24" width="24" height="24" rx="3" transform="rotate(45 50 24)" stroke="rgba(255,255,255,0.28)" strokeWidth="3.5" />
-            </svg>
-          </div>
-        </div>
-
-        {/* Right Side: Form */}
         <div className="login-form-pane">
           <div className="login-breadcrumb">
             <Link to="/">Home</Link>
@@ -185,8 +323,8 @@ export function LoginPage() {
             <span>{mode === 'login' ? 'Sign in' : 'Register'}</span>
           </div>
 
-          <h2 className="login-form-title">SOC Sign in</h2>
-          <p className="login-form-sub">JWT-secured analyst access. First-ever account becomes Admin.</p>
+          <h2 className="login-form-title">SOC Forensics Lab</h2>
+          <p className="login-form-sub">Sign in to access the email threat dashboard.</p>
 
           <div className="login-tabs">
             <button
@@ -206,32 +344,32 @@ export function LoginPage() {
           </div>
 
           <Toast msg={err} />
+          {notice ? <div className="login-notice" role="status">{notice}</div> : null}
 
           <div className="login-field-group">
-            <label htmlFor="login-username" className="login-field-label">Username</label>
+            <label htmlFor="login-email" className="login-field-label">Email</label>
             <input
-              id="login-username"
-              type="text"
-              placeholder="e.g. analyst"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="login-email"
+              type="email"
+              placeholder="e.g. analyst@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-              autoComplete="username"
+              autoComplete="email"
               className="login-input"
             />
           </div>
 
           <div className="login-field-group">
-            <label htmlFor="login-password" className="login-field-label">Password</label>
-            <input
+            <PasswordToggle
               id="login-password"
-              type="password"
-              placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
+              label="Password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              onChange={setPassword}
+              placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               className="login-input"
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
             />
           </div>
 
@@ -239,33 +377,10 @@ export function LoginPage() {
             type="button"
             className="login-submit-btn"
             onClick={submit}
-            disabled={busy || !username.trim() || !password}
+            disabled={busy || !email.trim() || !password}
           >
-            {busy ? 'Please wait…' : mode === 'login' ? '→ Sign in to console' : '→ Create analyst account'}
+            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
-
-          <div className="login-seed-container">
-            <span>Demo seed:</span>
-            <span
-              className="login-seed-pill"
-              onClick={() => fillSeed('admin', 'admin123')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('admin', 'admin123'); }}
-            >
-              admin / admin123
-            </span>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <span
-              className="login-seed-pill"
-              onClick={() => fillSeed('analyst', 'analyst123')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') fillSeed('analyst', 'analyst123'); }}
-            >
-              analyst / analyst123
-            </span>
-          </div>
         </div>
       </div>
 
@@ -317,8 +432,8 @@ const DEFAULT_GOOGLE_CLIENT_SECRET = '';
 
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
+  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
+  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -335,12 +450,10 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
 
   const updateClientId = (v: string) => {
     setClientId(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
   };
 
   const updateClientSecret = (v: string) => {
     setClientSecret(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
   };
 
   const refresh = async () => {
@@ -358,21 +471,20 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const getUrl = async () => {
     setBusy(true); setErr(''); setNotice(''); setAuthUrl('');
     try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
-        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
-      }
       const r = await jpost('/gmail/auth-url', {
         redirect_uri: redirectUri,
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      setAuthUrl(r.auth_url);
+      // P1: never hand the browser to an unverified host — an analyst
+      // connecting a mailbox is exactly the moment a phishing hop lands.
+      const safeUrl = assertIdpUrl(r.auth_url, 'google');
+      setAuthUrl(safeUrl);
       setNotice('Redirecting to Google consent page… If not redirected, click the link below.');
       try {
-        window.location.assign(r.auth_url);
+        window.location.assign(safeUrl);
       } catch {
-        window.location.href = r.auth_url;
+        window.location.href = safeUrl;
       }
     } catch (e) { fail(e, 'Consent URL'); } finally { setBusy(false); }
   };
@@ -386,10 +498,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     }
     setBusy(true); setErr(''); setNotice('');
     try {
-      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
-      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
-      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
-      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+      // P0: client_id from state only, client_secret never from browser storage
+      const effectiveCid = clientId.trim() || undefined;
+      const effectiveSec = clientSecret.trim() || undefined;
 
       const r = await jpost('/gmail/callback', {
         code: c,
@@ -438,10 +549,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      const storedCid = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_id') : '';
-      const storedSec = typeof window !== 'undefined' ? sessionStorage.getItem('soc_gmail_client_secret') : '';
-      const effectiveCid = (clientId.trim() || storedCid || '').trim() || undefined;
-      const effectiveSec = (clientSecret.trim() || storedSec || '').trim() || undefined;
+      // P0: client_id from state only, client_secret never from browser storage
+      const effectiveCid = clientId.trim() || undefined;
+      const effectiveSec = clientSecret.trim() || undefined;
 
       const r = await jpost('/gmail/sync', {
         max_results: num,
@@ -1526,8 +1636,8 @@ export function EmailView({ id }: { id: string }) {
                   height="380"
                   style={{ border: 0, borderRadius: 8 }}
                   loading="lazy"
-                  sandbox="allow-scripts allow-same-origin"
-                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                  referrerPolicy="no-referrer-when-downgrade"
                   src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
                 />
                 <p style={{ marginTop: 8 }}>
@@ -1676,6 +1786,12 @@ export function CampaignDetail({ id }: { id: string }) {
         )}
       </div>
       <InternalLinks current="/campaigns" />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: cardName,
+        description: `Campaign ${cardName} with ${d?.card?.email_count || 0} emails, confidence ${d?.card?.confidence ? Math.round(d.card.confidence * 100) : 0}%`,
+        url: `${CANONICAL_BASE}/campaign/${id}`,
+        author: { '@id': `${CANONICAL_BASE}/#organization` }
+      })}} />
     </div>
   );
 }
@@ -1783,10 +1899,9 @@ export function Mailboxes() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  // P0: OAuth client secrets are NEVER held in the browser — not in state,
-  // not in storage. Only the public client ID (optional) lives here.
-  const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
+  // OAuth secrets are held in form state only and are never persisted.
+  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
+  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -1794,11 +1909,9 @@ export function Mailboxes() {
 
   const updateClientId = (v: string) => {
     setClientId(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_id', v);
   };
   const updateClientSecret = (v: string) => {
     setClientSecret(v);
-    if (typeof window !== 'undefined') sessionStorage.setItem('soc_gmail_client_secret', v);
   };
 
   const fail = (e: unknown, what: string) =>
@@ -1815,16 +1928,14 @@ export function Mailboxes() {
     setErr(''); setNotice('');
     setBusy(true);
     try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('soc_gmail_client_id', clientId.trim());
-        sessionStorage.setItem('soc_gmail_client_secret', clientSecret.trim());
-      }
       const r = await jpost(`/oauth/${provider}/authorize`, {
         redirect_uri: redirectUri,
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      window.location.href = r.auth_url;
+      // P1: see getUrl() — the consent hop is verified against the IdP
+      // allowlist before the browser leaves the dashboard.
+      window.location.href = assertIdpUrl(r.auth_url, provider);
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
 
@@ -2067,7 +2178,7 @@ export function PrivacyPolicy() {
       <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
       <div className="card">
         <h3>What we collect</h3>
-        <p>Analyst credentials (username, hashed password, role), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
+        <p>Analyst credentials (email, role via Supabase Auth), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
         <h3>How we use email content</h3>
         <p>Uploaded mail is parsed, scored 0-100, checked for SPF/DKIM/DMARC and threat intel, then stored with PII masked previews and a SHA-256 hash for chain-of-custody. Raw content is retained per your retention setting and purged by the daily scheduler. See retention_audit.log.</p>
         <h3>Cookies</h3>
