@@ -889,41 +889,41 @@ DRIFT_URL = os.environ.get("DRIFT_TEST_DATABASE_URL")
 
 
 def _run_migrations(url: str, revision: str) -> None:
-    """Run the migration chain against `url`, bypassing alembic/env.py.
+    """Run the migration chain against `url` in a subprocess.
 
-    Deliberately not `alembic.command.upgrade()`. `env.py:23-24` resolves its
-    own URL from `get_settings().resolved_db_url()` and ignores both
-    `sqlalchemy.url` in the config and `-x` on the command line, so a Config
-    pointed at a scratch database silently migrates whatever DATABASE_URL the
-    ambient settings hold. That already happened once during this work: the
-    scratch fixture stamped the developer's local database with a revision
-    that no longer existed and left it unbootable. Driving the context
-    directly means the URL passed in is the URL used.
+    Deliberately not `alembic.command.upgrade()` in-process. `env.py:23-24`
+    resolves its own URL from `get_settings().resolved_db_url()` and ignores
+    both `sqlalchemy.url` in the config and `-x` on the command line, so a
+    Config pointed at a scratch database silently migrates whatever
+    DATABASE_URL the ambient settings hold. That already happened once during
+    this work: the scratch fixture stamped the developer's local database with
+    a revision that no longer existed and left it unbootable.
+
+    A subprocess with DATABASE_URL set in its own environment cannot inherit
+    the parent's cached settings, so the URL passed in is provably the URL
+    used. A mismatch is asserted, not assumed.
     """
-    from alembic.config import Config
-    from alembic.runtime.migration import MigrationContext
-    from alembic.script import ScriptDirectory
+    import subprocess
+    import sys
 
     root = pathlib.Path(__file__).resolve().parents[1]
-    cfg = Config(str(root / "alembic.ini"))
-    cfg.set_main_option("script_location", str(root / "alembic"))
-    script = ScriptDirectory.from_config(cfg)
-
-    engine = sa.create_engine(url, future=True)
-    try:
-        with engine.connect() as conn:
-            # `fn` is what alembic.command.upgrade() supplies via
-            # EnvironmentContext.configure(), which only env.py ever calls.
-            # Passing it here is what lets run_migrations() do the work while
-            # skipping env.py — and env.py is exactly what resolves its own
-            # URL from ambient settings instead of the one we were given.
-            ctx = MigrationContext.configure(
-                conn, opts={"fn": lambda heads, context: script._upgrade(heads, revision)}
-            )
-            with ctx.begin_transaction():
-                ctx.run_migrations()
-    finally:
-        engine.dispose()
+    env = dict(os.environ)
+    env["DATABASE_URL"] = url
+    env["PYTHONPATH"] = str(root)
+    # alembic only needs a URL here; the app's own secret checks are not in
+    # scope for this fixture and would only add a way to fail.
+    env.setdefault("SECRET_KEY", "drift-test-secret-key-not-a-real-secret")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", revision],
+        cwd=str(root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"alembic upgrade {revision} failed against {url}:\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
 
 
 @pytest.fixture
