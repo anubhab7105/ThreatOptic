@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
-import { KeyboardShortcuts, useKeyboardShortcuts } from './components';
+import { AvatarStack, KeyboardShortcuts, useKeyboardShortcuts } from './components';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
@@ -83,16 +83,16 @@ export function ThemeToggle() {
     try {
       const s = localStorage.getItem('soc-theme');
       if (s === 'light' || s === 'dark') return s;
-      return document.documentElement.getAttribute('data-theme') || 'dark';
-    } catch { return 'dark'; }
+      return document.documentElement.getAttribute('data-theme') || 'light';
+    } catch { return 'light'; }
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('soc-theme', theme); } catch { /* storage unavailable */ }
   }, [theme]);
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-      <span aria-hidden="true">{theme === 'dark' ? '☾' : '☀'}</span> {theme === 'dark' ? 'Light' : 'Dark'}
+    <button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode (Inkwise light is default; dark SOC kept)`}>
+      <span aria-hidden="true">{theme === 'light' ? '☀' : '☾'}</span> {theme === 'light' ? 'Dark' : 'Light'}
     </button>
   );
 }
@@ -155,21 +155,23 @@ function NotFoundPage() {
   }, []);
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: '404 Not Found' }]} />
-      <h1>404 - Page Not Found</h1>
-      <p className="sub">The forensic resource you requested does not exist or has been moved. This incident has not been logged - it is a routing miss, not a threat.</p>
-      <div className="card" style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        <img src="/favicon.svg" alt="SOC Forensics shield logo - link back to dashboard" width={84} height={84} style={{ flexShrink: 0 }} loading="lazy" />
-        <div>
-          <p style={{ marginTop: 0 }}>Try one of these instead:</p>
-          <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
-            <li><Link to="/">Global Threat Dashboard</Link> - ingest and score emails</li>
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Page not found' }]} />
+      <div className="utility-canvas">
+        <div className="utility-card">
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Home &gt; Page not found</div>
+          <div className="utility-404">404</div>
+          <p style={{ fontSize: 15, margin: '0 0 8px' }}>This investigation doesn&apos;t exist, or you don&apos;t have access to it.</p>
+          <p className="sub">This is a routing miss, not a threat — nothing has been logged.</p>
+          <div style={{ margin: '16px 0' }}>
+            <Link to="/dashboard" className="btn-new">Back to Dashboard</Link>
+          </div>
+          <ul style={{ margin: '8px 0', paddingLeft: 18, fontSize: 13 }}>
+            <li><Link to="/dashboard">Global Threat Dashboard</Link> - ingest and score emails</li>
             <li><Link to="/campaigns">Campaigns</Link> - shared infrastructure clusters</li>
             <li><Link to="/cases">Case Management</Link> - triage to closure</li>
             <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
             <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
-          <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@socforensics.io - Austin, TX SOC.</p>
         </div>
       </div>
       <div className="card" style={{ marginTop: 16 }}>
@@ -225,9 +227,9 @@ function AlertBell() {
   }, []);
   return (
     <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
-      <button className="ghost" onClick={() => setOpen((o) => !o)} aria-label={`Alerts (${alerts.length} unread)`} title="High-risk alerts">
-        🔔{alerts.length > 0 && <b style={{ color: '#ef4444' }}> {alerts.length}</b>}
-        <span className="dot" style={{ background: live ? '#22c55e' : '#6b7280', marginLeft: 6 }} aria-hidden="true" />
+      <button className="bell-btn" onClick={() => setOpen((o) => !o)} aria-label={`Alerts, ${alerts.length} unread${live ? ', live' : ''}`} title="High-risk alerts">
+        <span aria-hidden="true">🔔</span>
+        {(alerts.length > 0 || !live) && <span className="bell-dot" aria-hidden="true" style={!live && alerts.length === 0 ? { background: '#8A90A8' } : undefined} />}
       </button>
       {open && (
         <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
@@ -240,7 +242,7 @@ function AlertBell() {
             </ul>
           )}
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="ghost" onClick={() => { setAlerts([]); setOpen(false); }}>Clear</button>
+            <button className="ghost small" onClick={() => { setAlerts([]); setOpen(false); }}>Clear</button>
           </div>
         </div>
       )}
@@ -317,11 +319,22 @@ useEffect(() => {
   const on = (path: string) => (location.pathname === path ? ' active' : '');
   const onCampaigns = location.pathname.startsWith('/campaign') ? ' active' : '';
   const onDashboard = location.pathname === '/dashboard' ? ' active' : '';
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [wsOpen, setWsOpen] = useState(false);
+  const [topQ, setTopQ] = useState('');
+
+  const submitTopSearch = () => {
+    window.dispatchEvent(new CustomEvent('soc:top-search', { detail: { q: topQ } }));
+    if (location.pathname !== '/dashboard') navigate('/dashboard');
+    else {
+      // already on dashboard — focus the in-page search as well
+      setTimeout(() => document.getElementById('dash-search')?.focus(), 50);
+    }
+    setWsOpen(false);
+  };
 
   // Global keyboard shortcuts
   useKeyboardShortcuts({
-    'ctrl+k': () => { document.getElementById('search-input')?.focus(); },
+    'ctrl+k': () => { (document.getElementById('topbar-search') || document.getElementById('dash-search') || document.getElementById('search-input'))?.focus(); },
     'ctrl+shift+d': () => { navigate('/dashboard'); },
     'ctrl+shift+c': () => { navigate('/campaigns'); },
     'ctrl+shift+i': () => { navigate('/cases'); },
@@ -329,7 +342,7 @@ useEffect(() => {
     'ctrl+shift+t': () => { navigate('/model'); },
     'ctrl+shift+l': () => { logout(); navigate('/'); },
     'ctrl+/': () => { (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.showModal(); },
-    'escape': () => { setMobileMenuOpen(false); (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.close(); },
+    'escape': () => { setWsOpen(false); (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.close(); },
   });
 
   if (loading) {
@@ -374,66 +387,73 @@ useEffect(() => {
   }
 
   return (
-    <div>
+    <div className="app-shell">
       <SkipToContent />
       <ScrollProgress />
       <BackToTop />
-      <nav className="nav" aria-label="Primary">
-        <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
-        <Link to="/dashboard" className={`nl${onDashboard}`} aria-current={onDashboard ? 'page' : undefined}>Dashboard</Link>
-        <Link to="/campaigns" className={`nl${onCampaigns}`}>Campaigns</Link>
-        <Link to="/cases" className={`nl${on('/cases')}`}>Cases</Link>
-        <Link to="/mailboxes" className={`nl${on('/mailboxes')}`}>Mailboxes</Link>
-        <Link to="/model" className={`nl${on('/model')}`}>Model Info</Link>
-        <span className="spacer" />
-        <AlertBell />
-        <ThemeToggle />
-        <span className="health" title={`${user.email} - ${user.role}`}>
-          {user.email} ({user.role})
-        </span>
-        <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }}>Sign out</Link>
-        <span className="health" title="backend reachability">
+      <aside className="icon-rail" aria-label="Primary">
+        <Link to="/dashboard" className="rail-logo" aria-label="Netraksha home" title="Netraksha — Global Threat Dashboard"><span aria-hidden="true">◈</span></Link>
+        <Link to="/dashboard" className={`rail-btn${onDashboard}`} aria-label="Home dashboard" title="Home / Dashboard" aria-current={onDashboard ? 'page' : undefined}><span aria-hidden="true">⌂</span></Link>
+        <Link to="/campaigns" className={`rail-btn${onCampaigns}`} aria-label="Campaigns" title="Campaigns" aria-current={onCampaigns ? 'page' : undefined}><span aria-hidden="true">◉</span></Link>
+        <Link to="/cases" className={`rail-btn${on('/cases')}`} aria-label="Cases" title="Cases" aria-current={on('/cases') ? 'page' : undefined}><span aria-hidden="true">▤</span></Link>
+        <Link to="/mailboxes" className={`rail-btn${on('/mailboxes')}`} aria-label="Mailboxes" title="Mailboxes" aria-current={on('/mailboxes') ? 'page' : undefined}><span aria-hidden="true">✉</span></Link>
+        <Link to="/model" className={`rail-btn${on('/model')}`} aria-label="Model info" title="Model info" aria-current={on('/model') ? 'page' : undefined}><span aria-hidden="true">◐</span></Link>
+        <span className="rail-spacer" />
+        <Link to="/campaigns" className="rail-btn" aria-label="History" title="History"><span aria-hidden="true">◷</span></Link>
+        <Link to="/model" className="rail-btn" aria-label="Reports and charts" title="Reports"><span aria-hidden="true">◫</span></Link>
+        <span className="rail-btn" role="img" aria-label="AI assistant — Explain and summarize" title="AI — Explain / summarize"><span aria-hidden="true">✦</span></span>
+      </aside>
+      <aside className={`workspace-col${wsOpen ? ' open' : ''}`} aria-label="Workspace">
+        <div className="ws-label">Workspace</div>
+        <div className="ws-org" title={`${user.email} — ${user.role}`}>
+          <span className="avatar" style={{ background: '#5B6CFF' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role === 'Admin' ? 'Organization' : 'Personal workspace'}</span>
+        </div>
+        <nav aria-label="Threat folders" style={{ marginTop: 8 }}>
+          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#DC2626' }} aria-hidden="true" />Critical</Link>
+          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#EA580C' }} aria-hidden="true" />Phishing</Link>
+          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#F59E0B' }} aria-hidden="true" />BEC</Link>
+          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#22C55E' }} aria-hidden="true" />Spoofing / Clean</Link>
+        </nav>
+        <div className="ws-label" style={{ marginTop: 16 }}>Active Analysts</div>
+        <div className="ws-analysts">
+          <AvatarStack names={[user.email, 'arka.analyst', 'soc.ir', 'threat.hunt', 'case.lead', 'forensics.ai']} />
+        </div>
+        <button type="button" className="ws-invite" onClick={() => { setWsOpen(false); navigate('/login'); }}>+ Invite analyst</button>
+        <div className="health" title="backend reachability" style={{ marginTop: 14 }}>
           <span className="dot" style={{ background: health === 'ok' ? '#22c55e' : health === 'down' ? '#ef4444' : '#eab308' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
-        </span>
-        <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" aria-expanded={mobileMenuOpen}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </button>
-      </nav>
-
-      <div className={`mobile-menu${mobileMenuOpen ? ' open' : ''}`} role="dialog" aria-modal="true" aria-label="Navigation menu">
-        <div className="mobile-menu-panel">
-          <div className="mobile-menu-header">
-            <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
-            <button className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-          <nav className="mobile-menu-nav" aria-label="Main navigation">
-            <Link to="/dashboard" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Dashboard</Link>
-            <Link to="/campaigns" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Campaigns</Link>
-            <Link to="/cases" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Cases</Link>
-            <Link to="/mailboxes" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Mailboxes</Link>
-            <Link to="/model" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Model Info</Link>
-          </nav>
-          <div className="mobile-menu-footer">
-            <Link to="/privacy" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Privacy Policy</Link>
-            <Link to="/terms" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Terms of Service</Link>
-            <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); setMobileMenuOpen(false); }}>Sign out</Link>
+        </div>
+      </aside>
+      <div className="shell-main">
+        <div className="topbar">
+          <button className="mobile-menu-btn ws-toggle" onClick={() => setWsOpen((o) => !o)} aria-label="Toggle workspace panel" aria-expanded={wsOpen}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <label className="search-pill" htmlFor="topbar-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="topbar-search" type="search" placeholder="Search subject, sender, body..." value={topQ} onChange={(e) => setTopQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submitTopSearch(); }} aria-label="Search subject, sender, body" />
+            <kbd aria-hidden="true">⌘F</kbd>
+          </label>
+          <div className="topbar-actions">
+            <AlertBell />
+            <ThemeToggle />
+            <span className="presence-wrap" title={`${user.email} — ${user.role}`}>
+              <span className="avatar" style={{ background: '#5B6CFF' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
+              <span className="presence-dot" aria-hidden="true" />
+            </span>
+            <Link to="/" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }} style={{ fontSize: 12, fontWeight: 600 }}>Sign out</Link>
           </div>
         </div>
-      </div>
+        <div className="content-well">
 
       <ErrorBoundary>
-        <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-          <div id="main-content">
+        <Suspense fallback={<div className="sheet"><div className="skel" style={{ height: 120 }} /></div>}>
+          <div id="main-content" className="sheet">
             <Routes>
             <Route path="/api/v1/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
             <Route path="/oauth/:provider/callback" element={<OAuthCallbackHandler />} />
@@ -462,6 +482,8 @@ useEffect(() => {
         </div>
         <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
       </footer>
+        </div>
+      </div>
       <CookieConsent />
       <KeyboardShortcuts shortcuts={[
         { key: 'Ctrl+K', description: 'Focus search' },

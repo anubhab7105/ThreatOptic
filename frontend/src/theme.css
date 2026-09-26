@@ -590,6 +590,10 @@ pre.dump {
 .mobile-menu-nav { display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .mobile-menu-link { padding: 14px 16px; border-radius: 10px; font-size: 15px; font-weight: 600; color: var(--text); text-decoration: none; background: var(--panel-2); border: 1px solid var(--border); }
 .mobile-menu-footer { border-top: 1px solid var(--border); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 820px) {
+  .ws-toggle { display: inline-flex !important; align-items: center; justify-content: center; }
+  .topbar-actions .health, .topbar-actions a { display: none; }
+}
 @media (max-width: 768px) {
   .mobile-menu-btn { display: flex; align-items: center; justify-content: center; }
   .landing-nav-links, .nav-links { display: none; }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
+import { AISparkle, AuthPill, AvatarStack, Empty, MetricRing, ScoreBadge, SkeletonList, StatCard, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
 import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -316,6 +316,14 @@ export function LoginPage() {
   return (
     <div className="login-page-wrapper">
       <div className="login-card">
+        <div className="login-hero-pane">
+          <div style={{ fontWeight: 800, fontSize: 20 }}>◈ Netraksha</div>
+          <h2>Trace every email back to its source.</h2>
+          <p className="tag">AI-powered email threat detection, geolocation &amp; forensic intelligence.</p>
+          <div className="login-check"><span aria-hidden="true">✓</span> Header forensics &amp; SPF/DKIM/DMARC</div>
+          <div className="login-check"><span aria-hidden="true">✓</span> IP geolocation &amp; origin tracing</div>
+          <div className="login-check"><span aria-hidden="true">✓</span> Graph-correlated fraud campaigns</div>
+        </div>
         <div className="login-form-pane">
           <div className="login-breadcrumb">
             <Link to="/">Home</Link>
@@ -323,12 +331,14 @@ export function LoginPage() {
             <span>{mode === 'login' ? 'Sign in' : 'Register'}</span>
           </div>
 
-          <h2 className="login-form-title">SOC Forensics Lab</h2>
+          <h2 className="login-form-title">Netraksha</h2>
           <p className="login-form-sub">Sign in to access the email threat dashboard.</p>
 
-          <div className="login-tabs">
+          <div className="login-tabs" role="tablist" aria-label="Sign in or register">
             <button
               type="button"
+              role="tab"
+              aria-selected={mode === 'login'}
               className={`login-tab-btn ${mode === 'login' ? 'active' : ''}`}
               onClick={() => { setMode('login'); setErr(''); }}
             >
@@ -336,6 +346,8 @@ export function LoginPage() {
             </button>
             <button
               type="button"
+              role="tab"
+              aria-selected={mode === 'register'}
               className={`login-tab-btn ${mode === 'register' ? 'active' : ''}`}
               onClick={() => { setMode('register'); setErr(''); }}
             >
@@ -347,7 +359,7 @@ export function LoginPage() {
           {notice ? <div className="login-notice" role="status">{notice}</div> : null}
 
           <div className="login-field-group">
-            <label htmlFor="login-email" className="login-field-label">Email</label>
+            <label htmlFor="login-email" className="login-field-label">Username</label>
             <input
               id="login-email"
               type="email"
@@ -381,6 +393,8 @@ export function LoginPage() {
           >
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
+          <div className="login-seed">admin / admin123 · analyst / analyst123 (seeded demo accounts)</div>
+          <p className="sub" style={{ marginTop: 8, fontSize: 12 }}>Public self-registration → ReadOnly by default. Admin creation requires the out-of-band SETUP_TOKEN.</p>
         </div>
       </div>
 
@@ -708,6 +722,21 @@ export function Dashboard() {
   const [sevFilter, setSevFilter] = useState('all');
   const [notice, setNotice] = useState('');
   const [asyncMode, setAsyncMode] = useState(false);
+  const { user } = useAuth();
+  const displayName = user?.email ? user.email.split('@')[0].replace(/^[a-z]/, (c) => c.toUpperCase()) : 'Analyst';
+
+  useEffect(() => {
+    const onTopSearch = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { q?: string } | undefined;
+      if (detail && typeof detail.q === 'string') setQ(detail.q);
+    };
+    window.addEventListener('soc:top-search', onTopSearch);
+    return () => window.removeEventListener('soc:top-search', onTopSearch);
+  }, []);
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const triggerDownload = async (id: string, kind: 'pdf' | 'json') => {
     try {
@@ -812,22 +841,18 @@ export function Dashboard() {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Threat Dashboard' }]} />
-      <h1>Global Threat Dashboard</h1>
-      <p className="sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
-
-      <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <img src="/og-image.svg" alt="SOC Forensics Lab dashboard hero - email threat detection map and shield emblem" width={320} height={168} style={{ borderRadius: 8, border: '1px solid var(--border)', maxWidth: '100%', height: 'auto' }} loading="lazy" />
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <h3 style={{ marginTop: 0 }}>Headers, scores, and locations in one view</h3>
-          <p className="sub" style={{ marginBottom: 8 }}>Paste RFC822, upload .eml, or sync Gmail. Each message gets a 0-100 fraud score, SPF/DKIM/DMARC checks, VirusTotal and blocklist lookups, and an origin map with SHA-256 custody hash.</p>
-          <div className="row">
-            <Link to="/campaigns">View Campaigns →</Link>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <Link to="/cases">Open Cases →</Link>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <Link to="/model">Model Transparency →</Link>
-          </div>
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Threat Dashboard' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">{greetingFor()}, {displayName}!</h1>
+          <p className="greet-sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
+        </div>
+        <div className="greet-actions">
+          <button type="button" className="pill-filter" onClick={() => { setSevFilter('all'); scrollTo('all-emails'); }} title="Show this week's emails">This Week ▾</button>
+          <button type="button" className="btn-note" onClick={() => { scrollTo('ingest-panel'); setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300); }} title="Write an analysis note">Note</button>
+          <button type="button" className="btn-tpl" onClick={() => { setRaw(PHISH_SAMPLE); scrollTo('ingest-panel'); }} title="Load a sample template">Template</button>
+          <AISparkle onClick={() => scrollTo('recent-investigations')} />
+          <button type="button" className="btn-new" onClick={() => { scrollTo('ingest-panel'); setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300); }}>+ New Analysis</button>
         </div>
       </div>
 
@@ -845,28 +870,34 @@ export function Dashboard() {
               <StatCard label="Active campaigns" value={stats.active_campaigns} caption="shared infrastructure clusters" />
               <StatCard label="Classifications" value={Object.keys(stats.by_classification || {}).length} caption={Object.entries(stats.by_classification || {}).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'} />
             </div>
-            <div className="card" style={{ marginBottom: 18 }}>
-              <h3>Score distribution</h3>
-              <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
-                <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: '#ef4444' }} />
-                <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: '#f97316' }} />
-                <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: '#eab308' }} />
-                <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: '#22c55e' }} />
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginBottom: 18 }}>
+              <div className="card">
+                <h3>Score distribution</h3>
+                <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
+                  <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: '#DC2626' }} />
+                  <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: '#EA580C' }} />
+                  <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: '#F59E0B' }} />
+                  <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: '#22C55E' }} />
+                </div>
+                <div className="legend">
+                  <span><span className="sev" style={{ background: '#DC2626' }} />Critical {dist.critical}</span>
+                  <span><span className="sev" style={{ background: '#EA580C' }} />High {dist.high}</span>
+                  <span><span className="sev" style={{ background: '#F59E0B' }} />Medium {dist.medium}</span>
+                  <span><span className="sev" style={{ background: '#22C55E' }} />Low {dist.low}</span>
+                </div>
               </div>
-              <div className="legend">
-                <span><span className="sev" style={{ background: '#ef4444' }} />Critical {dist.critical}</span>
-                <span><span className="sev" style={{ background: '#f97316' }} />High {dist.high}</span>
-                <span><span className="sev" style={{ background: '#eab308' }} />Medium {dist.medium}</span>
-                <span><span className="sev" style={{ background: '#22c55e' }} />Low {dist.low}</span>
+              <div className="card">
+                <h3>Threat Overview</h3>
+                <ThreatGauge dist={dist} />
               </div>
             </div>
           </>
         )
       )}
 
-      <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card" id="ingest-panel" style={{ marginBottom: 18 }}>
         <h3>Ingest email for analysis</h3>
-        <textarea rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" />
+        <textarea id="ingest-raw" rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" />
         <div className="row" style={{ marginTop: 10 }}>
           <button onClick={submit} disabled={busy || !raw.trim()}>{busy ? 'Analyzing…' : 'Analyze email'}</button>
           <label className="row" style={{ gap: 6, fontSize: 12, color: 'var(--muted)' }} title="Queue via Celery worker instead of inline analysis">
@@ -884,7 +915,7 @@ export function Dashboard() {
       <GmailPanel onSynced={() => load()} />
 
       <div className="toolbar">
-        <input type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
+        <input id="dash-search" type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} />
         <button className="ghost" onClick={() => load()}>Search</button>
         <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
@@ -897,29 +928,76 @@ export function Dashboard() {
         <button className="ghost" onClick={() => load()}>Refresh</button>
       </div>
 
-      {loading ? <SkeletonList /> : filtered.length === 0 ? <Empty msg="No emails match. Ingest one above to get started." /> : (
-        <table className="tbl">
-          <thead><tr><th>Score</th><th>Subject</th><th>Sender</th><th>Classification</th><th>Received</th><th>Reports</th></tr></thead>
-          <tbody>
-            {filtered.map((e) => {
+      <div id="recent-investigations" className="card" style={{ marginBottom: 18 }}>
+        <h3>Recent Investigations</h3>
+        {loading ? <SkeletonList rows={2} /> : filtered.length === 0 ? <Empty msg="No investigations yet. Ingest one above to get started." /> : (
+          <div className="invest-grid" style={{ marginBottom: 0 }}>
+            {filtered.slice(0, 3).map((e) => {
               const s = scores[e.id];
               return (
-                <tr key={e.id}>
-                  <td>{s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}</td>
-                  <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
-                  <td><span className="mono">{e.sender_address}</span></td>
-                  <td>{s?.cls ?? '—'}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
-                  <td>
-                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</button>{' '}
-                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'json')}>JSON</button>
-                  </td>
-                </tr>
+                <Link key={e.id} to={`/email/${e.id}`} className="card invest-card hoverable" style={{ textDecoration: 'none', color: 'inherit', margin: 0 }}>
+                  <div className="invest-card-top">
+                    {s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}
+                    <AvatarStack names={[e.sender_address, displayName]} max={2} />
+                  </div>
+                  <div className="invest-subject">{e.subject || '(no subject)'}</div>
+                  <div className="invest-meta">{e.sender_address} · {formatDateTime(e.timestamp)}</div>
+                </Link>
               );
             })}
-          </tbody>
-        </table>
-      )}
+          </div>
+        )}
+      </div>
+
+      <div className="two-col" style={{ marginBottom: 18 }}>
+        <div className="card" id="all-emails" style={{ margin: 0 }}>
+          <h3>All Emails</h3>
+          {loading ? <SkeletonList /> : filtered.length === 0 ? <Empty msg="No emails match. Ingest one above to get started." /> : (
+            <table className="tbl">
+              <thead><tr><th>Subject</th><th>Sender</th><th>Received</th><th>Verdict</th><th>Reports</th></tr></thead>
+              <tbody>
+                {filtered.map((e) => {
+                  const s = scores[e.id];
+                  return (
+                    <tr key={e.id}>
+                      <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
+                      <td><span className="mono">{e.sender_address}</span></td>
+                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
+                      <td>
+                        {s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}
+                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{s?.cls ?? '—'}</div>
+                      </td>
+                      <td>
+                        <button className="ghost small" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</button>{' '}
+                        <button className="ghost small" onClick={() => triggerDownload(e.id, 'json')}>JSON</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="card" style={{ margin: 0 }}>
+          <h3>Activity Feed</h3>
+          {loading ? <SkeletonList rows={3} /> : filtered.length === 0 ? <Empty msg="Activity will appear once mail is ingested." /> : (
+            <ul className="activity-feed">
+              {filtered.slice(0, 5).map((e) => {
+                const s = scores[e.id];
+                return (
+                  <li key={e.id} className="activity-item">
+                    <span className="activity-dot" aria-hidden="true" />
+                    <div>
+                      <div>System scored sender as <b>{s?.cls ?? '—'} {s?.score ?? ''}</b></div>
+                      <div className="activity-time"><Link to={`/email/${e.id}`}>{(e.subject || '(no subject)').slice(0, 40)}</Link> · {formatDateTime(e.timestamp)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <InternalLinks current="/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
@@ -1103,7 +1181,7 @@ export function GraphSvg({ graph }: { graph: any }) {
       </div>
 
       {/* SVG Visualization Canvas */}
-      <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)', background: 'radial-gradient(circle at center, #111a33 0%, #080c18 100%)' }}>
+      <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border)' }}>
         <svg
           width="100%"
           viewBox={`0 0 ${w} ${h}`}
@@ -1384,7 +1462,7 @@ function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
       {rows.map((s) => {
         const c = s.contribution_to_score ?? 0;
         const w = (100 * Math.abs(c)) / maxAbs;
-        const bar = c > 0 ? '#ef4444' : c < 0 ? '#22c55e' : '#3b4a6b';
+        const bar = c > 0 ? '#FB923C' : c < 0 ? '#22C55E' : '#8A90A8';
         return (
           <div key={s.signal_name} style={{ marginBottom: 12 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -1470,18 +1548,39 @@ export function EmailView({ id }: { id: string }) {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Dashboard', href: '/' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
-      <Link to="/">← back to dashboard</Link>
-      <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Investigations', href: '/dashboard' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
+      <div className="doc-title-row">
+        <h1 className="doc-title">{d.email.subject || '(no subject)'}</h1>
+        <VerdictPill score={a.fraud_score ?? 0} classification={a.threat_classification} />
+        <div className="doc-tools">
+          <AISparkle onClick={() => setTab(1)} title="Explain this score" />
+          <button type="button" className="doc-tool-btn" title="More actions" aria-label="More actions">⋯</button>
+        </div>
+      </div>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
         received: <b>{formatDateTime(d.email.timestamp)}</b> ·{' '}
         <button className="ghost small" onClick={() => triggerDownload('pdf')}>forensic PDF</button>{' '}
         <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
       </p>
+      <div className="doc-section">
+        <div className="doc-rail" aria-hidden="true" />
+        <div>
+          <h3>Introduction</h3>
+          <p>
+            Summary: message from <span className="mono">{d.email.sender_address || 'unknown sender'}</span> scored{' '}
+            <b>{a.fraud_score ?? 0}</b> ({a.threat_classification || 'Unclassified'}) with action <b>{a.action_taken || '—'}</b>.
+            SPF/DKIM/DMARC: {(auth.spf?.status || '—').toUpperCase()} / {(auth.dkim?.status || '—').toUpperCase()} / {(auth.dmarc?.status || '—').toUpperCase()}.
+            {(a.nlp_cues_detected || []).length > 0 ? ` Key signals: ${(a.nlp_cues_detected || []).join(', ')}.` : ''}
+          </p>
+          <div style={{ marginTop: 8 }}>
+            <AvatarStack names={[d.email.sender_address || 'sender', 'analyst']} max={3} />
+          </div>
+        </div>
+      </div>
 
       {cases.length > 0 && (
-        <div className="row" style={{ marginTop: 8, marginBottom: 12, alignItems: 'center' }}>
+        <div className="row" id="email-case-row" style={{ marginTop: 8, marginBottom: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: 'var(--muted)' }}>Investigate:</span>
           <select value={caseId} onChange={(e) => setCaseId(e.target.value)} style={{ maxWidth: 260, fontSize: 12 }}>
             <option value="">Select an investigation case…</option>
@@ -1555,8 +1654,12 @@ export function EmailView({ id }: { id: string }) {
 
       {tab === 1 && (
         <div className="card">
-          <h3>Why this score?</h3>
+          <h3>Key Signals</h3>
+          <p className="sub" style={{ marginBottom: 10 }}>Weighted contribution of each signal to the final score — peach bars raise risk, green bars lower it.</p>
           <ScoreWhy breakdown={a.score_breakdown} score={a.fraud_score ?? 0} />
+          <div style={{ marginTop: 10 }}>
+            <AvatarStack names={['analyst', 'soc.ir']} max={2} />
+          </div>
         </div>
       )}
 
@@ -1630,16 +1733,22 @@ export function EmailView({ id }: { id: string }) {
                   Target: <b>{t.geolocation.city || t.geolocation.country || 'Coordinates'}</b>
                   {t.geolocation.source && <span> ({t.geolocation.source})</span>}
                 </div>
-                <iframe
-                  title="Geolocation map of email origin"
-                  width="100%"
-                  height="380"
-                  style={{ border: 0, borderRadius: 8 }}
-                  loading="lazy"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
-                />
+                <div className="rounded-map">
+                  <iframe
+                    title="Geolocation map of email origin"
+                    width="100%"
+                    height="380"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
+                  />
+                </div>
+                <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                  Origin IP <span className="mono">{t.origin_ip || '—'}</span>
+                  {t.geolocation?.city || t.geolocation?.country ? ` — ${t.geolocation.city || ''}${t.geolocation.city && t.geolocation.country ? ', ' : ''}${t.geolocation.country || ''}` : ''}
+                </p>
                 <p style={{ marginTop: 8 }}>
                   <a
                     target="_blank"
@@ -1660,11 +1769,20 @@ export function EmailView({ id }: { id: string }) {
       {tab === 4 && (
         <div className="card">
           <h3>Identity correlation</h3>
+          <p className="sub" style={{ marginBottom: 10 }}>Trace node graph — domain linked to related campaign entities.</p>
           <GraphSvg graph={graph} />
           <h3 style={{ marginTop: 12 }}>Raw graph</h3>
           <pre className="dump">{JSON.stringify(graph, null, 2)}</pre>
         </div>
       )}
+      <div className="doc-footer">
+        <AvatarStack names={['analyst', 'soc.ir']} max={2} />
+        <span>Last analyzed {formatDateTime(d.email.timestamp)}</span>
+        <span style={{ flex: 1 }} />
+        <button className="ghost small" onClick={() => document.getElementById('email-case-row')?.scrollIntoView({ behavior: 'smooth' })}>Add to case</button>
+        <button className="ghost small" onClick={() => triggerDownload('pdf')}>Export PDF</button>
+        <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
+      </div>
       <InternalLinks current="/email" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
@@ -1697,20 +1815,28 @@ export function Campaigns() {
   }, []);
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns' }]} />
-      <h1>Campaigns</h1>
-      <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
-      <img src="/og-image.svg" alt="Campaign clustering visualization - threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <p className="greet-sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
+        </div>
+        <div className="greet-actions">
+          <AISparkle onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} title="Summarize campaigns" />
+        </div>
+      </div>
       <Toast msg={err} />
       {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet - ingest more mail sharing IPs/domains." /> : (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {cards.map((k) => (
-            <div key={k.id} className="card">
-              <h3><Link to={`/campaign/${k.id}`}>{k.name}</Link></h3>
-              <div className="stat-num">{k.email_count} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>emails</span></div>
+            <div key={k.id} className="card hoverable">
+              <div className="invest-card-top">
+                <span className="badge info">{Math.round((k.confidence ?? 0) * 100)}% confidence</span>
+                <AvatarStack names={[(k.domains || [])[0] || k.name, 'analyst']} max={2} />
+              </div>
+              <h3 style={{ fontSize: 16 }}><Link to={`/campaign/${k.id}`} style={{ color: 'inherit' }}>{k.name}</Link></h3>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>{k.email_count} emails · IP <span className="mono">{k.ip}</span></div>
               <dl className="kv" style={{ gridTemplateColumns: '110px 1fr' }}>
-                <dt>Confidence</dt><dd><b>{Math.round(k.confidence * 100)}%</b></dd>
-                <dt>Shared IP</dt><dd><span className="mono">{k.ip}</span></dd>
                 <dt>ASN</dt><dd>{k.asn || '-'}</dd>
                 <dt>Domains</dt><dd>{(k.domains || []).map((d: string) => <span key={d} className="mono" style={{ marginRight: 4 }}>{d}</span>)}</dd>
                 <dt>First seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.first_seen)}</dd>
@@ -1754,14 +1880,29 @@ export function CampaignDetail({ id }: { id: string }) {
   if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><SkeletonList /></div>;
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: cardName }]} />
-      <Link to="/campaigns">← campaigns</Link>
-      <h1 style={{ marginTop: 8 }}>{d.card.name}</h1>
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns', href: '/campaigns' }, { label: cardName }]} />
+      <div className="doc-title-row">
+        <h1 className="doc-title">{d.card.name}</h1>
+        <span className="badge info">{Math.round((d.card.confidence ?? 0) * 100)}% confidence</span>
+        <div className="doc-tools">
+          <AvatarStack names={[d.card.ip || 'campaign', 'analyst']} max={2} />
+        </div>
+      </div>
       <p className="sub">
-        {d.card.email_count} emails · confidence {Math.round(d.card.confidence * 100)}% · IP <span className="mono">{d.card.ip}</span>
+        {d.card.email_count} emails · confidence {Math.round((d.card.confidence ?? 0) * 100)}% · IP <span className="mono">{d.card.ip}</span>
         {d.card.asn ? <> · ASN {d.card.asn}</> : null}
-        {' · '}<Link to="/">Dashboard</Link> · <Link to="/cases">Cases</Link>
+        {' · '}<Link to="/dashboard">Dashboard</Link> · <Link to="/cases">Cases</Link>
       </p>
+      <div className="doc-section">
+        <div className="doc-rail" aria-hidden="true" />
+        <div>
+          <h3>Introduction</h3>
+          <p>
+            Campaign detail reuses the doc-view — Introduction, Key Signals, Headers, Geo and Graph —
+            filtered to this campaign&apos;s entities ({d.card.email_count} emails sharing <span className="mono">{d.card.ip}</span>).
+          </p>
+        </div>
+      </div>
       <div className="card" style={{ marginBottom: 14 }}>
         <h3>Attribution graph (campaign nodes)</h3>
         <GraphSvg graph={d.graph} />
@@ -1822,19 +1963,35 @@ export function ModelInfo() {
   const per = m.per_class || {};
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Transparency' }]} />
-      <h1>Model Transparency</h1>
-      <p className="sub">
-        Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
-        ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
-      </p>
-      <img src="/og-image.svg" alt="Model metrics preview - accuracy and F1 visualization for SOC Forensics classifier" width={640} height={200} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
-      <div className="grid stats">
-        <StatCard label="Accuracy" value={`${Math.round((m.accuracy ?? 0) * 100)}%`} />
-        <StatCard label="Macro F1" value={(m.macro_f1 ?? 0).toFixed(3)} />
-        <StatCard label="Macro precision" value={(m.macro_precision ?? 0).toFixed(3)} />
-        <StatCard label="Macro recall" value={(m.macro_recall ?? 0).toFixed(3)} />
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Model Transparency' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <p className="greet-sub">
+            Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
+            ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
+          </p>
+        </div>
       </div>
+      <div className="metric-grid" style={{ marginBottom: 18 }}>
+        <div className="card metric-card">
+          <MetricRing pct={(m.accuracy ?? 0) * 100} />
+          <div className="metric-label">Accuracy</div>
+        </div>
+        <div className="card metric-card">
+          <MetricRing pct={(m.macro_f1 ?? 0) * 100} />
+          <div className="metric-label">Macro F1</div>
+        </div>
+        <div className="card metric-card">
+          <MetricRing pct={(m.macro_precision ?? 0) * 100} />
+          <div className="metric-label">Macro precision</div>
+        </div>
+        <div className="card metric-card">
+          <MetricRing pct={(m.macro_recall ?? 0) * 100} />
+          <div className="metric-label">Macro recall</div>
+        </div>
+      </div>
+      <p className="sub">Honest scope note: TF-IDF + LogisticRegression contributes 30% of the fraud score — see the present-stage note in the PRD.</p>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <div className="card">
           <h3>Per-class precision / recall / F1</h3>
@@ -1964,48 +2121,86 @@ export function Mailboxes() {
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
+  const googleConn = conns.find((m) => m.provider === 'google');
+  const msConn = conns.find((m) => m.provider === 'microsoft');
+
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Mailboxes' }]} />
-      <h1>Mailboxes</h1>
-      <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. All credentials and refresh tokens are encrypted server-side.</p>
-      <img src="/favicon.svg" alt="Mailbox connectors - secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Connected</h3>
-        {conns.length === 0 ? <Empty msg="No mailbox connected yet." /> : (
-          <table className="tbl">
-            <thead><tr><th>Provider</th><th>Account</th><th>Last poll</th><th></th></tr></thead>
-            <tbody>
-              {conns.map((m) => (
-                <tr key={m.provider + m.account_email}>
-                  <td><b>{m.provider}</b></td>
-                  <td><span className="mono">{m.account_email}</span></td>
-                  <td style={{ fontSize: 12 }}>{formatDateTime(m.last_poll_at)}</td>
-                  <td><button className="ghost small" onClick={() => disconnect(m.provider)}>Disconnect</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="row" style={{ marginTop: 10 }}>
-          <input
-            type="number"
-            min="1"
-            style={{ maxWidth: 110 }}
-            value={maxN}
-            onChange={(e) => setMaxN(e.target.value)}
-            placeholder="Count"
-            title="Max emails to sync (any number)"
-          />
-          <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
-          <Link to="/">Back to Dashboard</Link>
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Mailboxes' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <p className="greet-sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. All credentials and refresh tokens are encrypted server-side.</p>
         </div>
       </div>
-      <div className="card">
-        <h3>Connect Mailbox</h3>
+      <Toast msg={err} />
+      {notice && <Toast msg={notice} kind="info" />}
+      <div className="provider-grid" style={{ marginBottom: 14 }}>
+        <div className="card provider-card">
+          <div className="provider-top">
+            <span className={`provider-icon${googleConn ? '' : ' idle'}`} aria-hidden="true">G</span>
+            <div>
+              <p className="provider-name">Google Workspace</p>
+              <p className="provider-sub">{googleConn ? <span className="mono">{googleConn.account_email}</span> : 'Not connected'}</p>
+            </div>
+          </div>
+          {googleConn ? (
+            <>
+              <div className="row">
+                <input
+                  type="number"
+                  min="1"
+                  style={{ maxWidth: 110 }}
+                  value={maxN}
+                  onChange={(e) => setMaxN(e.target.value)}
+                  placeholder="Count"
+                  title="Max emails to sync (any number)"
+                />
+                <button className="btn-new" onClick={syncNow} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
+                <button className="ghost small" onClick={() => disconnect('google')}>Disconnect</button>
+              </div>
+              {googleConn.last_poll_at ? <p className="provider-sub">Last poll {formatDateTime(googleConn.last_poll_at)}</p> : null}
+              <p className="provider-sub" style={{ fontStyle: 'italic' }}>Encrypted refresh token stored · secret never shown</p>
+            </>
+          ) : (
+            <div className="row">
+              <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim()}>Connect Google</button>
+            </div>
+          )}
+        </div>
+        <div className="card provider-card">
+          <div className="provider-top">
+            <span className={`provider-icon${msConn ? '' : ' idle'}`} aria-hidden="true">M</span>
+            <div>
+              <p className="provider-name">Microsoft 365</p>
+              <p className="provider-sub">{msConn ? <span className="mono">{msConn.account_email}</span> : 'Not connected'}</p>
+            </div>
+          </div>
+          {msConn ? (
+            <>
+              <div className="row">
+                <button className="btn-new" onClick={syncNow} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
+                <button className="ghost small" onClick={() => disconnect('microsoft')}>Disconnect</button>
+              </div>
+              {msConn.last_poll_at ? <p className="provider-sub">Last poll {formatDateTime(msConn.last_poll_at)}</p> : null}
+              <p className="provider-sub" style={{ fontStyle: 'italic' }}>Encrypted refresh token stored · secret never shown</p>
+            </>
+          ) : (
+            <div className="row">
+              <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim()}>Connect Microsoft</button>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="sub" style={{ fontStyle: 'italic' }}>Sync speed note: real emails take tens of seconds through the forensic pipeline, so multi-mail syncs finish but run slowly (background job queued for a future phase).</p>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Connection settings</h3>
         <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
+          {conns.length > 0 ? (
+            <div style={{ fontSize: 13 }}>
+              Connected: {conns.map((m) => <span key={m.provider + m.account_email} className="mono" style={{ marginRight: 6 }}>{m.provider}:{m.account_email}</span>)}
+            </div>
+          ) : <Empty msg="No mailbox connected yet." />}
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match provider console)</label>
             <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" style={{ width: '100%' }} />
@@ -2021,7 +2216,7 @@ export function Mailboxes() {
             </button>
           </div>
           {showSecret && (
-            <div className="grid" style={{ gap: 8, marginTop: 4, padding: 10, background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
+            <div className="grid" style={{ gap: 8, marginTop: 4, padding: 10, border: '1px solid var(--border)', borderRadius: 6 }}>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client ID</label>
                 <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Leave blank to use server .env" style={{ width: '100%' }} />
@@ -2033,8 +2228,7 @@ export function Mailboxes() {
             </div>
           )}
           <div className="row" style={{ marginTop: 4 }}>
-            <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim()}>Connect Google</button>
-            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim()}>Connect Microsoft</button>
+            <Link to="/dashboard">Back to Dashboard</Link>
           </div>
         </div>
       </div>
@@ -2071,6 +2265,10 @@ export function Cases() {
   const [title, setTitle] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+
+  const headColor = (key: string) => (key === 'Open' ? '#9AA1B5' : key === 'Closed' ? '#22C55E' : '#5B6CFF');
+  const statusPill = (key: string) => (key === 'Open' ? 'verdict-draft' : key === 'Closed' ? 'verdict-low' : 'verdict-progress');
 
   const load = async () => {
     setLoading(true);
@@ -2118,10 +2316,16 @@ export function Cases() {
 
   return (
     <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Case Management' }]} />
-      <h1>Case Management</h1>
-      <p className="sub">Track investigations from triage to closure.</p>
-      <img src="/favicon.svg" alt="Case management kanban board - investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
+      <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Case Management' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <p className="greet-sub">Track investigations from triage to closure.</p>
+        </div>
+        <div className="greet-actions">
+          <span className="pill-filter" title="Cases in scope">This Week · {cases.length} cases</span>
+        </div>
+      </div>
       <Toast msg={err} />
       <div className="row" style={{ marginBottom: 16 }}>
         <input type="text" style={{ maxWidth: 360 }} value={title} onChange={(e) => setTitle(e.target.value)}
@@ -2133,19 +2337,31 @@ export function Cases() {
         <div className="kanban">
           {COLS.map((c) => (
             <div key={c.key} className="kcol">
-              <h3><span className="sev" style={{ background: severityColor(c.key === 'Open' ? 'high' : c.key === 'Closed' ? 'low' : 'medium') }} />{c.key} ({cases.filter((k) => k.status === c.key).length})</h3>
+              <div className="kcol-head" style={{ background: headColor(c.key) }}>{c.key === 'InProgress' ? 'In Progress' : c.key} {cases.filter((k) => k.status === c.key).length}</div>
               {cases.filter((k) => k.status === c.key).map((k) => (
                 <div key={k.id} className="kcard">
+                  <div className="invest-card-top">
+                    <span className={`verdict-pill ${statusPill(k.status)}`}>
+                      <span className="ws-dot" style={{ background: severityColor(k.status === 'Open' ? 'high' : k.status === 'Closed' ? 'low' : 'medium') }} aria-hidden="true" />
+                      {k.status === 'InProgress' ? 'In Progress' : k.status}
+                    </span>
+                    <button type="button" className="doc-tool-btn" style={{ width: 30, height: 30 }} aria-label={`Actions for ${k.title}`} title="Actions" aria-expanded={menuOpen === k.id} onClick={() => setMenuOpen(menuOpen === k.id ? null : k.id)}>⋯</button>
+                  </div>
                   <b>{k.title}</b>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     <span className="mono">{k.id.slice(0, 8)}</span> · {k.email_ids?.length ?? 0} email(s)
                   </div>
-                  <div className="row" style={{ marginTop: 8 }}>
-                    {COLS.filter((x) => x.key !== c.key).map((x) => (
-                      <button key={x.key} className="ghost small" onClick={() => move(k.id, x.key)}>{x.key}</button>
-                    ))}
-                    {isAdmin && <button className="danger small" onClick={() => remove(k.id)}>Delete</button>}
+                  <div style={{ marginTop: 8 }}>
+                    <AvatarStack names={[k.title, 'analyst']} max={2} />
                   </div>
+                  {menuOpen === k.id && (
+                    <div className="row" style={{ marginTop: 8 }}>
+                      {COLS.filter((x) => x.key !== c.key).map((x) => (
+                        <button key={x.key} className="ghost small" onClick={() => { setMenuOpen(null); void move(k.id, x.key); }}>{x.key === 'InProgress' ? 'In Progress' : x.key}</button>
+                      ))}
+                      {isAdmin && <button className="danger small" onClick={() => remove(k.id)}>Delete</button>}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -2174,9 +2390,11 @@ export function PrivacyPolicy() {
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Privacy Policy' }]} />
-      <h1>Privacy Policy</h1>
-      <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
-      <div className="card">
+      <div className="utility-canvas">
+        <div className="utility-card">
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Home &gt; Privacy Policy</div>
+          <h1 style={{ margin: '8px 0 4px' }}>Privacy Policy</h1>
+          <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
         <h3>What we collect</h3>
         <p>Analyst credentials (email, role via Supabase Auth), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
         <h3>How we use email content</h3>
@@ -2187,6 +2405,7 @@ export function PrivacyPolicy() {
         <p>Request access or deletion of your analyst account and ingested data via hello@socforensics.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
         <h3>Data location</h3>
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
+        </div>
       </div>
       <InternalLinks current="/privacy" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
@@ -2210,19 +2429,22 @@ export function TermsConditions() {
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Terms and Conditions' }]} />
-      <h1>Terms and Conditions</h1>
-      <p className="sub">Effective 20 Sep 2026 - Use of socforensics.io is governed by these terms.</p>
-      <div className="card">
-        <h3>Acceptable use</h3>
-        <p>Upload only mail you are authorized to analyze. Do not ingest illegal content or attempt to bypass authentication, retrain the classifier without approval, or scrape threat intel feeds.</p>
-        <h3>Forensic reports</h3>
-        <p>Scores and classifications are investigative aids, not legal guarantees. Verify with SPF, DKIM, headers, and intel hits before action.</p>
-        <h3>Availability</h3>
-        <p>Service is provided as-is. The team may update scoring weights, retention, and polling intervals. Check Model Transparency for current metrics.</p>
-        <h3>Liability</h3>
-        <p>To the full extent permitted by law, SOC Forensics Lab is not liable for indirect damages from missed or flagged mail.</p>
-        <h3>Contact</h3>
-        <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
+      <div className="utility-canvas">
+        <div className="utility-card">
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Home &gt; Terms and Conditions</div>
+          <h1 style={{ margin: '8px 0 4px' }}>Terms and Conditions</h1>
+          <p className="sub">Effective 20 Sep 2026 - Use of socforensics.io is governed by these terms.</p>
+          <h3>Acceptable use</h3>
+          <p>Upload only mail you are authorized to analyze. Do not ingest illegal content or attempt to bypass authentication, retrain the classifier without approval, or scrape threat intel feeds.</p>
+          <h3>Forensic reports</h3>
+          <p>Scores and classifications are investigative aids, not legal guarantees. Verify with SPF, DKIM, headers, and intel hits before action.</p>
+          <h3>Availability</h3>
+          <p>Service is provided as-is. The team may update scoring weights, retention, and polling intervals. Check Model Transparency for current metrics.</p>
+          <h3>Liability</h3>
+          <p>To the full extent permitted by law, SOC Forensics Lab is not liable for indirect damages from missed or flagged mail.</p>
+          <h3>Contact</h3>
+          <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
+        </div>
       </div>
       <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
