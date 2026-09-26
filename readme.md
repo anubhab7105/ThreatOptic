@@ -62,6 +62,7 @@ There is **no SQLite fallback for the app** (only the pytest escape hatch via
 `TEST_DATABASE_URL`); `DATABASE_URL` is required and migrations run
 automatically at boot, so there is no `alembic upgrade head` step.
 
+
 ```bash
 cd backend
 python3 -m pip install -r requirements.txt
