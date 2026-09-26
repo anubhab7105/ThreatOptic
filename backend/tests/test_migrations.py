@@ -918,7 +918,7 @@ def _run_migrations(url: str, revision: str) -> None:
             # skipping env.py — and env.py is exactly what resolves its own
             # URL from ambient settings instead of the one we were given.
             ctx = MigrationContext.configure(
-                conn, fn=lambda heads, context: script._upgrade(heads, revision)
+                conn, opts={"fn": lambda heads, context: script._upgrade(heads, revision)}
             )
             with ctx.begin_transaction():
                 ctx.run_migrations()
