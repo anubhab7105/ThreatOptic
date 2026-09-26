@@ -34,6 +34,19 @@ with `role "authenticated" does not exist`, which aborts the upgrade chain and
 takes the whole application down at boot. Since the policies are inert without
 those constructs anyway (see above), skipping them off-Supabase loses nothing
 and is strictly better than an unbootable database.
+
+A fourth, added when the same revision turned out to be broken on Supabase
+itself: every `auth.uid()` comparison below is cast with `::text`. The
+application stores identifiers as `String(36)` — `users.id`, `organization_id`,
+`user_id` are all `varchar` — while `auth.uid()` returns `uuid`. Postgres has
+no `varchar = uuid` operator, so the uncast form died at CREATE POLICY with
+
+    UndefinedFunction: operator does not exist: character varying = uuid
+
+which is just as fatal as the missing role: init_db() turns a failed upgrade
+into a hard boot failure. Cast the function, never the column — `uuid::text`
+cannot fail, whereas `users.id::uuid` would raise on any row whose id is not a
+well-formed UUID. Do not remove these casts; they are load-bearing.
 """
 from typing import Sequence, Union
 
@@ -64,9 +77,9 @@ _ORG_RULE = """
         AND (
             organization_id IS NOT NULL
             AND organization_id = (
-                SELECT organization_id FROM users WHERE id = auth.uid()
+                SELECT organization_id FROM users WHERE id = auth.uid()::text
             )
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+            OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
     WITH CHECK (
@@ -74,9 +87,9 @@ _ORG_RULE = """
         AND (
             organization_id IS NOT NULL
             AND organization_id = (
-                SELECT organization_id FROM users WHERE id = auth.uid()
+                SELECT organization_id FROM users WHERE id = auth.uid()::text
             )
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+            OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
 """
@@ -89,9 +102,9 @@ _EMAIL_RULE = """
             SELECT id FROM email_records
             WHERE organization_id IS NOT NULL
               AND organization_id = (
-                  SELECT organization_id FROM users WHERE id = auth.uid()
+                  SELECT organization_id FROM users WHERE id = auth.uid()::text
               )
-              OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+              OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
     WITH CHECK (
@@ -100,9 +113,9 @@ _EMAIL_RULE = """
             SELECT id FROM email_records
             WHERE organization_id IS NOT NULL
               AND organization_id = (
-                  SELECT organization_id FROM users WHERE id = auth.uid()
+                  SELECT organization_id FROM users WHERE id = auth.uid()::text
               )
-              OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+              OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
 """
@@ -112,15 +125,15 @@ _USER_RULE = """
     USING (
         auth.uid() IS NOT NULL
         AND (
-            user_id = auth.uid()
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+            user_id = auth.uid()::text
+            OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
     WITH CHECK (
         auth.uid() IS NOT NULL
         AND (
-            user_id = auth.uid()
-            OR (SELECT role FROM users WHERE id = auth.uid()) = 'Admin'
+            user_id = auth.uid()::text
+            OR (SELECT role FROM users WHERE id = auth.uid()::text) = 'Admin'
         )
     )
 """
