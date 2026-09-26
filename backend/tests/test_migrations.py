@@ -888,6 +888,37 @@ def test_the_drift_fix_covers_exactly_the_five_vault_columns() -> None:
 DRIFT_URL = os.environ.get("DRIFT_TEST_DATABASE_URL")
 
 
+def _run_migrations(url: str, revision: str) -> None:
+    """Run the migration chain against `url`, bypassing alembic/env.py.
+
+    Deliberately not `alembic.command.upgrade()`. `env.py:23-24` resolves its
+    own URL from `get_settings().resolved_db_url()` and ignores both
+    `sqlalchemy.url` in the config and `-x` on the command line, so a Config
+    pointed at a scratch database silently migrates whatever DATABASE_URL the
+    ambient settings hold. That already happened once during this work: the
+    scratch fixture stamped the developer's local database with a revision
+    that no longer existed and left it unbootable. Driving the context
+    directly means the URL passed in is the URL used.
+    """
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+
+    engine = sa.create_engine(url, future=True)
+    try:
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            with ctx.begin_transaction():
+                ctx.run_migrations(script=script, destination=revision)
+    finally:
+        engine.dispose()
+
+
 @pytest.fixture
 def populated_db():
     """A database migrated to `b7c2d1a9e4f5` and seeded with real rows.
@@ -901,22 +932,17 @@ def populated_db():
     if not DRIFT_URL.startswith("postgresql"):
         pytest.skip("DRIFT_TEST_DATABASE_URL must be PostgreSQL: ADD COLUMN "
                     "NOT NULL backfill is Postgres-specific")
-    import alembic.command as alembic_command
-    from alembic.config import Config
 
-    root = pathlib.Path(__file__).resolve().parents[1]
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.begin() as conn:
+        assert conn.execute(sa.text("SELECT current_database()")).scalar() in DRIFT_URL, (
+            "refusing to run: the engine is not connected to the database named "
+            "in DRIFT_TEST_DATABASE_URL"
+        )
         conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
     engine.dispose()
 
-    def _cfg() -> Config:
-        cfg = Config(str(root / "alembic.ini"))
-        cfg.set_main_option("script_location", str(root / "alembic"))
-        cfg.set_main_option("sqlalchemy.url", DRIFT_URL)
-        return cfg
-
-    alembic_command.upgrade(_cfg(), "b7c2d1a9e4f5")
+    _run_migrations(DRIFT_URL, "b7c2d1a9e4f5")
 
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.begin() as conn:
@@ -962,9 +988,7 @@ def test_not_null_add_backfills_existing_rows(populated_db, table: str, column: 
     the add succeeding while leaving NULLs that the NOT NULL promise forbids
     and that `coalesce(..., "")` in the application would silently mask.
     """
-    import alembic.command as alembic_command
-
-    alembic_command.upgrade(populated_db, "head")
+    _run_migrations(DRIFT_URL, "head")
 
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.connect() as conn:
@@ -980,9 +1004,7 @@ def test_not_null_add_backfills_existing_rows(populated_db, table: str, column: 
 
 def test_existing_rows_survive_the_drift_migration(populated_db) -> None:
     """A schema migration must not disturb the data already in the table."""
-    import alembic.command as alembic_command
-
-    alembic_command.upgrade(populated_db, "head")
+    _run_migrations(DRIFT_URL, "head")
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.connect() as conn:
         token, address = conn.execute(
@@ -997,9 +1019,7 @@ def test_existing_rows_survive_the_drift_migration(populated_db) -> None:
 
 def test_case_status_is_constrained_on_a_migrated_database(populated_db) -> None:
     """`ck_cases_status` must actually reject a bad status after the upgrade."""
-    import alembic.command as alembic_command
-
-    alembic_command.upgrade(populated_db, "head")
+    _run_migrations(DRIFT_URL, "head")
     engine = sa.create_engine(DRIFT_URL, future=True)
     with engine.begin() as conn:
         conn.execute(sa.text(
@@ -1027,10 +1047,9 @@ def test_the_drift_migration_is_idempotent(populated_db) -> None:
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
 
-    import alembic.command as alembic_command
     import alembic.op as alembic_op
 
-    alembic_command.upgrade(populated_db, "head")
+    _run_migrations(DRIFT_URL, "head")
     mod = _load_drift_migration()
 
     engine = sa.create_engine(DRIFT_URL, future=True)
