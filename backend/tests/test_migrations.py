@@ -39,6 +39,27 @@ def _load():
     return mod
 
 
+DRIFT_MIGRATION = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "e5a1c93d7b28_add_missing_encrypted_columns_and_indexes.py"
+)
+
+
+def _load_drift_migration():
+    """Import the drift revision so its declared scope can be asserted.
+
+    Safe to import: `alembic.op` is a proxy that only needs a live context
+    when an operation is actually invoked, and nothing here invokes one.
+    """
+    spec = importlib.util.spec_from_file_location("drift_migration", DRIFT_MIGRATION)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
 rls = _load()
 
 
@@ -616,3 +637,409 @@ def test_an_admin_sees_across_tenants(tenancy):
         "the deliberate cross-tenant role the application also grants"
     )
 
+
+
+# ---------------------------------------------------------------------------
+# models-vs-migrations drift
+# ---------------------------------------------------------------------------
+#
+# The initial revision `834dc871451e` predates the OAuth/mailbox vault work and
+# was never updated. Five columns the ORM selects on every request
+# (`app/routers/gmail.py` reads three of them, `app/services/mailbox_poll.py`
+# decrypts them) existed in `app/models.py` but in no revision, so a database
+# built purely from migrations booted, served /health, and then 500'd on every
+# mailbox operation with `UndefinedColumn`. Nothing caught it because nothing
+# compared the two.
+#
+# These tests are the CI check that does. They read the migration sources
+# rather than a live database, so they run in the default SQLite suite and in
+# every PR — the alternative (autogenerate against a scratch database) is
+# opt-in and only runs when `MIGRATION_DRIFT_DATABASE_URL` is set.
+
+VERSIONS_DIR = MIGRATION.parent
+
+_CREATE_TABLE = re.compile(r"""op\.create_table\(\s*['"](?P<table>[A-Za-z0-9_]+)['"]""")
+_ADD_COLUMN = re.compile(
+    r"""op\.add_column\(\s*['\"](?P<table>[A-Za-z0-9_]+)['\"]\s*,\s*"""
+    r"""sa\.Column\(\s*['\"](?P<column>[A-Za-z0-9_]+)['\"]"""
+)
+_SA_COLUMN = re.compile(r"""sa\.Column\(\s*['\"](?P<column>[A-Za-z0-9_]+)['\"]""")
+_OP_CALL = re.compile(r"^\s*op\.[a-z_]+\(")
+# b7c2d1a9e4f5 adds users.email through Alembic's batch_alter_table helper,
+# where the table is named once and the columns are added to the batch
+# afterwards, so the column name appears without a table name beside it.
+_BATCH_TABLE = re.compile(r"""batch_alter_table\(\s*['\"](?P<table>[A-Za-z0-9_]+)['\"]""")
+_BATCH_ADD = re.compile(
+    r"""batch\.add_column\(\s*sa\.Column\(\s*['\"](?P<column>[A-Za-z0-9_]+)['\"]"""
+)
+
+# The five columns this finding is about, named individually so a regression
+# names the exact column rather than reporting a set difference.
+_VAULT_COLUMNS = {
+    "gmail_accounts": ("encrypted_client_id", "encrypted_client_secret"),
+    "mailbox_connections": ("encrypted_client_id", "encrypted_client_secret"),
+    "oauth_states": ("encrypted_client_secret",),
+}
+
+_MISSING_INDEXES = {
+    "users": "ix_users_organization_id",
+    "email_records": "ix_email_records_timestamp",
+    "mailbox_connections": "ix_mailbox_connections_organization_id",
+}
+
+
+def _created_columns() -> dict[str, set[str]]:
+    """table -> every column the migration chain creates, across all revisions.
+
+    Combines two passes because the three forms are written differently in
+    practice: `op.create_table` is scanned line by line (a create_table body
+    ends at the next `op.` call at any indentation, which is enough structure
+    for these files and avoids a real AST walk), while `op.add_column` and
+    `batch.add_column` are matched against the whole source with
+    whitespace-tolerant patterns — alembic's own formatter wraps a call across
+    three lines (`op.add_column(\n  'table',\n  sa.Column('c',`), so a
+    per-line match silently misses it.
+
+    Known limit: a column added in a loop over unquoted variables is invisible
+    to this scan. Revisions must therefore spell out their `op.add_column`
+    calls, which `test_the_drift_fix_covers_exactly_the_five_vault_columns`
+    enforces for the revision that closes this finding.
+    """
+    created: dict[str, set[str]] = {}
+    for path in sorted(VERSIONS_DIR.glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        current: str | None = None
+        batch_table: str | None = None
+        for line in source.splitlines():
+            # create_table must be matched *before* the generic op-call check:
+            # `op.create_table(` is itself an op call, so testing for a
+            # terminating op call first silently drops every table after the
+            # first one.
+            started = _CREATE_TABLE.search(line)
+            if started:
+                current = started.group("table")
+                created.setdefault(current, set())
+                for col in _SA_COLUMN.finditer(line):
+                    created[current].add(col.group("column"))
+                continue
+            batched = _BATCH_TABLE.search(line)
+            if batched:
+                batch_table = batched.group("table")
+                created.setdefault(batch_table, set())
+                continue
+            batch_add = _BATCH_ADD.search(line)
+            if batch_add and batch_table:
+                created.setdefault(batch_table, set()).add(batch_add.group("column"))
+                continue
+            if current is not None:
+                if _OP_CALL.match(line):
+                    current = None  # previous create_table body is finished
+                    continue
+                col = _SA_COLUMN.search(line)
+                if col:
+                    created[current].add(col.group("column"))
+        for match in _ADD_COLUMN.finditer(source):
+            created.setdefault(match.group("table"), set()).add(match.group("column"))
+    return created
+
+
+def _orm_columns() -> dict[str, set[str]]:
+    from app import models  # noqa: F401  (populates Base.metadata)
+    from app.database import Base
+
+    return {t.name: {c.name for c in t.columns} for t in Base.metadata.tables.values()}
+
+
+@pytest.mark.parametrize(
+    "table,column",
+    [(t, c) for t, cols in _VAULT_COLUMNS.items() for c in cols],
+)
+def test_vault_column_is_created_by_the_migration_chain(table: str, column: str) -> None:
+    """Each vault column the ORM selects must exist after `alembic upgrade head`.
+
+    This is the direct regression test for the fresh-deploy breakage: before
+    the fix every one of these five was absent from every revision.
+    """
+    assert column in _created_columns().get(table, set()), (
+        f"{table}.{column} is declared in app/models.py and read by "
+        f"app/routers/gmail.py and app/services/mailbox_poll.py, but no Alembic "
+        f"revision creates it — a database built from migrations will raise "
+        f"UndefinedColumn on the first mailbox request"
+    )
+
+
+@pytest.mark.parametrize("table,index", sorted(_MISSING_INDEXES.items()))
+def test_declared_index_is_created_by_the_migration_chain(table: str, index: str) -> None:
+    """An index=True column with no matching index is a silent full scan."""
+    source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(VERSIONS_DIR.glob("*.py")))
+    assert index in source, (
+        f"{index} is declared via index=True in app/models.py but no revision "
+        f"creates it; every {table} query filtering on that column degrades "
+        f"to a sequential scan"
+    )
+
+
+def test_every_orm_column_exists_in_the_migration_chain() -> None:
+    """The general form of the check: no ORM column may be migration-absent.
+
+    Deliberately excludes nothing. The naive-DateTime and
+    `uq_email_hash_org` findings are separate revisions, but they differ from
+    the models in *type*/*constraint shape* rather than in column presence, so
+    they do not trip this test — column presence was exactly the gap here.
+    """
+    created = _created_columns()
+    missing = {
+        table: sorted(cols - created.get(table, set()))
+        for table, cols in _orm_columns().items()
+        if cols - created.get(table, set())
+    }
+    assert not missing, (
+        "columns declared in app/models.py but never created by any Alembic "
+        f"revision (fresh deploys will break on these): {missing}"
+    )
+
+
+def test_every_orm_table_is_created_by_the_migration_chain() -> None:
+    """A whole missing table is the same bug, one level up."""
+    created = _created_columns()
+    assert set(_orm_columns()) <= set(created), (
+        f"tables in app/models.py with no create_table in any revision: "
+        f"{sorted(set(_orm_columns()) - set(created))}"
+    )
+
+
+def test_case_status_check_constraint_is_created_by_the_migration_chain() -> None:
+    """`investigation_cases.status` must be constrained to the fixed enum.
+
+    Alembic's autogenerate does not emit CHECK-constraint diffs, so this gap
+    survives a models-vs-database diff and has to be pinned structurally.
+    Without it a database built purely from migrations accepts any status
+    string, while the ORM claims a three-value enum.
+    """
+    source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(VERSIONS_DIR.glob("*.py")))
+    assert "ck_cases_status" in source, (
+        "app/models.py:54 declares CheckConstraint(..., name='ck_cases_status') "
+        "but no revision creates it, so investigation_cases.status is "
+        "unconstrained on a migrated database"
+    )
+
+
+def test_the_drift_fix_covers_exactly_the_five_vault_columns() -> None:
+    """Pin the finding's scope in the revision itself, not in prose.
+
+    Production was created before these columns existed, so one may have been
+    added out of band since; an unguarded `ADD COLUMN` would abort the upgrade
+    chain with `column ... already exists`, and init_db() turns a failed
+    upgrade into a hard boot failure. So the add must be inspector-guarded.
+    """
+    mod = _load_drift_migration()
+    assert set(mod._VAULT_COLUMNS) == {
+        ("gmail_accounts", "encrypted_client_id"),
+        ("gmail_accounts", "encrypted_client_secret"),
+        ("mailbox_connections", "encrypted_client_id"),
+        ("mailbox_connections", "encrypted_client_secret"),
+        ("oauth_states", "encrypted_client_secret"),
+    }
+
+    src = DRIFT_MIGRATION.read_text(encoding="utf-8")
+    upgrade_body = src.split("def upgrade", 1)[1].split("def downgrade", 1)[0]
+
+    # Every declared column must have a literal, guarded op.add_column, or the
+    # structural drift scan above cannot see it and the gap silently returns.
+    for table, column in mod._VAULT_COLUMNS:
+        guard = f'"{column}" not in _columns(_inspector(), "{table}")'
+        assert guard in upgrade_body, (
+            f"{table}.{column} has no inspector guard in upgrade(); an "
+            f"unconditional add aborts the upgrade chain wherever the column "
+            f"already exists"
+        )
+        assert f'"{table}"' in upgrade_body, f"{table} add is missing"
+
+    assert upgrade_body.count("op.add_column(") == 5, (
+        "the finding is exactly five columns; a sixth or a fourth means this "
+        "revision and its test have drifted apart"
+    )
+    # NOT NULL adds need a server default or they fail on any populated table.
+    assert upgrade_body.count("server_default=sa.text") == 5, (
+        "every NOT NULL add needs a server default so existing rows backfill; "
+        "a bare ADD COLUMN NOT NULL fails as soon as the table has one row"
+    )
+    assert upgrade_body.count("server_default=None") == 5, (
+        "every server default must be dropped afterwards, or the schema never "
+        "matches Base.metadata and this drift check fails forever"
+    )
+
+
+# ---------------------------------------------------------------------------
+# the backfill path, against a real populated database
+# ---------------------------------------------------------------------------
+#
+# Production sits at `b7c2d1a9e4f5` with rows already in gmail_accounts,
+# mailbox_connections and oauth_states, and none of the five columns this
+# revision adds. That makes the populated-table path the one that actually
+# ships, and it is exactly where the obvious implementation dies:
+# `ADD COLUMN ... NOT NULL` fails on Postgres the moment the table holds a
+# single row. The server default is the whole fix, so it is worth proving
+# rather than asserting.
+#
+# Opt-in: point DRIFT_TEST_DATABASE_URL at a scratch PostgreSQL. It is
+# dropped and rebuilt, so use a database you do not mind losing.
+
+DRIFT_URL = os.environ.get("DRIFT_TEST_DATABASE_URL")
+
+
+@pytest.fixture
+def populated_db():
+    """A database migrated to `b7c2d1a9e4f5` and seeded with real rows.
+
+    Deliberately not reusing the RLS fixture: this one needs the *migration
+    chain* to have run, then rows inserted, then the chain resumed — which is
+    the production sequence and cannot be reproduced by create_all.
+    """
+    if not DRIFT_URL:
+        pytest.skip("set DRIFT_TEST_DATABASE_URL to a scratch PostgreSQL")
+    if not DRIFT_URL.startswith("postgresql"):
+        pytest.skip("DRIFT_TEST_DATABASE_URL must be PostgreSQL: ADD COLUMN "
+                    "NOT NULL backfill is Postgres-specific")
+    import alembic.command as alembic_command
+    from alembic.config import Config
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+    engine.dispose()
+
+    def _cfg() -> Config:
+        cfg = Config(str(root / "alembic.ini"))
+        cfg.set_main_option("script_location", str(root / "alembic"))
+        cfg.set_main_option("sqlalchemy.url", DRIFT_URL)
+        return cfg
+
+    alembic_command.upgrade(_cfg(), "b7c2d1a9e4f5")
+
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO users (id, role, email, created_at) "
+            "VALUES ('u1', 'analyst', 'a@x.test', now())"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO gmail_accounts (id, user_id, gmail_address, refresh_token, "
+            "client_id, last_sync_at, created_at, updated_at) "
+            "VALUES ('g1', 'u1', 'a@x.test', 'v1$abc', '', NULL, now(), now())"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO mailbox_connections (id, user_id, provider, account_email, "
+            "encrypted_refresh_token, last_poll_at, created_at, updated_at) "
+            "VALUES ('m1', 'u1', 'google', 'a@x.test', 'v1$xyz', NULL, now(), now())"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO oauth_states (id, state, user_id, provider, redirect_uri, "
+            "client_id, code_verifier, expires_at, used, created_at) "
+            "VALUES ('o1', 'st1', 'u1', 'google', 'http://x.test', 'ci', 'cv', "
+            "now() + interval '1 hour', false, now())"
+        ))
+    engine.dispose()
+    return _cfg
+
+
+@pytest.mark.parametrize(
+    "table,column",
+    [
+        ("gmail_accounts", "encrypted_client_id"),
+        ("gmail_accounts", "encrypted_client_secret"),
+        ("mailbox_connections", "encrypted_client_id"),
+        ("mailbox_connections", "encrypted_client_secret"),
+        ("oauth_states", "encrypted_client_secret"),
+    ],
+)
+def test_not_null_add_backfills_existing_rows(populated_db, table: str, column: str) -> None:
+    """The new column must exist and be '' on rows written before the upgrade.
+
+    Two failure modes this catches, both fatal in production: the upgrade
+    aborting outright (`ADD COLUMN ... NOT NULL` on a populated table), and
+    the add succeeding while leaving NULLs that the NOT NULL promise forbids
+    and that `coalesce(..., "")` in the application would silently mask.
+    """
+    import alembic.command as alembic_command
+
+    alembic_command.upgrade(populated_db, "head")
+
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.connect() as conn:
+        value = conn.execute(
+            sa.text(f"SELECT {column} FROM {table}")
+        ).scalar()
+    engine.dispose()
+    assert value == "", (
+        f"{table}.{column} should be backfilled to '' on pre-existing rows, "
+        f"got {value!r}"
+    )
+
+
+def test_existing_rows_survive_the_drift_migration(populated_db) -> None:
+    """A schema migration must not disturb the data already in the table."""
+    import alembic.command as alembic_command
+
+    alembic_command.upgrade(populated_db, "head")
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.connect() as conn:
+        token, address = conn.execute(
+            sa.text("SELECT refresh_token, gmail_address FROM gmail_accounts")
+        ).one()
+    engine.dispose()
+    assert (token, address) == ("v1$abc", "a@x.test"), (
+        "the vault ciphertext and address of a pre-existing row were altered by "
+        "the migration"
+    )
+
+
+def test_case_status_is_constrained_on_a_migrated_database(populated_db) -> None:
+    """`ck_cases_status` must actually reject a bad status after the upgrade."""
+    import alembic.command as alembic_command
+
+    alembic_command.upgrade(populated_db, "head")
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO investigation_cases (id, title, status, email_ids, "
+            "notes, created_at, updated_at) "
+            "VALUES ('c1', 'T', 'Open', '[]', '', now(), now())"
+        ))
+    with pytest.raises(sa.exc.IntegrityError, match="ck_cases_status"):
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "INSERT INTO investigation_cases (id, title, status, email_ids, "
+                "notes, created_at, updated_at) "
+                "VALUES ('c2', 'T', 'Bogus', '[]', '', now(), now())"
+            ))
+    engine.dispose()
+
+
+def test_the_drift_migration_is_idempotent(populated_db) -> None:
+    """Re-running upgrade() must be a no-op, not `column already exists`.
+
+    This is what the inspector guards buy, and it is the difference between a
+    migration that is safe to retry and one that bricks the boot: init_db()
+    turns a failed `alembic upgrade` into a hard startup failure.
+    """
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    import alembic.command as alembic_command
+    import alembic.op as alembic_op
+
+    alembic_command.upgrade(populated_db, "head")
+    mod = _load_drift_migration()
+
+    engine = sa.create_engine(DRIFT_URL, future=True)
+    with engine.connect() as conn:
+        ctx = MigrationContext.configure(conn)
+        previous = getattr(alembic_op, "_proxy", None)
+        alembic_op._proxy = Operations(ctx)
+        try:
+            mod.upgrade()  # must not raise
+        finally:
+            alembic_op._proxy = previous
+    engine.dispose()
