@@ -26,17 +26,21 @@ Supabase project is the fastest route.
 
 ### 1. Backend
 
-The backend reads **`backend/.env`**, not a repo-root `.env` — `config.py`
-anchors the path to its own directory, so cwd does not matter. A `.env` in
-the repo root is read by *nothing* and is the most common cause of "it boots
-as production and refuses to start".
+The backend reads the **repo-root `.env`** — the same file `docker-compose.yml`
+injects, so a locally-run backend and the container stack agree instead of
+drifting apart. `config.py` anchors the path to its own location, so cwd does
+not matter.
 
 ```bash
-cp .env.example backend/.env
-$EDITOR backend/.env          # see the table below for what must be set
+cp .env.example .env
+$EDITOR .env                   # see the table below for what must be set
 ```
 
-Minimum viable `backend/.env`:
+`backend/.env` is also read, and takes precedence, if you need the backend to
+diverge from the shared file (for example a local Postgres nothing else uses).
+You normally do not need it.
+
+Minimum viable `.env`:
 
 ```env
 APP_ENV=development          # REQUIRED. The default is "production" and boot is refused.
@@ -47,6 +51,12 @@ GOOGLE_REDIRECT_URI=http://localhost:5173
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_JWT_SECRET=...      # Supabase → Settings → API → JWT Settings
 ```
+
+> **Keep development values in this file.** Production does not read it:
+> Railway and Vercel supply variables from their own environment. A root
+> `.env` left holding production credentials means a local `uvicorn` run
+> connects to the live database, runs migrations against it, and authenticates
+> real users — the failure mode `APP_ENV=development` exists to prevent.
 
 There is **no SQLite fallback for the app** (only the pytest escape hatch via
 `TEST_DATABASE_URL`); `DATABASE_URL` is required and migrations run
@@ -116,10 +126,10 @@ Public self-registration creates **ReadOnly** accounts by default (Analyst also 
 
 ### Gmail live demo
 1. Google Cloud console → enable Gmail API → OAuth client (**Web**), redirect URI = your frontend origin (e.g. `http://localhost:5173/` locally, `https://<app>.vercel.app/` when deployed — must match exactly, trailing slash included).
-2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `backend/.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
+2. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env` (both must belong to the same OAuth client; the secret is server-side only and is never accepted per-request).
 3. Dashboard → "Gmail live import" → fill client ID → Connect Gmail → approve. Google redirects back to a new app tab, which **auto-captures the `?code=` from the URL and finishes the connection by itself** (no visible code field; Finish connection is only a retry). Then **Sync now** pulls unread mail through the pipeline. (The OAuth client secret lives server-side in `GOOGLE_CLIENT_SECRET` only — the UI never sends it.)
 
-Default SQLite file: `backend/email_forensics.db` (auto-created). Copy `backend/.env.example` to `backend/.env` to enable VirusTotal/MISP/Slack/Neo4j/Kafka.
+Optional integrations (VirusTotal/MISP/Slack/Neo4j/Kafka) are off when unset — fill the relevant keys in `.env` to enable them.
 
 ### NLP model dataset
 ```bash
@@ -139,7 +149,7 @@ Raw email bodies are **never persisted** — only the masked version is stored (
 `services/scheduler.py` runs `apply_retention()` daily at 03:00 (`RETENTION_HOUR`), logging purged counts + timestamp to `backend/retention_audit.log`. Old clean mail is body-blanked (metadata kept); old malicious mail is fully deleted (email + analysis + trace + ES doc + graph node) in batches with per-batch rollback. Manual run: `POST /api/v1/admin/retention` (Admin).
 
 ### Secrets (compose / k8s)
-No credentials are committed. For compose: `cp backend/.env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
+No credentials are committed. For compose: `cp .env.example .env`, fill in `*_PASSWORD`/`*_KEY` values, then `docker compose up --build` (compose fails fast if a required secret is missing). This is the same file the backend reads, so there is one set of values to maintain. For Kubernetes: create `soc-secrets` per `k8s/secret.yaml.example` (template only — never apply real values from a file). Elasticsearch ships with `xpack.security.enabled=true`; set `ELASTICSEARCH_URL/USER/PASSWORD` to wire the full-text mirror, otherwise search transparently falls back to SQLite.
 
 ### Mailbox polling
 Organization connectors live under "Mailboxes" in the UI (Google/Microsoft OAuth, encrypted refresh tokens). `MAIL_POLL_MINUTES=0` (default) means manual "Sync now" only; set e.g. `60` for hourly background polling.

@@ -4,10 +4,49 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Anchor environment file to backend/.env so cwd doesn't matter
+# Locate the environment file(s) relative to this file, never to the process
+# working directory, so `uvicorn` behaves the same whether it is launched from
+# the repo root or from backend/.
+#
+# Search order (first hit wins, later files do not override earlier ones):
+#
+#   1. backend/.env  — a per-service override, for when the backend must diverge
+#                      from the shared file (e.g. a local Postgres the rest of
+#                      the stack does not use).
+#   2. <repo>/.env   — the shared file. This is the one you normally edit; it
+#                      is also what docker-compose.yml injects, so the container
+#                      stack and a locally-run backend read the same values
+#                      instead of two hand-synced copies.
+#
+# Both may be absent: production supplies variables from the platform's
+# environment (Railway / Vercel), not from a file on disk, so requiring a file
+# here would break a correct deployment. require_secrets() is what enforces
+# that the resulting values are actually usable.
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_env_path = os.path.join(_backend_dir, ".env")
-load_dotenv(_env_path, override=False)
+
+
+def resolve_env_files(backend_dir: str) -> list[str]:
+    """Environment files that apply, highest precedence first.
+
+    Split out from the import-time wiring below so the search order is
+    testable without reimporting this module.
+    """
+    repo_root = os.path.dirname(backend_dir)
+    candidates = [
+        os.path.join(backend_dir, ".env"),
+        os.path.join(repo_root, ".env"),
+    ]
+    return [p for p in candidates if os.path.isfile(p)]
+
+
+_env_files = resolve_env_files(_backend_dir)
+# First existing file is the pydantic-settings source of record; the rest are
+# still loaded into os.environ below, with the earlier ones taking precedence
+# (load_dotenv's override=False, and os.environ outranks env_file in
+# pydantic-settings' priority order).
+_env_path = _env_files[0] if _env_files else os.path.join(_backend_dir, ".env")
+for _path in _env_files:
+    load_dotenv(_path, override=False)
 
 
 class Settings(BaseSettings):
