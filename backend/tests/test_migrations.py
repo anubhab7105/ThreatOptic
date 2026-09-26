@@ -993,7 +993,7 @@ def populated_db():
             "now() + interval '1 hour', false, now())"
         ))
     engine.dispose()
-    return _cfg
+    return DRIFT_URL
 
 
 @pytest.mark.parametrize(
