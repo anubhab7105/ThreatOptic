@@ -357,7 +357,7 @@ useEffect(() => {
     'ctrl+shift+i': () => { navigate('/cases'); },
     'ctrl+shift+m': () => { navigate('/mailboxes'); },
     'ctrl+shift+t': () => { navigate('/model'); },
-    'ctrl+shift+l': () => { logout(); navigate('/'); },
+    'ctrl+shift+l': async () => { await logout(); navigate('/'); },
     'ctrl+/': () => { (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.showModal(); },
     'escape': () => { setWsOpen(false); (document.getElementById('shortcuts-dialog') as HTMLDialogElement)?.close(); },
   });
@@ -464,7 +464,7 @@ useEffect(() => {
               <span className="avatar" style={{ background: '#5B6CFF' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
               <span className="presence-dot" aria-hidden="true" />
             </span>
-            <Link to="/" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); }} style={{ fontSize: 12, fontWeight: 600 }}>Sign out</Link>
+            <Link to="/" onClick={async (e) => { e.preventDefault(); await logout(); navigate('/'); }} style={{ fontSize: 12, fontWeight: 600 }}>Sign out</Link>
           </div>
         </div>
         <div className="content-well">

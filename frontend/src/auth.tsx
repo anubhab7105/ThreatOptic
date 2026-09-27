@@ -62,13 +62,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     hydrateUser();
-    if (isSupabaseConfigured) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, _session) => {
-        hydrateUser();
-      });
-      return () => subscription.unsubscribe();
+
+    if (!isSupabaseConfigured) {
+      return;
     }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, _session) => {
+      if (event !== 'SIGNED_OUT') {
+        hydrateUser();
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [hydrateUser]);
 
   const login = async (email: string, password: string) => {
