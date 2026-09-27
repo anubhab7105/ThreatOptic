@@ -386,9 +386,25 @@ async def callback(
     audit("oauth.callback", provider=p, account=address)
 
     # URL-encode the redirect address
-    from urllib.parse import quote
-    raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
-    base = raw_front or "http://localhost:5173"
+    from urllib.parse import quote, urlsplit
+    base = None
+    if r_uri:
+        parts = urlsplit(r_uri)
+        if parts.scheme and parts.netloc:
+            cand_base = f"{parts.scheme}://{parts.netloc}"
+            if get_settings().oauth_redirect_allowed(cand_base) or get_settings().oauth_redirect_allowed(r_uri):
+                base = cand_base
+
+    if not base:
+        frontends = [u.strip().rstrip("/") for u in str(get_settings().frontend_url or "").split(",") if u.strip()]
+        non_loopback = [f for f in frontends if not ("localhost" in f or "127.0.0.1" in f)]
+        if non_loopback and not get_settings().is_development():
+            base = non_loopback[0]
+        elif frontends:
+            base = frontends[0]
+        else:
+            base = "http://localhost:5173"
+
     encoded_address = quote(address, safe="")
     return RedirectResponse(f"{base}/mailboxes?connected={p}:{encoded_address}", status_code=302)
 

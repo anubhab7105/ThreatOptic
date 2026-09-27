@@ -582,3 +582,29 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
             db.commit()
         finally:
             db.close()
+
+
+def test_callback_redirects_to_production_origin(monkeypatch):
+    from app.main import app
+    from app.config import get_settings
+    import app.modules.ingestion.connectors as conn
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setattr(conn, "exchange_gmail_code", _fake_g_exchange)
+    monkeypatch.setattr(conn, "get_gmail_profile_email", _fake_g_profile)
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "gid")
+    monkeypatch.setattr(settings, "google_client_secret", "gsec")
+    monkeypatch.setattr(settings, "frontend_url", "http://localhost:5173,https://email-scanner-chi.vercel.app")
+
+    with TestClient(app) as c:
+        h, _u = _auth(c)
+        au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
+            "redirect_uri": "https://email-scanner-chi.vercel.app/", "client_id": "gid"}).json()["auth_url"]
+        q = parse_qs(urlparse(au).query)
+        r = c.get("/api/v1/oauth/google/callback",
+                  params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
+        assert r.status_code == 302, r.text
+        assert r.headers["location"].startswith("https://email-scanner-chi.vercel.app/mailboxes?connected=google:")
+        assert "localhost" not in r.headers["location"]
+
