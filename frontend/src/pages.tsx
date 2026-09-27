@@ -59,7 +59,7 @@ export function LandingPage() {
     title: 'ThreatOptic | Email Threat Detection & Forensic Intelligence',
     description: 'Real-time phishing, BEC, and spoofing detection for SOC analysts. Header forensics, geolocation, identity correlation, and chain-of-custody reporting.',
     canonical: '/',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
 
   return (
