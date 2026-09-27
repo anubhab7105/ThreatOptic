@@ -404,7 +404,13 @@ export function LoginPage() {
           >
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
-          <div className="login-seed">admin / admin123 · analyst / analyst123 (seeded demo accounts)</div>
+          <div className="login-seed">
+            <div>admin / admin123 · analyst / analyst123 (seeded demo accounts)</div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'center' }}>
+              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('admin'); setPassword('admin123'); login('admin', 'admin123'); }}>⚡ Quick Login: Admin</button>
+              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('analyst'); setPassword('analyst123'); login('analyst', 'analyst123'); }}>⚡ Quick Login: Analyst</button>
+            </div>
+          </div>
           <p className="sub" style={{ marginTop: 8, fontSize: 12 }}>Public self-registration → ReadOnly by default. Admin creation requires the out-of-band SETUP_TOKEN.</p>
         </div>
       </div>
@@ -506,6 +512,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       const safeUrl = assertIdpUrl(r.auth_url, 'google');
       setAuthUrl(safeUrl);
       setNotice('Redirecting to Google consent page… If not redirected, click the link below.');
+      if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('soc_oauth_provider', 'google');
       try {
         window.location.assign(safeUrl);
       } catch {
@@ -2090,11 +2097,29 @@ export function Mailboxes() {
       setConns(await jget('/oauth/status'));
     } catch (e) { fail(e, 'Status'); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    const params = new URLSearchParams(window.location.search);
+    const conn = params.get('connected');
+    if (conn) {
+      const [prov, ...rest] = conn.split(':');
+      const addr = decodeURIComponent(rest.join(':'));
+      setNotice(`Successfully connected ${prov} mailbox (${addr})!`);
+      window.history.replaceState({}, '', window.location.pathname);
+      window.dispatchEvent(new CustomEvent('soc:emails-updated'));
+    }
+    const oErr = params.get('error');
+    if (oErr) {
+      const desc = params.get('error_description') || oErr;
+      setErr(`OAuth error: ${desc}`);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const connect = async (provider: 'google' | 'microsoft') => {
     setErr(''); setNotice('');
     setBusy(true);
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('soc_oauth_provider', provider);
     try {
       const r = await jpost(`/oauth/${provider}/authorize`, {
         redirect_uri: redirectUri,

@@ -129,18 +129,21 @@ function CookieConsent() {
 }
 
 function OAuthCallbackHandler() {
-  const navigate = useNavigate();
+  const { provider } = useParams<{ provider?: string }>();
   const location = useLocation();
 
   useEffect(() => {
-    // Forward OAuth parameters (code, state) to the Dashboard where listener completes the connection
-    navigate(`/dashboard${location.search}`, { replace: true });
-  }, [location, navigate]);
+    const apiBase = (BASE || '').replace(/\/+$/, '');
+    const prov = provider || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('soc_oauth_provider')) || 'google';
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('soc_oauth_provider');
+    const target = `${apiBase}/api/v1/oauth/${prov}/callback${location.search}`;
+    window.location.href = target;
+  }, [provider, location]);
 
   return (
     <div className="page" style={{ textAlign: 'center', paddingTop: 60 }}>
       <h2>Connecting your account...</h2>
-      <p className="sub">Please wait while we complete the Google authorization flow.</p>
+      <p className="sub">Please wait while we complete the authorization flow.</p>
     </div>
   );
 }
@@ -306,7 +309,10 @@ function Shell() {
       // P0: never read OAuth secrets from browser storage and never forward
       // them as query params (proxy/access-log leak). Forward only the opaque
       // code + state; server resolves credentials/redirect from its own store.
-      let target = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
+      const prov = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('soc_oauth_provider')) || 'google';
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('soc_oauth_provider');
+      const apiBase = (BASE || '').replace(/\/+$/, '');
+      let target = `${apiBase}/api/v1/oauth/${prov}/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
       if (state) target += `&state=${encodeURIComponent(state)}`;
 
       window.history.replaceState({}, '', window.location.pathname);

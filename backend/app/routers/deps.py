@@ -55,13 +55,12 @@ def get_current_user(
                 audience="authenticated",
             )
         except Exception:
-            # Fallback: legacy HS256 shared secret (for local dev or
-            # if JWKS endpoint is temporarily unavailable).
-            if not settings.supabase_jwt_secret:
+            jwt_secret = settings.supabase_jwt_secret or (settings.secret_key if settings.is_development() else "")
+            if not jwt_secret:
                 raise
             payload = jwt.decode(
                 token,
-                settings.supabase_jwt_secret,
+                jwt_secret,
                 algorithms=["HS256"],
                 audience="authenticated",
             )

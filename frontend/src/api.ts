@@ -2,14 +2,30 @@
 import { supabase } from './supabaseClient';
 
 export const BASE: string =
-  (import.meta as any).env?.VITE_API_URL ?? '';
+  (import.meta as any).env?.VITE_API_URL ||
+  (typeof window !== 'undefined' && window.location?.hostname?.endsWith('vercel.app')
+    ? 'https://emailscanner-production-e5ad.up.railway.app'
+    : '');
 
 export const API = `${BASE}/api/v1`;
 
 async function authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token
-    ? { ...extra, Authorization: `Bearer ${session.access_token}` }
+  let token: string | undefined;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    token = session?.access_token;
+  } catch {
+    /* ignore */
+  }
+  if (!token) {
+    try {
+      token = localStorage.getItem('soc-dev-token') || undefined;
+    } catch {
+      /* ignore */
+    }
+  }
+  return token
+    ? { ...extra, Authorization: `Bearer ${token}` }
     : { ...extra };
 }
 
