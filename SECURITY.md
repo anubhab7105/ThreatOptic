@@ -1,9 +1,12 @@
 # Security Runbook — Compromise Assumption & Secret Rotation
 
 > **Assumption: the current deployment (if any) is compromised.**
-> Plaintext Gmail refresh tokens (C5) and a forgeable default JWT secret
-> (C1) have existed in this codebase. Follow this runbook **before**
-> presenting any deployment as hardened.
+> Plaintext-era Gmail refresh tokens and forgeable-default secrets have
+> existed in this codebase's history (see `REMEDIATION_LOG.md`). Mailbox
+> OAuth tokens are now Fernet-encrypted (`modules/auth/vault.py`,
+> PBKDF2/600k + random salt, `v1$` format, fail-closed on empty/short
+> `TOKEN_ENCRYPTION_KEY`), and Supabase owns login sessions — but follow
+> this runbook **before** presenting any deployment as hardened.
 
 ## 1. Back up
 
@@ -23,9 +26,10 @@ Generate fresh values and store them in the secrets manager / `.env`
 
 | Secret | Length | Commands |
 |---|---|---|
-| `SECRET_KEY` (JWT signing) | ≥ 32 random bytes | `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `CUSTODY_KEY` (chain-of-custody HMAC) | ≥ 32 random bytes | same as above |
-| `TOKEN_ENCRYPTION_KEY` (mailbox vault) | ≥ 32 random bytes | same as above |
+| `SECRET_KEY` (WebSocket-ticket HMAC — **not** login JWT; Supabase signs those) | ≥ 32 chars | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `CUSTODY_KEY` (chain-of-custody HMAC) | ≥ 32 chars | same as above |
+| `TOKEN_ENCRYPTION_KEY` (mailbox vault — **Fernet key**, separate from `SECRET_KEY`) | Fernet key | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `SUPABASE_JWT_SECRET` (Supabase JWT verification fallback) | from dashboard | Supabase → Settings → API → JWT Settings |
 | OAuth client secrets (Google + Microsoft) | — | rotate in Cloud Console / Entra, update env |
 | DB password (`POSTGRES_PASSWORD`) | strong | `openssl rand -base64 32` |
 | `ELASTIC_PASSWORD`, Neo4j (`NEO4J_PASSWORD`) | strong | same |
@@ -35,12 +39,7 @@ startup checks refuse to boot on defaults.
 
 ## 3. Invalidate old sessions and tokens
 
-1. Deploy with the new `SECRET_KEY` — **all previously issued JWTs
-   (access + refresh) immediately fail signature verification.** No DB
-   migration needed; log everyone out by telling users to sign in again.
-   (Refresh-token rows in `refresh_tokens` become cryptographically dead
-   with the old secret; purge them with
-   `DELETE FROM refresh_tokens;` after deploy if desired.)
+1. Supabase owns login sessions: rotate/revoke via the Supabase dashboard (Auth → Users) and have users sign in again. Deploying a new `SECRET_KEY` only invalidates **WebSocket tickets** (`POST /ws/ticket` → 60-s `ws-ticket` JWTs in `routers/ws.py`) — it is no longer a login-JWT signing key. (The old server-side `refresh_tokens` ledger was dropped by migration `b7c2d1a9e4f5`; if a stale `refresh_tokens` table still exists from a pre-Supabase deploy, it is cryptographically dead — `DELETE FROM refresh_tokens;` after deploy if desired. `SECRET_KEY`/`SUPABASE_JWT_SECRET` must still be ≥32 chars / provisioned or the app refuses to boot outside `development` via `require_secrets()`.)
 2. Custody key rotation without downtime: set `CUSTODY_KEY` to the new
    key and keep the old value in `CUSTODY_KEY_PREVIOUS` — new manifests
    sign with the new key while `verify_manifest()` still accepts the old

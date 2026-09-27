@@ -95,20 +95,26 @@ production and failed there previously; verify the deploy rather than assuming.
 
 ## Still open in Phase 0
 
-Recorded in the handover notes; not yet started.
+Recorded in the handover notes; status re-verified against the code September 2026 (items that have since been addressed are marked ✅):
 
 - Secret enforcement does not cover the Alembic entrypoint. `alembic upgrade
   head` succeeds with `SECRET_KEY`, `CUSTODY_KEY` and `TOKEN_ENCRYPTION_KEY`
   all empty, because `alembic/env.py` never calls `require_secrets()`. The
   Celery worker (`app/services/tasks.py:15-28`) is likewise ungated, though no
-  worker is deployed in any compose/k8s/Dockerfile target today.
+  worker is deployed in any compose/k8s/Dockerfile target today. — **still open** (verified: `alembic/env.py` only resolves the DB URL).
 - `require_secrets()` validates only `SECRET_KEY` and `ELASTICSEARCH_URL`. The
-  vault key and the custody key are checked later, or lazily at use time.
+  vault key and the custody key are checked later, or lazily at use time. — **still open by design** (fail-closed at use/boot of the owning subsystem: vault on decrypt, custody via `require_custody_key()` in lifespan).
 - No gitleaks pre-commit hook and no CI guard against tracked `.env` files.
   (No `.env` is currently tracked and `.gitignore:4-6` covers the pattern, so
-  this is preventative.)
+  this is preventative.) — **still open** (preventative).
 - `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
   runs unauthenticated model inference and returns `live_lookups`; `replicas:
-  2` with no shared state; image pinned to a tag rather than a digest.
+  2` with no shared state; image pinned to a tag rather than a digest. — **partially addressed**: liveness is now lightweight `/health` with readiness on `/health/detailed` (intended — readiness gates traffic on DB+NLP); `replicas: 2` is now paired with `EXPECTED_REPLICAS: "2"` + the F8 no-shared-state comment + `graph_consistency_note()` startup warning (shared Neo4j required past 1 replica); release-tag + digest-pin process is documented in the manifest comments (digest substituted at release).
 - `Tracker.md:4` still claims `seed.py` exists and is gated behind
-  `ALLOW_SEED=1`. The file and its test were removed.
+  `ALLOW_SEED=1`. The file and its test were removed. — ✅ **fixed**: `Tracker.md` now carries a code-truth notice marking the seed/refresh/SETUP_TOKEN/ReadOnly-default entries as superseded by the Supabase migration.
+
+## Verification appendix (September 2026 — doc-to-code sweep)
+- Migration chain is now four revisions: `834dc871451e` (initial) → `b7c2d1a9e4f5` (Supabase auth, drops `refresh_tokens`) → `c9e8f7a6b3d2` (RLS policies, defense-in-depth, fail-closed) → `e5a1c93d7b28` (vault columns/indexes/CHECK). `DEPLOY.md` §2.5 updated accordingly (was: two revisions).
+- P0-1 drift fix verified present (`e5a1c93d7b28` in `backend/alembic/versions/`); the "verify the deploy" operator action stands for any DB still stamped `b7c2d1a9e4f5`.
+- Auth model across docs aligned to Supabase: only `GET /auth/me`; `refresh_tokens` references are historical; `SECRET_KEY` = WS-ticket HMAC only; default role Analyst + personal org (trigger).
+- Model metrics across docs aligned to the committed `ml_models/metrics.json` (3012-row corpus: acc 0.9934, macro F1 0.6593, BEC F1 0.0/support=2); `dataset.csv` gitignored; artifacts + `.sha256` committed.
