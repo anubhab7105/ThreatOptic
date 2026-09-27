@@ -35,9 +35,11 @@ Auth (cross-cutting, not shown above): Supabase owns sessions; `GET /auth/me` + 
 
 ## UI/UX Guidelines
 
-### Theme & Aesthetics
-- **Color Palette:** Light "Inkwise" theme is the default
-- **Typography:** Monospaced fonts for raw headers and IP addresses; clean sans-serif for dashboard metrics.
+### Theme & Aesthetics (PDF design reference, Sep 2026 — dark-first, SOC-grade)
+- **Default theme:** dark Night Ops (`bg #0A0E16 / surface #121826 / surface2 #1A2233 / border #26304A / text #EAF0FA / muted #93A0BD`); light Daylight Ops is the alternate (`bg #F5F7FB / surface #FFFFFF / surface2 #EDF1F7 / border #DCE2ED / text #0E1420 / muted #545E75`).
+- **Brand:** Trace Teal (dark `#2FE3C4` / light `#0B8F7A`) = verified motion + primary action; Correlation Violet (dark `#8C7CFF` / light `#5B48D9`) = AI/graph moment. Neither is ever reused for risk.
+- **Risk bands only:** Critical 90–100 (dark `#FF4D5E` / light `#C81E36`), High 75–89 (`#FF9142` / `#B15E06`), Medium 50–74 (`#FFD84D` / `#8A6B00`), Low 0–49 (`#33D690` / `#157A4C`). Auth pills: teal pass, critical fail, muted-neutral unverifiable. Graph entities: IP teal, domain violet, email amber, campaign red. Confusion matrix: five-step teal ramp.
+- **Typography:** Cambria for report/headings, Courier New for raw headers + IPs + dumps, Calibri for interface text.
 
 ### Key Screens
 1. **Global Threat Dashboard (`/dashboard`):** Metrics (emails processed, blocked threats ≥75, active campaigns, classifications + score distribution), ingest panel (paste RFC822 + samples + `.eml` upload + background-queue toggle), Gmail live-import panel, severity filter, recent cards, all-emails table with PDF/JSON downloads, activity feed.

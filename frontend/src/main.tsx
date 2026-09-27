@@ -83,16 +83,16 @@ export function ThemeToggle() {
     try {
       const s = localStorage.getItem('soc-theme');
       if (s === 'light' || s === 'dark') return s;
-      return document.documentElement.getAttribute('data-theme') || 'light';
-    } catch { return 'light'; }
+      return document.documentElement.getAttribute('data-theme') || 'dark';
+    } catch { return 'dark'; }
   });
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('soc-theme', theme); } catch { /* storage unavailable */ }
   }, [theme]);
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode (Inkwise light is default; dark SOC kept)`}>
-      <span aria-hidden="true">{theme === 'light' ? '☀' : '☾'}</span> {theme === 'light' ? 'Dark' : 'Light'}
+    <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode (dark SOC is default; light is for daytime desks and print)`}>
+      <span aria-hidden="true">{theme === 'dark' ? '☾' : '☀'}</span> {theme === 'dark' ? 'Light' : 'Dark'}
     </button>
   );
 }
@@ -243,7 +243,7 @@ function AlertBell() {
     <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
       <button className="bell-btn" onClick={() => setOpen((o) => !o)} aria-label={`Alerts, ${alerts.length} unread${live ? ', live' : ''}`} title="High-risk alerts">
         <span aria-hidden="true">🔔</span>
-        {(alerts.length > 0 || !live) && <span className="bell-dot" aria-hidden="true" style={!live && alerts.length === 0 ? { background: '#8A90A8' } : undefined} />}
+        {(alerts.length > 0 || !live) && <span className="bell-dot" aria-hidden="true" style={!live && alerts.length === 0 ? { background: 'var(--muted)' } : { background: 'var(--critical)' }} />}
       </button>
       {open && (
         <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
@@ -368,7 +368,7 @@ useEffect(() => {
         <SkipToContent />
         <ScrollProgress />
         <nav className="nav" aria-label="Primary">
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+          <Link to="/" className="brand" aria-label="SOCForensics home"><span aria-hidden="true">◈</span> SOCForensics</Link>
         </nav>
         <div className="page"><div className="skel" style={{ height: 120 }} aria-hidden="true" /></div>
       </div>
@@ -410,36 +410,48 @@ useEffect(() => {
       <ScrollProgress />
       <BackToTop />
       <aside className="icon-rail" aria-label="Primary">
-        <Link to="/dashboard" className="rail-logo" aria-label="Netraksha home" title="Netraksha — Global Threat Dashboard"><span aria-hidden="true">◈</span></Link>
+        <Link to="/dashboard" className="rail-logo" aria-label="SOCForensics home" title="SOCForensics — Global Threat Dashboard"><span aria-hidden="true">◈</span></Link>
         <Link to="/dashboard" className={`rail-btn${onDashboard}`} aria-label="Home dashboard" title="Home / Dashboard" aria-current={onDashboard ? 'page' : undefined}><span aria-hidden="true">⌂</span></Link>
         <Link to="/campaigns" className={`rail-btn${onCampaigns}`} aria-label="Campaigns" title="Campaigns" aria-current={onCampaigns ? 'page' : undefined}><span aria-hidden="true">◉</span></Link>
         <Link to="/cases" className={`rail-btn${on('/cases')}`} aria-label="Cases" title="Cases" aria-current={on('/cases') ? 'page' : undefined}><span aria-hidden="true">▤</span></Link>
         <Link to="/mailboxes" className={`rail-btn${on('/mailboxes')}`} aria-label="Mailboxes" title="Mailboxes" aria-current={on('/mailboxes') ? 'page' : undefined}><span aria-hidden="true">✉</span></Link>
         <Link to="/model" className={`rail-btn${on('/model')}`} aria-label="Model info" title="Model info" aria-current={on('/model') ? 'page' : undefined}><span aria-hidden="true">◐</span></Link>
-        <span className="rail-spacer" />
-        <Link to="/campaigns" className="rail-btn" aria-label="History" title="History"><span aria-hidden="true">◷</span></Link>
-        <Link to="/model" className="rail-btn" aria-label="Reports and charts" title="Reports"><span aria-hidden="true">◫</span></Link>
-        <span className="rail-btn" role="img" aria-label="AI assistant — Explain and summarize" title="AI — Explain / summarize"><span aria-hidden="true">✦</span></span>
       </aside>
       <aside className={`workspace-col${wsOpen ? ' open' : ''}`} aria-label="Workspace">
         <div className="ws-label">Workspace</div>
         <div className="ws-org" title={`${user.email} — ${user.role}`}>
-          <span className="avatar" style={{ background: '#5B6CFF' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
+          <span className="avatar" style={{ background: 'var(--teal)' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.role === 'Admin' ? 'Organization' : 'Personal workspace'}</span>
         </div>
-        <nav aria-label="Threat folders" style={{ marginTop: 8 }}>
-          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#DC2626' }} aria-hidden="true" />Critical</Link>
-          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#EA580C' }} aria-hidden="true" />Phishing</Link>
-          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#F59E0B' }} aria-hidden="true" />BEC</Link>
-          <Link to="/dashboard" className="ws-folder" onClick={() => setWsOpen(false)}><span className="ws-dot" style={{ background: '#22C55E' }} aria-hidden="true" />Spoofing / Clean</Link>
+        <nav aria-label="Filter by risk band" style={{ marginTop: 8 }}>
+          {[
+            { key: 'critical', label: 'Critical (90–100)' },
+            { key: 'high', label: 'High (75–89)' },
+            { key: 'medium', label: 'Medium (50–74)' },
+            { key: 'low', label: 'Low (0–49)' },
+            { key: 'all', label: 'All bands' },
+          ].map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className="ws-folder"
+              onClick={() => {
+                setWsOpen(false);
+                window.dispatchEvent(new CustomEvent('soc:severity-filter', { detail: { sev: f.key } }));
+                if (location.pathname !== '/dashboard') navigate('/dashboard');
+              }}
+            >
+              <span className="ws-dot" style={{ background: f.key === 'all' ? 'var(--muted)' : `var(--${f.key})` }} aria-hidden="true" />{f.label}
+            </button>
+          ))}
         </nav>
-        <div className="ws-label" style={{ marginTop: 16 }}>Active Analysts</div>
+        <div className="ws-label" style={{ marginTop: 16 }}>Signed in</div>
         <div className="ws-analysts">
-          <AvatarStack names={[user.email, 'arka.analyst', 'soc.ir', 'threat.hunt', 'case.lead', 'forensics.ai']} />
+          <AvatarStack names={[user.email]} />
         </div>
-        <button type="button" className="ws-invite" onClick={() => { setWsOpen(false); navigate('/dashboard'); }}>+ Invite analyst</button>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email} · {user.role}</div>
         <div className="health" title="backend reachability" style={{ marginTop: 14 }}>
-          <span className="dot" style={{ background: health === 'ok' ? '#22c55e' : health === 'down' ? '#ef4444' : '#eab308' }} aria-hidden="true" />
+          <span className="dot" style={{ background: health === 'ok' ? 'var(--low)' : health === 'down' ? 'var(--critical)' : 'var(--medium)' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
         </div>
       </aside>
@@ -461,7 +473,7 @@ useEffect(() => {
             <AlertBell />
             <ThemeToggle />
             <span className="presence-wrap" title={`${user.email} — ${user.role}`}>
-              <span className="avatar" style={{ background: '#5B6CFF' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
+              <span className="avatar" style={{ background: 'var(--teal)' }} aria-hidden="true">{(user.email || 'A').trim().charAt(0).toUpperCase()}</span>
               <span className="presence-dot" aria-hidden="true" />
             </span>
             <Link to="/" onClick={async (e) => { e.preventDefault(); await logout(); navigate('/'); }} style={{ fontSize: 12, fontWeight: 600 }}>Sign out</Link>

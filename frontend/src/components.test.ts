@@ -16,16 +16,16 @@ describe('severityOf', () => {
   it('never falls through to green for unknown values', () => {
     expect(severityOf(NaN)).toBe('unknown');
     expect(severityOf(-1)).toBe('unknown');
-    expect(severityColor('unknown')).toBe('#6b7280');
-    expect(severityColor('mystery')).toBe('#6b7280');
+    expect(severityColor('unknown')).toBe('var(--muted)');
+    expect(severityColor('mystery')).toBe('var(--muted)');
   });
 });
 
 describe('severityColor', () => {
-  it('returns distinct colors per severity', () => {
+  it('returns distinct theme tokens per severity (risk hues only)', () => {
     const colors = new Set(['critical', 'high', 'medium', 'low'].map(severityColor));
     expect(colors.size).toBe(4);
-    expect(severityColor('critical')).toBe('#ef4444');
-    expect(severityColor('low')).toBe('#22c55e');
+    expect(severityColor('critical')).toBe('var(--critical)');
+    expect(severityColor('low')).toBe('var(--low)');
   });
 });

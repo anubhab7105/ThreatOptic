@@ -12,11 +12,11 @@ export function severityOf(score: number): Severity {
 }
 
 export function severityColor(s: string): string {
-  if (s === 'critical' || s === 'Critical') return '#ef4444';
-  if (s === 'high' || s === 'High') return '#f97316';
-  if (s === 'medium' || s === 'Medium') return '#eab308';
-  if (s === 'low' || s === 'Low' || s === 'clean' || s === 'Clean') return '#22c55e';
-  return '#6b7280';
+  if (s === 'critical' || s === 'Critical') return 'var(--critical)';
+  if (s === 'high' || s === 'High') return 'var(--high)';
+  if (s === 'medium' || s === 'Medium') return 'var(--medium)';
+  if (s === 'low' || s === 'Low' || s === 'clean' || s === 'Clean') return 'var(--low)';
+  return 'var(--muted)';
 }
 
 export function verdictLabel(score: number): string {
@@ -48,7 +48,7 @@ export function VerdictPill({ score, classification }: { score: number; classifi
   );
 }
 
-const AVATAR_COLORS = ['#5B6CFF', '#F472B6', '#FB923C', '#22C55E', '#8A90A8', '#6C7CFF'];
+const AVATAR_COLORS = ['var(--teal)', 'var(--correlation)', 'var(--muted)'];
 
 export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
   const shown = names.slice(0, max);
@@ -92,10 +92,10 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
   const highRisk = c + h;
   const pct = Math.round((100 * highRisk) / total);
   const segs = [
-    { v: c, color: '#DC2626' },
-    { v: h, color: '#EA580C' },
-    { v: m, color: '#F59E0B' },
-    { v: l, color: '#22C55E' },
+    { v: c, color: 'var(--critical)' },
+    { v: h, color: 'var(--high)' },
+    { v: m, color: 'var(--medium)' },
+    { v: l, color: 'var(--low)' },
   ];
   const R = 54;
   const CIRC = 2 * Math.PI * R;
@@ -105,7 +105,7 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
     <div className="gauge-card">
       <svg className="gauge-svg" width="132" height="132" viewBox="0 0 132 132" role="img" aria-label={label}>
         <title>Threat overview gauge</title>
-        <circle cx="66" cy="66" r={R} fill="none" stroke="#EDF0F7" strokeWidth="16" />
+        <circle cx="66" cy="66" r={R} fill="none" stroke="var(--panel-2)" strokeWidth="16" />
         {segs.map((s, i) => {
           if (!s.v) return null;
           const frac = s.v / total;
@@ -130,10 +130,10 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
       <div>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{highRisk} / {total} emails</div>
         <div className="gauge-legend" style={{ marginTop: 8 }}>
-          <span><span className="sev" style={{ background: '#DC2626' }} />Critical <b>{c}</b></span>
-          <span><span className="sev" style={{ background: '#EA580C' }} />High <b>{h}</b></span>
-          <span><span className="sev" style={{ background: '#F59E0B' }} />Medium <b>{m}</b></span>
-          <span><span className="sev" style={{ background: '#22C55E' }} />Low <b>{l}</b></span>
+          <span><span className="sev" style={{ background: 'var(--critical)' }} />Critical <b>{c}</b></span>
+          <span><span className="sev" style={{ background: 'var(--high)' }} />High <b>{h}</b></span>
+          <span><span className="sev" style={{ background: 'var(--medium)' }} />Medium <b>{m}</b></span>
+          <span><span className="sev" style={{ background: 'var(--low)' }} />Low <b>{l}</b></span>
         </div>
         <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{label}</span>
       </div>
@@ -147,9 +147,9 @@ export function MetricRing({ pct, size = 120 }: { pct: number; size?: number }) 
   const frac = Math.max(0, Math.min(1, pct / 100));
   return (
     <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={`${pct.toFixed(1)} percent`}>
-      <circle cx="60" cy="60" r={R} fill="none" stroke="#EDF0F7" strokeWidth="13" />
+      <circle cx="60" cy="60" r={R} fill="none" stroke="var(--panel-2)" strokeWidth="13" />
       <circle
-        cx="60" cy="60" r={R} fill="none" stroke="#5B6CFF" strokeWidth="13"
+        cx="60" cy="60" r={R} fill="none" stroke="var(--teal)" strokeWidth="13"
         strokeDasharray={`${frac * CIRC} ${CIRC}`} strokeLinecap="round"
         transform="rotate(-90 60 60)"
       />

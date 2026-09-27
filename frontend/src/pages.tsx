@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AISparkle, AuthPill, AvatarStack, Empty, MetricRing, ScoreBadge, SkeletonList, StatCard, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
+import { AuthPill, AvatarStack, Empty, ScoreBadge, SkeletonList, StatCard, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
 import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -66,8 +66,9 @@ export function LandingPage() {
     <div className="landing-page">
       <header className="landing-header">
         <nav className="landing-nav" aria-label="Primary">
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+          <Link to="/" className="brand" aria-label="SOCForensics home"><span aria-hidden="true">◈</span> SOCForensics</Link>
           <div className="landing-nav-links">
+            <Link to="/model" className="nav-link">Model</Link>
             <Link to="/login" className="nav-link">Sign In</Link>
             <Link to="/login" className="nav-link btn-primary">Get Started</Link>
           </div>
@@ -77,56 +78,68 @@ export function LandingPage() {
 
       <main id="main-content">
         <section className="hero" aria-labelledby="hero-title">
+          <svg className="hero-trace-bg" viewBox="0 0 1200 500" preserveAspectRatio="none" aria-hidden="true">
+            <g stroke="var(--teal)" strokeWidth="1.2" opacity="0.55">
+              <line x1="60" y1="500" x2="340" y2="120" />
+              <line x1="60" y1="500" x2="480" y2="60" />
+              <line x1="60" y1="500" x2="860" y2="90" />
+              <line x1="60" y1="500" x2="760" y2="170" />
+            </g>
+            <g stroke="var(--correlation)" strokeWidth="1.2" opacity="0.55">
+              <line x1="60" y1="500" x2="280" y2="230" />
+            </g>
+            <g fill="var(--teal)">
+              <circle cx="340" cy="120" r="4" />
+              <circle cx="860" cy="90" r="4" />
+              <circle cx="760" cy="170" r="4" />
+            </g>
+            <g fill="var(--correlation)">
+              <circle cx="480" cy="60" r="4" />
+              <circle cx="280" cy="230" r="4" />
+            </g>
+          </svg>
           <div className="hero-content">
-            <h1 id="hero-title">Email threat detection that explains itself.</h1>
-            <p className="hero-subtitle">Score every message 0&ndash;100 with SPF/DKIM/DMARC, URL and attachment intelligence, geolocation, and identity graphs. Export chain-of-custody PDF/JSON reports.</p>
+            <span className="hero-eyebrow">AI-powered email threat detection · GeoLocation · Forensic intelligence</span>
+            <h1 id="hero-title">See where every email really comes from.</h1>
+            <p className="hero-subtitle">Live-traced origin, scored 0–100 in real time — SPF/DKIM/DMARC, URL and attachment intelligence, geolocation, and identity graphs. Export chain-of-custody PDF/JSON reports.</p>
             <div className="hero-actions">
-              <Link to="/login" className="btn-primary">Start Free Trial</Link>
+              <Link to="/login" className="btn-primary">Start analyzing</Link>
               <Link to="/model" className="btn-secondary">View Model Transparency</Link>
             </div>
-            <p className="hero-trust">Self-hosted. No vendor lock-in. Used by incident response teams worldwide.</p>
+            <p className="hero-trust">Self-hosted. No vendor lock-in. Dark-first SOC-grade interface.</p>
           </div>
-          <div className="hero-visual" aria-hidden="true">
-            <svg viewBox="0 0 600 400" className="hero-illustration" role="img" aria-label="Email threat analysis dashboard showing fraud score, authentication results, and geolocation">
-              <defs>
-                <linearGradient id="gridGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#0b1220" stopOpacity="0" />
-                  <stop offset="100%" stopColor="#16233f" stopOpacity="0.3" />
-                </linearGradient>
-              </defs>
-              <rect x="20" y="20" width="560" height="360" rx="12" fill="url(#gridGradient)" stroke="#24365c" strokeWidth="1.5" />
-              <rect x="40" y="40" width="200" height="120" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
-              <text x="50" y="65" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">FRAUD SCORE</text>
-              <text x="50" y="95" fill="#ef4444" fontSize="48" fontWeight="800" fontFamily="ui-monospace">94</text>
-              <text x="50" y="125" fill="#93a1bd" fontSize="11" fontFamily="system-ui">Critical &mdash; BEC Detected</text>
-              <rect x="40" y="180" width="200" height="120" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
-              <text x="50" y="205" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">AUTHENTICATION</text>
-              <g fontSize="11" fontFamily="system-ui">
-                <text x="50" y="230" fill="#ef4444">SPF: Fail</text>
-                <text x="50" y="250" fill="#ef4444">DKIM: Fail</text>
-                <text x="50" y="270" fill="#ef4444">DMARC: Fail</text>
-              </g>
-              <rect x="260" y="40" width="300" height="260" rx="8" fill="#111c33" stroke="#24365c" strokeWidth="1" />
-              <text x="280" y="65" fill="#60a5fa" fontSize="12" fontWeight="600" fontFamily="system-ui">GEOLOCATION & IDENTITY GRAPH</text>
-              <circle cx="410" cy="180" r="80" fill="none" stroke="#24365c" strokeWidth="1.5" />
-              <circle cx="410" cy="180" r="45" fill="#ef4444" fillOpacity="0.15" />
-              <circle cx="410" cy="180" r="45" fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="4,4" />
-              <circle cx="410" cy="180" r="8" fill="#ef4444" />
-              <text x="410" y="280" fill="#93a1bd" fontSize="11" fontFamily="system-ui" textAnchor="middle">Origin: 45.148.10.88 (VPN)</text>
-              <g fontSize="10" fill="#38bdf8" fontFamily="system-ui">
-                <circle cx="320" cy="140" r="6" fill="#38bdf8" />
-                <text x="330" y="144" fill="#e5e7eb">sender@domain</text>
-                <circle cx="480" cy="120" r="6" fill="#f59e0b" />
-                <text x="490" y="124" fill="#e5e7eb">malicious.example</text>
-                <circle cx="480" cy="240" r="6" fill="#a855f7" />
-                <text x="490" y="244" fill="#e5e7eb">Campaign #C-2026-0892</text>
-              </g>
-            </svg>
+          <div className="hero-visual">
+            <div className="score-panel" aria-label="Sample score breakdown">
+              <h4>Why this score — sample</h4>
+              <div className="why-score">82</div>
+              <div className="why-label">High · Junk/Hold</div>
+              <div className="signal-row"><span className="sig-name">nlp 30%</span><span className="sig-bar"><span className="sig-fill" style={{ display: 'block', width: '82%', background: 'var(--correlation)' }} /></span></div>
+              <div className="signal-row"><span className="sig-name">auth 25%</span><span className="sig-bar"><span className="sig-fill" style={{ display: 'block', width: '64%', background: 'var(--teal)' }} /></span></div>
+              <div className="signal-row"><span className="sig-name">intel 20%</span><span className="sig-bar"><span className="sig-fill" style={{ display: 'block', width: '48%', background: 'var(--correlation)' }} /></span></div>
+              <div className="signal-row"><span className="sig-name">routing 15%</span><span className="sig-bar"><span className="sig-fill" style={{ display: 'block', width: '30%', background: 'var(--muted)' }} /></span></div>
+              <div style={{ marginTop: 8, fontSize: 12, fontFamily: 'var(--mono)' }}>
+                <span style={{ color: 'var(--teal)' }}>SPF: pass</span>{' · '}
+                <span style={{ color: 'var(--critical)' }}>DKIM: fail</span>{' · '}
+                <span style={{ color: 'var(--muted)' }}>DMARC: unverifiable</span>
+              </div>
+            </div>
           </div>
         </section>
 
+        <div className="pipeline-strip" aria-label="Pipeline: Ingest, Parse, Score, Correlate, Report">
+          <div className="pipeline-inner">
+            {['Ingest', 'Parse', 'Score', 'Correlate', 'Report'].map((s, i, arr) => (
+              <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                <span className="pipeline-node"><span className="p-dot" aria-hidden="true" />{s}</span>
+                {i < arr.length - 1 ? <span className="pipeline-link" aria-hidden="true" /> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+
         <section className="features" aria-labelledby="features-title">
           <h2 id="features-title" className="section-title">Built for forensic analysis</h2>
+          <p className="section-sub">The same five pipeline phases, from ingest to chain-of-custody report.</p>
           <div className="features-grid">
             <article className="feature-card">
               <div className="feature-icon" aria-hidden="true">
@@ -140,28 +153,28 @@ export function LandingPage() {
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="6" x2="12" y2="18" /><line x1="6" y1="12" x2="18" y2="12" /></svg>
               </div>
               <h3>Identity Correlation</h3>
-              <p>Graph-based clustering links shared infrastructure across campaigns. Detect coordinated attacks by IP, domain, and sender overlap.</p>
+              <p>Graph-based clustering links shared infrastructure across campaigns. IP, domain, email and campaign nodes share one color each.</p>
             </article>
             <article className="feature-card">
               <div className="feature-icon" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
               </div>
               <h3>Chain-of-Custody Reports</h3>
-              <p>SHA-256 hashed originals. PDF and JSON exports with timestamps, scores, and evidence references for legal proceedings.</p>
+              <p>SHA-256 hashed originals. PDF and JSON exports with timestamps, scores, and evidence references.</p>
             </article>
             <article className="feature-card">
               <div className="feature-icon" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
               </div>
               <h3>Model Transparency</h3>
-              <p>Open metrics: accuracy, macro F1, per-class precision/recall, confusion matrix. Retrained on your data with audit logs.</p>
+              <p>Open precision, recall and F1 with a per-class confusion matrix — the score is explainable, not a black box.</p>
             </article>
             <article className="feature-card">
               <div className="feature-icon" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
               </div>
               <h3>Real-Time Ingestion</h3>
-              <p>Paste RFC822, upload .eml, or connect Gmail/Microsoft mailboxes via OAuth. Background Celery queue for high-volume pipelines.</p>
+              <p>Paste RFC822, upload .eml, or connect Google Workspace / Microsoft 365 mailboxes via OAuth.</p>
             </article>
             <article className="feature-card">
               <div className="feature-icon" aria-hidden="true">
@@ -173,25 +186,33 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section aria-label="Model transparency">
+          <div className="model-strip">
+            <div className="model-stat"><div className="m-num">0.91</div><div className="m-label">Precision</div></div>
+            <div className="model-stat"><div className="m-num">0.88</div><div className="m-label">Recall</div></div>
+            <div className="model-stat"><div className="m-num">0.89</div><div className="m-label">F1</div></div>
+            <div className="model-stat"><div className="m-num" style={{ fontSize: 18, paddingTop: 8 }}><Link to="/model">Details →</Link></div><div className="m-label">Held-out evaluation</div></div>
+          </div>
+        </section>
+
         <section className="cta" aria-labelledby="cta-title">
           <h2 id="cta-title">Ready to analyze your first email?</h2>
-          <p>Create an account in seconds. No credit card required.</p>
-          <Link to="/login" className="btn-primary btn-large">Create Free Account</Link>
+          <p>Sign in to open the Global Threat Dashboard.</p>
+          <Link to="/login" className="btn-primary btn-large">Sign in</Link>
         </section>
       </main>
 
       <footer className="landing-footer">
         <div className="footer-grid">
           <div className="footer-brand">
-            <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+            <Link to="/" className="brand" aria-label="SOCForensics home"><span aria-hidden="true">◈</span> SOCForensics</Link>
             <p>Email threat detection, geolocation, and forensic intelligence for security operations teams.</p>
           </div>
           <nav className="footer-links" aria-label="Product">
             <h4>Product</h4>
             <ul>
               <li><Link to="/model">Model Transparency</Link></li>
-              <li><Link to="/login">Dashboard Demo</Link></li>
-              <li><a href="https://github.com" target="_blank" rel="noopener">GitHub</a></li>
+              <li><Link to="/login">Sign In</Link></li>
             </ul>
           </nav>
           <nav className="footer-links" aria-label="Company">
@@ -253,42 +274,6 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
   );
 }
 
-function InternalLinks({ current }: { current: string }) {
-  // Public visitors can only reach public routes — linking them to
-  // auth-gated pages (/dashboard, /campaigns, ...) would 404.
-  const { user } = useAuth();
-  const authLinks = [
-    { href: '/dashboard', label: 'Dashboard', desc: 'Threat overview' },
-    { href: '/campaigns', label: 'Campaigns', desc: 'Infrastructure clusters' },
-    { href: '/cases', label: 'Cases', desc: 'Kanban investigation' },
-    { href: '/mailboxes', label: 'Mailboxes', desc: 'OAuth connectors' },
-    { href: '/model', label: 'Model Info', desc: 'Transparency & metrics' },
-  ];
-  const publicLinks = [
-    { href: '/', label: 'Home', desc: 'Product overview' },
-    { href: '/login', label: 'Sign In', desc: 'Analyst access' },
-    { href: '/model', label: 'Model Info', desc: 'Transparency & metrics' },
-    { href: '/privacy', label: 'Privacy', desc: 'Data handling' },
-    { href: '/terms', label: 'Terms', desc: 'Acceptable use' },
-  ];
-  const links = (user ? authLinks : publicLinks).filter(l => l.href !== current);
-  return (
-    <div className="card" style={{ marginTop: 18 }}>
-      <h3>Explore the platform</h3>
-      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-        {links.slice(0, 4).map(l => (
-          <Link key={l.href} to={l.href} className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>
-            <b>{l.label}</b> <span style={{ color: 'var(--muted)', fontWeight: 400 }}>- {l.desc}</span>
-          </Link>
-        ))}
-      </div>
-      <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-        Also: <a href="/sitemap.xml">Sitemap</a> · <a href="/robots.txt">Robots</a> · <a href="/llms.txt">LLMs</a> · <a href="https://socforensics.io/">socforensics.io</a>
-      </div>
-    </div>
-  );
-}
-
 /* ---------------- Login ---------------- */
 
 export function LoginPage() {
@@ -328,8 +313,8 @@ export function LoginPage() {
     <div className="login-page-wrapper">
       <div className="login-card">
         <div className="login-hero-pane">
-          <div style={{ fontWeight: 800, fontSize: 20 }}>◈ Netraksha</div>
-          <h2>Trace every email back to its source.</h2>
+          <div style={{ fontWeight: 800, fontSize: 20 }}>◈ SOCForensics</div>
+          <h2>See where every email really comes from.</h2>
           <p className="tag">AI-powered email threat detection, geolocation &amp; forensic intelligence.</p>
           <div className="login-check"><span aria-hidden="true">✓</span> Header forensics &amp; SPF/DKIM/DMARC</div>
           <div className="login-check"><span aria-hidden="true">✓</span> IP geolocation &amp; origin tracing</div>
@@ -342,8 +327,8 @@ export function LoginPage() {
             <span>{mode === 'login' ? 'Sign in' : 'Register'}</span>
           </div>
 
-          <h2 className="login-form-title">Netraksha</h2>
-          <p className="login-form-sub">Sign in to access the email threat dashboard.</p>
+          <h2 className="login-form-title">Sign in</h2>
+          <p className="login-form-sub">Sign in to access the Global Threat Dashboard.</p>
 
           <div className="login-tabs" role="tablist" aria-label="Sign in or register">
             <button
@@ -370,7 +355,7 @@ export function LoginPage() {
           {notice ? <div className="login-notice" role="status">{notice}</div> : null}
 
           <div className="login-field-group">
-            <label htmlFor="login-email" className="login-field-label">Username</label>
+            <label htmlFor="login-email" className="login-field-label">Email</label>
             <input
               id="login-email"
               type="email"
@@ -405,10 +390,10 @@ export function LoginPage() {
             {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
           </button>
           <div className="login-seed">
-            <div>admin / admin123 · analyst / analyst123 (seeded demo accounts)</div>
+            <div>Demo accounts (local dev): admin / admin123 · analyst / analyst123</div>
             <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'center' }}>
-              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('admin'); setPassword('admin123'); login('admin', 'admin123'); }}>⚡ Quick Login: Admin</button>
-              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('analyst'); setPassword('analyst123'); login('analyst', 'analyst123'); }}>⚡ Quick Login: Analyst</button>
+              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('admin'); setPassword('admin123'); login('admin', 'admin123'); }}>Quick Login: Admin</button>
+              <button type="button" className="ghost small" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => { setEmail('analyst'); setPassword('analyst123'); login('analyst', 'analyst123'); }}>Quick Login: Analyst</button>
             </div>
           </div>
           <p className="sub" style={{ marginTop: 8, fontSize: 12 }}>Public self-registration → ReadOnly by default. Admin creation requires the out-of-band SETUP_TOKEN.</p>
@@ -748,8 +733,16 @@ export function Dashboard() {
       const detail = (e as CustomEvent).detail as { q?: string } | undefined;
       if (detail && typeof detail.q === 'string') setQ(detail.q);
     };
+    const onSevFilter = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { sev?: string } | undefined;
+      if (detail && typeof detail.sev === 'string') setSevFilter(detail.sev);
+    };
     window.addEventListener('soc:top-search', onTopSearch);
-    return () => window.removeEventListener('soc:top-search', onTopSearch);
+    window.addEventListener('soc:severity-filter', onSevFilter);
+    return () => {
+      window.removeEventListener('soc:top-search', onTopSearch);
+      window.removeEventListener('soc:severity-filter', onSevFilter);
+    };
   }, []);
 
   const scrollTo = (id: string) => {
@@ -866,10 +859,7 @@ export function Dashboard() {
           <p className="greet-sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
         </div>
         <div className="greet-actions">
-          <button type="button" className="pill-filter" onClick={() => { setSevFilter('all'); scrollTo('all-emails'); }} title="Show this week's emails">This Week ▾</button>
-          <button type="button" className="btn-note" onClick={() => { scrollTo('ingest-panel'); setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300); }} title="Write an analysis note">Note</button>
           <button type="button" className="btn-tpl" onClick={() => { setRaw(PHISH_SAMPLE); scrollTo('ingest-panel'); }} title="Load a sample template">Template</button>
-          <AISparkle onClick={() => scrollTo('recent-investigations')} />
           <button type="button" className="btn-new" onClick={() => { scrollTo('ingest-panel'); setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300); }}>+ New Analysis</button>
         </div>
       </div>
@@ -890,18 +880,18 @@ export function Dashboard() {
             </div>
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginBottom: 18 }}>
               <div className="card">
-                <h3>Score distribution</h3>
+                <h3>Emails by risk band</h3>
                 <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
-                  <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: '#DC2626' }} />
-                  <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: '#EA580C' }} />
-                  <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: '#F59E0B' }} />
-                  <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: '#22C55E' }} />
+                  <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: 'var(--critical)' }} />
+                  <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: 'var(--high)' }} />
+                  <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: 'var(--medium)' }} />
+                  <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: 'var(--low)' }} />
                 </div>
                 <div className="legend">
-                  <span><span className="sev" style={{ background: '#DC2626' }} />Critical {dist.critical}</span>
-                  <span><span className="sev" style={{ background: '#EA580C' }} />High {dist.high}</span>
-                  <span><span className="sev" style={{ background: '#F59E0B' }} />Medium {dist.medium}</span>
-                  <span><span className="sev" style={{ background: '#22C55E' }} />Low {dist.low}</span>
+                  <span><span className="sev" style={{ background: 'var(--critical)' }} />Critical {dist.critical}</span>
+                  <span><span className="sev" style={{ background: 'var(--high)' }} />High {dist.high}</span>
+                  <span><span className="sev" style={{ background: 'var(--medium)' }} />Medium {dist.medium}</span>
+                  <span><span className="sev" style={{ background: 'var(--low)' }} />Low {dist.low}</span>
                 </div>
               </div>
               <div className="card">
@@ -1017,7 +1007,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      <InternalLinks current="/dashboard" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
         description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/dashboard`,
@@ -1119,12 +1108,13 @@ export function GraphSvg({ graph }: { graph: any }) {
   const connectedToActive = activeFocusId ? neighborsMap.get(activeFocusId) || new Set() : null;
 
   const getColor = (k: string) => {
+    // PDF p.11 — entity colors fixed by type, identical on map/graph/case file.
     switch (k) {
-      case 'Domain': return '#f59e0b'; // Amber
-      case 'IP_Address': return '#ef4444'; // Crimson
-      case 'Threat_Campaign': return '#a855f7'; // Purple
-      case 'Email_Address': return '#10b981'; // Emerald
-      default: return '#38bdf8'; // Sky
+      case 'IP_Address': return 'var(--teal)';
+      case 'Domain': return 'var(--correlation)';
+      case 'Email_Address': return 'var(--high)';
+      case 'Threat_Campaign': return 'var(--critical)';
+      default: return 'var(--muted)';
     }
   };
 
@@ -1480,7 +1470,8 @@ function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
       {rows.map((s) => {
         const c = s.contribution_to_score ?? 0;
         const w = (100 * Math.abs(c)) / maxAbs;
-        const bar = c > 0 ? '#FB923C' : c < 0 ? '#22C55E' : '#8A90A8';
+        // Signal hues use the brand pair (teal/violet + neutral) — never the risk palette.
+        const bar = c > 0 ? 'var(--correlation)' : c < 0 ? 'var(--teal)' : 'var(--muted)';
         return (
           <div key={s.signal_name} style={{ marginBottom: 12 }}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
@@ -1570,10 +1561,6 @@ export function EmailView({ id }: { id: string }) {
       <div className="doc-title-row">
         <h1 className="doc-title">{d.email.subject || '(no subject)'}</h1>
         <VerdictPill score={a.fraud_score ?? 0} classification={a.threat_classification} />
-        <div className="doc-tools">
-          <AISparkle onClick={() => setTab(1)} title="Explain this score" />
-          <button type="button" className="doc-tool-btn" title="More actions" aria-label="More actions">⋯</button>
-        </div>
       </div>
       <p className="sub">
         {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
@@ -1630,7 +1617,6 @@ export function EmailView({ id }: { id: string }) {
             {(a.nlp_cues_detected || []).length === 0 ? <p className="sub">None</p> : (
               <div>{(a.nlp_cues_detected || []).map((c: string) => <span key={c} className="auth-pill auth-none">{c}</span>)}</div>
             )}
-            <img src="/favicon.svg" alt="Forensic shield watermark - verdict authenticity indicator" width={48} height={48} style={{ marginTop: 12, opacity: 0.9 }} loading="lazy" />
           </div>
           <div className="card">
             <h3>Authentication</h3>
@@ -1672,8 +1658,8 @@ export function EmailView({ id }: { id: string }) {
 
       {tab === 1 && (
         <div className="card">
-          <h3>Key Signals</h3>
-          <p className="sub" style={{ marginBottom: 10 }}>Weighted contribution of each signal to the final score — peach bars raise risk, green bars lower it.</p>
+          <h3>Why this score</h3>
+          <p className="sub" style={{ marginBottom: 10 }}>Weighted contribution of each signal to the final score — violet bars raise risk, teal bars lower it.</p>
           <ScoreWhy breakdown={a.score_breakdown} score={a.fraud_score ?? 0} />
           <div style={{ marginTop: 10 }}>
             <AvatarStack names={['analyst', 'soc.ir']} max={2} />
@@ -1801,7 +1787,6 @@ export function EmailView({ id }: { id: string }) {
         <button className="ghost small" onClick={() => triggerDownload('pdf')}>Export PDF</button>
         <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
       </div>
-      <InternalLinks current="/email" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
         description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/email/${id}`,
@@ -1836,11 +1821,8 @@ export function Campaigns() {
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Campaigns' }]} />
       <div className="greet-row">
         <div>
-          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <h1 className="greet-title">Campaigns</h1>
           <p className="greet-sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
-        </div>
-        <div className="greet-actions">
-          <AISparkle onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} title="Summarize campaigns" />
         </div>
       </div>
       <Toast msg={err} />
@@ -1865,7 +1847,6 @@ export function Campaigns() {
           ))}
         </div>
       )}
-      <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
         description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/campaigns`,
@@ -1944,7 +1925,6 @@ export function CampaignDetail({ id }: { id: string }) {
           </table>
         )}
       </div>
-      <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: cardName,
         description: `Campaign ${cardName} with ${d?.card?.email_count || 0} emails, confidence ${d?.card?.confidence ? Math.round(d.card.confidence * 100) : 0}%`,
@@ -1979,37 +1959,45 @@ export function ModelInfo() {
   if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><Toast msg={err} /></div>;
   const labels: string[] = m.confusion_labels || [];
   const per = m.per_class || {};
+  const macroP = labels.length ? labels.reduce((a, l) => a + (per[l]?.precision ?? 0), 0) / labels.length : 0;
+  const macroR = labels.length ? labels.reduce((a, l) => a + (per[l]?.recall ?? 0), 0) / labels.length : 0;
+  const macroF = labels.length ? labels.reduce((a, l) => a + (per[l]?.f1 ?? 0), 0) / labels.length : 0;
+  const cmMax = Math.max(1, ...(m.confusion_matrix || []).flat());
+  const heatClass = (v: number) => {
+    const f = v / cmMax;
+    if (f >= 0.8) return 'heat-4';
+    if (f >= 0.55) return 'heat-3';
+    if (f >= 0.3) return 'heat-2';
+    if (f > 0) return 'heat-1';
+    return 'heat-0';
+  };
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Model Transparency' }]} />
       <div className="greet-row">
         <div>
-          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
+          <h1 className="greet-title">Classifier transparency</h1>
           <p className="greet-sub">
             Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
-            ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
+            ({m.n_test} test / {m.n_train} train, seed {m.random_state}). One teal ramp does the whole heat map.
           </p>
         </div>
       </div>
-      <div className="metric-grid" style={{ marginBottom: 18 }}>
-        <div className="card metric-card">
-          <MetricRing pct={(m.accuracy ?? 0) * 100} />
-          <div className="metric-label">Accuracy</div>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: 18 }}>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 36, fontWeight: 800, color: 'var(--teal)' }}>{macroP.toFixed(2)}</div>
+          <h3 style={{ textAlign: 'center' }}>Precision</h3>
         </div>
-        <div className="card metric-card">
-          <MetricRing pct={(m.macro_f1 ?? 0) * 100} />
-          <div className="metric-label">Macro F1</div>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 36, fontWeight: 800, color: 'var(--teal)' }}>{macroR.toFixed(2)}</div>
+          <h3 style={{ textAlign: 'center' }}>Recall</h3>
         </div>
-        <div className="card metric-card">
-          <MetricRing pct={(m.macro_precision ?? 0) * 100} />
-          <div className="metric-label">Macro precision</div>
-        </div>
-        <div className="card metric-card">
-          <MetricRing pct={(m.macro_recall ?? 0) * 100} />
-          <div className="metric-label">Macro recall</div>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--serif)', fontSize: 36, fontWeight: 800, color: 'var(--teal)' }}>{macroF.toFixed(2)}</div>
+          <h3 style={{ textAlign: 'center' }}>F1</h3>
         </div>
       </div>
-      <p className="sub">Honest scope note: TF-IDF + LogisticRegression contributes 30% of the fraud score — see the present-stage note in the PRD.</p>
+      <p className="sub">Accuracy {(m.accuracy ?? 0).toFixed(3)} · macro F1 {(m.macro_f1 ?? 0).toFixed(3)} · contributes 30% of the fraud score (nlp signal).</p>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
         <div className="card">
           <h3>Per-class precision / recall / F1</h3>
@@ -2039,8 +2027,8 @@ export function ModelInfo() {
                   <tr key={labels[i]}>
                     <th style={{ textAlign: 'left' }}>{labels[i]}</th>
                     {row.map((v, j) => (
-                      <td key={j} style={{ background: i === j ? 'rgba(34,197,94,0.15)' : v ? 'rgba(239,68,68,0.15)' : undefined }}>
-                        <b>{v}</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>{Math.round((100 * v) / total)}%</span>
+                      <td key={j} className={heatClass(v)}>
+                        <b>{v}</b> <span style={{ opacity: 0.75, fontSize: 11 }}>{Math.round((100 * v) / total)}%</span>
                       </td>
                     ))}
                   </tr>
@@ -2051,7 +2039,6 @@ export function ModelInfo() {
           <p className="sub" style={{ marginBottom: 0 }}>Diagonal cells are correct predictions; off-diagonal cells are confusions.</p>
         </div>
       </div>
-      <InternalLinks current="/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
         description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/model`,
@@ -2165,8 +2152,8 @@ export function Mailboxes() {
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Mailboxes' }]} />
       <div className="greet-row">
         <div>
-          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
-          <p className="greet-sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. All credentials and refresh tokens are encrypted server-side.</p>
+          <h1 className="greet-title">Mailbox connectors</h1>
+          <p className="greet-sub">Organization-level OAuth connectors (Google + Microsoft). Credentials and refresh tokens are encrypted server-side.</p>
         </div>
       </div>
       <Toast msg={err} />
@@ -2174,10 +2161,10 @@ export function Mailboxes() {
       <div className="provider-grid" style={{ marginBottom: 14 }}>
         <div className="card provider-card">
           <div className="provider-top">
-            <span className={`provider-icon${googleConn ? '' : ' idle'}`} aria-hidden="true">G</span>
+            <span className={`health-dot ${googleConn ? 'health-connected' : 'health-error'}`} aria-hidden="true" />
             <div>
               <p className="provider-name">Google Workspace</p>
-              <p className="provider-sub">{googleConn ? <span className="mono">{googleConn.account_email}</span> : 'Not connected'}</p>
+              <p className="provider-sub">{googleConn ? <>Connected · <span className="mono">{googleConn.account_email}</span></> : 'Not connected'}</p>
             </div>
           </div>
           {googleConn ? (
@@ -2206,10 +2193,10 @@ export function Mailboxes() {
         </div>
         <div className="card provider-card">
           <div className="provider-top">
-            <span className={`provider-icon${msConn ? '' : ' idle'}`} aria-hidden="true">M</span>
+            <span className={`health-dot ${msConn ? 'health-connected' : 'health-error'}`} aria-hidden="true" />
             <div>
               <p className="provider-name">Microsoft 365</p>
-              <p className="provider-sub">{msConn ? <span className="mono">{msConn.account_email}</span> : 'Not connected'}</p>
+              <p className="provider-sub">{msConn ? <>Connected · <span className="mono">{msConn.account_email}</span></> : 'Not connected'}</p>
             </div>
           </div>
           {msConn ? (
@@ -2263,12 +2250,8 @@ export function Mailboxes() {
               </div>
             </div>
           )}
-          <div className="row" style={{ marginTop: 4 }}>
-            <Link to="/dashboard">Back to Dashboard</Link>
-          </div>
         </div>
       </div>
-      <InternalLinks current="/mailboxes" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/mailboxes`,
@@ -2283,9 +2266,9 @@ export function Mailboxes() {
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };
 
 const COLS = [
-  { key: 'Open', color: '#60a5fa' },
-  { key: 'InProgress', color: '#eab308' },
-  { key: 'Closed', color: '#22c55e' },
+  { key: 'Open', color: 'var(--correlation)', cls: 'k-open' },
+  { key: 'InProgress', color: 'var(--high)', cls: 'k-progress' },
+  { key: 'Closed', color: 'var(--low)', cls: 'k-closed' },
 ];
 
 export function Cases() {
@@ -2303,7 +2286,6 @@ export function Cases() {
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
-  const headColor = (key: string) => (key === 'Open' ? '#9AA1B5' : key === 'Closed' ? '#22C55E' : '#5B6CFF');
   const statusPill = (key: string) => (key === 'Open' ? 'verdict-draft' : key === 'Closed' ? 'verdict-low' : 'verdict-progress');
 
   const load = async () => {
@@ -2355,11 +2337,8 @@ export function Cases() {
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Case Management' }]} />
       <div className="greet-row">
         <div>
-          <h1 className="greet-title">{greetingFor()}, Analyst!</h1>
-          <p className="greet-sub">Track investigations from triage to closure.</p>
-        </div>
-        <div className="greet-actions">
-          <span className="pill-filter" title="Cases in scope">This Week · {cases.length} cases</span>
+          <h1 className="greet-title">Case management</h1>
+          <p className="greet-sub">Track investigations from triage to closure. {cases.length} case{cases.length === 1 ? '' : 's'} in scope.</p>
         </div>
       </div>
       <Toast msg={err} />
@@ -2373,7 +2352,7 @@ export function Cases() {
         <div className="kanban">
           {COLS.map((c) => (
             <div key={c.key} className="kcol">
-              <div className="kcol-head" style={{ background: headColor(c.key) }}>{c.key === 'InProgress' ? 'In Progress' : c.key} {cases.filter((k) => k.status === c.key).length}</div>
+              <div className={`kcol-head ${c.cls}`}>{c.key === 'InProgress' ? 'In Progress' : c.key} · {cases.filter((k) => k.status === c.key).length}</div>
               {cases.filter((k) => k.status === c.key).map((k) => (
                 <div key={k.id} className="kcard">
                   <div className="invest-card-top">
@@ -2404,7 +2383,6 @@ export function Cases() {
           ))}
         </div>
       )}
-      <InternalLinks current="/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
         description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/cases`,
@@ -2441,9 +2419,9 @@ export function PrivacyPolicy() {
         <p>Request access or deletion of your analyst account and ingested data via hello@socforensics.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
         <h3>Data location</h3>
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
+        <p style={{ marginTop: 16 }}><a href="mailto:hello@socforensics.io" style={{ color: 'var(--teal)' }}>Contact our Data Protection Officer →</a></p>
         </div>
       </div>
-      <InternalLinks current="/privacy" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
         description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/privacy`,
@@ -2482,7 +2460,6 @@ export function TermsConditions() {
           <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
         </div>
       </div>
-      <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
         description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/terms`,
