@@ -41,10 +41,10 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 1. Log into Supabase → your project
 2. **Authentication → Email** → ✅ Confirm "Enable Email Confirmations" is ON
 3. **Authentication → URL Configuration** → Add `http://localhost:5173` to Redirect URLs for local dev
-4. **SQL Editor** → Run the `on_auth_user_created` trigger SQL (from Supabase Migration Plan). Verify it exists under **Database → Functions**
+4. **SQL Editor** → Run `backend/supabase_handle_new_user.sql` **once** (creates `handle_new_user()`, registers `on_auth_user_created` AFTER INSERT + `on_auth_user_confirmed` AFTER UPDATE triggers, and backfills already-confirmed users). Verify under **Database → Functions**. Without it, signups never get a `public.users` row (role `Analyst` + personal org) and `GET /auth/me` 401s.
 5. Collect these values (needed for Railway + Vercel):
-   - `DATABASE_URL` (Transaction Pooler, port 6543, `?pgbouncer=true`) — already in `.env`
-   - `SUPABASE_JWT_SECRET` — already in `.env`
+   - `DATABASE_URL` (Transaction Pooler, port 6543, `?pgbouncer=true` — stripped for psycopg2 automatically) — already in `.env`
+   - `SUPABASE_URL` + `SUPABASE_JWT_SECRET` (Supabase → Settings → API; URL feeds JWKS verification, secret is the HS256 fallback) — already in `.env`
    - `SUPABASE_URL` + `SUPABASE_ANON_KEY` (from **Project Settings → API**) — needed for frontend
 
 ---
@@ -56,8 +56,9 @@ Since production uses Supabase Postgres, the local `postgres` service has been r
 Run locally:
 ```bash
 docker compose up -d
-# Backend at http://localhost:8000 (reads Supabase DATABASE_URL from .env)
-# Frontend at http://localhost:5173 (proxies to backend)
+# Backend at http://localhost:8000 (reads Supabase DATABASE_URL from repo-root .env)
+# Frontend at http://localhost:5173 (reads the SAME repo-root .env — vite envDir '..';
+#   keep VITE_API_URL empty locally so /api is proxied to the backend, CORS never applies)
 ```
 
 ---
@@ -83,7 +84,8 @@ Go to **Railway Service → Variables → Raw Editor** → paste all of the foll
 APP_ENV=production
 # Database — Supabase Transaction Pooler
 DATABASE_URL=postgresql://postgres.lwdlgmwuqbfjeqxaxcck:[YOUR-PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-# Supabase Auth JWT verification
+# Supabase Auth JWT verification (URL feeds JWKS; secret is the HS256 fallback)
+SUPABASE_URL=https://[your-project-ref].supabase.co
 SUPABASE_JWT_SECRET=[your-supabase-jwt-secret]
 # App Secrets (generate fresh values for production — see Phase 0.2)
 SECRET_KEY=[your-32-char-secret-key]
@@ -102,10 +104,10 @@ SLACK_WEBHOOK_URL=
 PAGERDUTY_ROUTING_KEY=
 ENABLE_LIVE_LOOKUPS=0
 SMTP_ENABLED=0
-# Gmail / Microsoft OAuth (leave empty if not using)
+# Gmail / Microsoft OAuth (leave empty if not using — secrets are server-side only)
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
+GOOGLE_REDIRECT_URI=https://[your-app].vercel.app/  # must exactly match an allowlisted frontend origin (trailing slash included)
 MS_CLIENT_ID=
 MS_CLIENT_SECRET=
 ```
@@ -129,13 +131,15 @@ MS_CLIENT_SECRET=
 
 ### 2.5 Run Alembic Migrations
 
-The `backend/alembic/versions/` directory has two revisions:
+The `backend/alembic/versions/` directory has four revisions:
 - `834dc871451e` — initial schema
-- `b7c2d1a9e4f5` — Supabase auth migration
+- `b7c2d1a9e4f5` — Supabase auth migration (drops the old `refresh_tokens` login ledger)
+- `c9e8f7a6b3d2` — RLS policies (defense-in-depth, fail-closed; app-layer checks remain the enforced isolation)
+- `e5a1c93d7b28` — vault columns/indexes/CHECK drift fix (`REMEDIATION_LOG.md` P0-1)
 
 These run automatically on startup because `init_db()` calls `_alembic_upgrade()`. Watch the Railway deployment logs for:
 ```
-INFO  [alembic.runtime.migration] Running upgrade 834dc871451e -> b7c2d1a9e4f5
+INFO  [alembic.runtime.migration] Running upgrade b7c2d1a9e4f5 -> c9e8f7a6b3d2 -> e5a1c93d7b28
 ```
 
 > **Tip:** If you need to run migrations manually (e.g., to debug), use the Railway CLI:
@@ -332,6 +336,7 @@ git add . && git commit -m "deploy: <description>" && git push
 |----------|----------|--------|
 | `APP_ENV` | ✅ | `production` |
 | `DATABASE_URL` | ✅ | Supabase Transaction Pooler URL |
+| `SUPABASE_URL` | ✅ (recommended) | Supabase → Settings → API (feeds JWKS verification) |
 | `SUPABASE_JWT_SECRET` | ✅ | Supabase → Settings → API → JWT Settings |
 | `SECRET_KEY` | ✅ | Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `CUSTODY_KEY` | ✅ | Generate: same as above |
@@ -360,8 +365,8 @@ git add . && git commit -m "deploy: <description>" && git push
 |-------|--------|-----|
 | `index.html` canonical URL hardcoded to `socforensics.io` | SEO only — app still works | Update when you get your domain |
 | `frontend/public/CNAME` says `socforensics.io` | Only matters for GitHub Pages (not used) | Ignore or delete the file |
-| `DEPLOY.md` references SQLite fallback + old auth routes | Documentation drift | Updated in this file |
-| `docker-compose.yml` had a local postgres service | Local dev only — doesn't affect Railway | Fixed in Phase 1 above |
+| Old `refresh_tokens` table lingering from a pre-Supabase deploy | Dead rows, no code reads them | `DELETE FROM refresh_tokens;` after deploy (migration `b7c2d1a9e4f5` drops it on fresh DBs) |
+| `docker-compose.yml` had a local postgres service | Local dev only — doesn't affect Railway | Removed; production uses Supabase Postgres |
 
 ---
 
