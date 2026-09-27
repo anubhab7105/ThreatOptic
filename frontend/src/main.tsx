@@ -151,11 +151,11 @@ function OAuthCallbackHandler() {
 function NotFoundPage() {
   const { user } = useAuth();
   useEffect(() => {
-    document.title = 'Page Not Found - SOC Forensics Lab';
+    document.title = 'Page Not Found - ThreatOptic';
     setMeta('description', 'The requested forensic resource was not found. Return to the threat dashboard, campaigns, or case board.');
     setCanonical('/404');
     const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle) ogTitle.setAttribute('content', 'Page Not Found - SOC Forensics Lab');
+    if (ogTitle) ogTitle.setAttribute('content', 'Page Not Found - ThreatOptic');
   }, []);
   return (
     <div className="page">
@@ -201,7 +201,7 @@ function NotFoundPage() {
         </div>
       </div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - ThreatOptic',
         description: 'Requested forensic resource not found', url: `${CANONICAL_BASE}/404`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -368,7 +368,7 @@ useEffect(() => {
         <SkipToContent />
         <ScrollProgress />
         <nav className="nav" aria-label="Primary">
-          <Link to="/" className="brand" aria-label="SOCForensics home"><span aria-hidden="true">◈</span> SOCForensics</Link>
+          <Link to="/" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
         </nav>
         <div className="page"><div className="skel" style={{ height: 120 }} aria-hidden="true" /></div>
       </div>
@@ -382,7 +382,7 @@ useEffect(() => {
         <SkipToContent />
         <ScrollProgress />
         <nav className="nav" aria-label="Primary" style={{ justifyContent: 'space-between' }}>
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+          <Link to="/" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
           <ThemeToggle />
         </nav>
         <ErrorBoundary>
@@ -410,7 +410,7 @@ useEffect(() => {
       <ScrollProgress />
       <BackToTop />
       <aside className="icon-rail" aria-label="Primary">
-        <Link to="/dashboard" className="rail-logo" aria-label="SOCForensics home" title="SOCForensics — Global Threat Dashboard"><span aria-hidden="true">◈</span></Link>
+        <Link to="/dashboard" className="rail-logo" aria-label="ThreatOptic home" title="ThreatOptic — Global Threat Dashboard"><span aria-hidden="true">◈</span></Link>
         <Link to="/dashboard" className={`rail-btn${onDashboard}`} aria-label="Home dashboard" title="Home / Dashboard" aria-current={onDashboard ? 'page' : undefined}><span aria-hidden="true">⌂</span></Link>
         <Link to="/campaigns" className={`rail-btn${onCampaigns}`} aria-label="Campaigns" title="Campaigns" aria-current={onCampaigns ? 'page' : undefined}><span aria-hidden="true">◉</span></Link>
         <Link to="/cases" className={`rail-btn${on('/cases')}`} aria-label="Cases" title="Cases" aria-current={on('/cases') ? 'page' : undefined}><span aria-hidden="true">▤</span></Link>
@@ -510,9 +510,9 @@ useEffect(() => {
           <Link to="/dashboard">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
           {' - '}<Link to="/privacy">Privacy Policy</Link> - <Link to="/terms">Terms</Link>
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
-          {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>
+          {' - '}<span>ThreatOptic - 301 Congress Ave, Austin, TX 78701</span>
         </div>
-        <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
+        <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 ThreatOptic - socforensics.io</div>
       </footer>
         </div>
       </div>

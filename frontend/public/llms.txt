@@ -1,14 +1,14 @@
-# SOC Forensics Lab - Email Threat Dashboard
+# ThreatOptic - Email Threat Dashboard
 
 > Email threat detection, geolocation and forensic intelligence platform for SOC analysts and incident response teams.
 
 ## About
-SOC Forensics Lab provides real-time phishing, Business Email Compromise (BEC) and spoofing detection through NLP, header forensics, geolocation and graph-based identity correlation. The platform generates chain-of-custody PDF/JSON reports, scores every email 0-100, and clusters campaigns by shared infrastructure.
+ThreatOptic provides real-time phishing, Business Email Compromise (BEC) and spoofing detection through NLP, header forensics, geolocation and graph-based identity correlation. The platform generates chain-of-custody PDF/JSON reports, scores every email 0-100, and clusters campaigns by shared infrastructure.
 
 - Canonical domain: https://socforensics.io/
 - Primary UI: https://socforensics.io/
 - Docs: https://socforensics.io/model (model transparency)
-- Contact: SOC Forensics Lab, 301 Congress Ave, Suite 400, Austin, TX 78701, USA - hello@socforensics.io - +1-512-555-0148
+- Contact: ThreatOptic, 301 Congress Ave, Suite 400, Austin, TX 78701, USA - hello@socforensics.io - +1-512-555-0148
 - Sitemap: https://socforensics.io/sitemap.xml
 - Robots: https://socforensics.io/robots.txt
 
