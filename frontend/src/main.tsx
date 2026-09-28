@@ -538,12 +538,41 @@ useEffect(() => {
   );
 }
 
+/** Last-resort boundary around the whole app: a crash here (broken chunk,
+ * provider failure, etc.) shows a themed message instead of a blank page. */
+class AppCrashBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch() { /* handled: static fallback below */ }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="page" role="alert" style={{ maxWidth: 640, margin: '48px auto' }}>
+          <div className="neu-card">
+            <h1 style={{ marginTop: 0 }}>Something went wrong</h1>
+            <p className="sub">The workspace hit an unexpected error and could not render. Your data is safe — try reloading, or sign in again.</p>
+            <div className="row">
+              <button type="button" className="neu-btn neu-btn--primary neu-btn--md" onClick={() => window.location.reload()}>
+                Reload
+              </button>
+              <Link className="neu-btn neu-btn--md" to="/login">Go to sign in</Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
-  <ThemeProvider>
-    <BrowserRouter>
-      <AuthProvider>
-        <Shell />
-      </AuthProvider>
-    </BrowserRouter>
-  </ThemeProvider>,
+  <AppCrashBoundary>
+    <ThemeProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <Shell />
+        </AuthProvider>
+      </BrowserRouter>
+    </ThemeProvider>
+  </AppCrashBoundary>,
 );

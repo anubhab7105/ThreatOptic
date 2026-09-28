@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import createGlobe from 'cobe';
+import { SCENE_TOKEN_FALLBACKS } from './sceneTokens';
 
 /** M4 globe visual. Mounts a `cobe` canvas only when visible; SVG fallback stays behind in the DOM. */
 export function GeoGlobe() {
@@ -24,8 +25,8 @@ export function GeoGlobe() {
     const start = () => {
       try {
         const cs = getComputedStyle(document.documentElement);
-        const accent = cs.getPropertyValue('--scene-accent').trim() || '#4F46E5';
-        const bg = cs.getPropertyValue('--scene-bg').trim() || '#DDE3ED';
+        const accent = cs.getPropertyValue('--scene-accent').trim() || SCENE_TOKEN_FALLBACKS.accent;
+        const bg = cs.getPropertyValue('--scene-bg').trim() || SCENE_TOKEN_FALLBACKS.bg;
         const toRgb = (hex: string): [number, number, number] => {
           const h = hex.replace('#', '');
           if (h.length !== 6) return [0.3, 0.3, 0.9];
@@ -41,8 +42,8 @@ export function GeoGlobe() {
           diffuse: 1.1,
           mapSamples: 8000,
           mapBrightness: 5,
-          baseColor: toRgb(bg.startsWith('#') ? bg : '#DDE3ED'),
-          markerColor: toRgb(accent.startsWith('#') ? accent : '#4F46E5'),
+          baseColor: toRgb(bg.startsWith('#') ? bg : SCENE_TOKEN_FALLBACKS.bg),
+          markerColor: toRgb(accent.startsWith('#') ? accent : SCENE_TOKEN_FALLBACKS.accent),
           glowColor: [0.7, 0.7, 0.8],
           markers: [{ location: [37.09, -95.71], size: 0.08 }],
         });

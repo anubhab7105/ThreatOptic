@@ -6,6 +6,7 @@
     { "source": "/llms.txt", "destination": "/llms.txt" },
     { "source": "/favicon.svg", "destination": "/favicon.svg" },
     { "source": "/og-image.svg", "destination": "/og-image.svg" },
+    { "source": "/og-image.png", "destination": "/og-image.png" },
     { "source": "/site.webmanifest", "destination": "/site.webmanifest" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ThemeToggle } from '../main';
 import { Badge, Button, Card, SeverityBadge, Tabs, Tooltip, Well } from '../primitives';
 import { HeroPoster } from './Poster';
+import { SceneBoundary } from './SceneBoundary';
 import { useSceneStore } from './sceneStore';
 import {
   EXPLAIN_FACTORS,
@@ -222,7 +223,9 @@ function ShowcaseVisual({ active }: { active: number }) {
           </div>
           <div className="landing-new__well" style={{ aspectRatio: '16 / 10', minHeight: 180 }} aria-hidden="true">
             <Suspense fallback={null}>
-              <GeoGlobe />
+              <SceneBoundary>
+                <GeoGlobe />
+              </SceneBoundary>
             </Suspense>
             <svg viewBox="0 0 320 200" role="presentation" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
               <ellipse cx="160" cy="100" rx="120" ry="70" fill="none" stroke="var(--scene-line)" strokeWidth="1.5" strokeDasharray="4 5" />
@@ -343,7 +346,7 @@ export function LandingPage() {
     title: 'ThreatOptic | See the attack behind every email',
     description: 'Score suspicious emails, dissect their headers, trace their origin and map who they connect to — in one explainable workspace.',
     canonical: '/',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://socforensics.io/og-image.png',
   });
   const rootRef = useReveal();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -519,7 +522,9 @@ export function LandingPage() {
                 {showScene ? (
                   <div className="landing-canvas-host" aria-hidden="true">
                     <Suspense fallback={null}>
-                      <HeroScene />
+                      <SceneBoundary>
+                        <HeroScene />
+                      </SceneBoundary>
                     </Suspense>
                   </div>
                 ) : null}
@@ -548,7 +553,9 @@ export function LandingPage() {
             <div id="pipeline-scene-host" className="landing-new__pipeline-visual">
               {showPipelineScene ? (
                 <Suspense fallback={null}>
-                  <PipelineScene progress={0} reduced />
+                  <SceneBoundary>
+                    <PipelineScene progress={0} reduced />
+                  </SceneBoundary>
                 </Suspense>
               ) : null}
             </div>

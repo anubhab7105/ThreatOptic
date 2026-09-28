@@ -119,9 +119,21 @@
   .landing-new__steps { grid-template-columns: 1fr; }
   .landing-new__footer-grid { grid-template-columns: 1fr; text-align: left; }
   .landing-new__well { aspect-ratio: 1 / 1; }
+  /* 390px header: brand + toggle + drawer button must fit; the drawer menu
+     already carries the workspace CTA, so the duplicate header CTA hides. */
+  .landing-new__nav { gap: 8px; padding: 10px 16px; }
+  .landing-new__brand { font-size: 15px; }
+  .landing-new__nav-actions > a.neu-btn { display: none; }
+  /* Long tooltip bubbles are viewport-capped so they never widen the page. */
+  .landing-new .neu-tooltip__bubble { max-width: 80vw; white-space: normal; }
 }
 @media (prefers-reduced-motion: reduce) {
   .landing-reveal { opacity: 1; transform: none; transition: none; }
+}
+/* Touch layouts: icon-only controls must be at least 44x44px. Scoped to the
+   landing page so in-app layouts are untouched. */
+@media (pointer: coarse) {
+  .landing-new .neu-icon-btn { width: 44px; height: 44px; }
 }
 @media (prefers-contrast: more) {
   .landing-new__viewport, .landing-new__showcase-panel, .landing-new__well { box-shadow: none !important; }

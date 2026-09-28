@@ -1,24 +1,18 @@
 import { useEffect, useState } from 'react';
+import { SCENE_TOKEN_FALLBACKS, type SceneTokens } from './sceneTokens';
 
-export type SceneTokens = {
-  bg: string;
-  clay: string;
-  shade: string;
-  accent: string;
-  line: string;
-  risk: string;
-};
+export type { SceneTokens };
 
 function readTokens(): SceneTokens {
   const cs = getComputedStyle(document.documentElement);
   const get = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
   return {
-    bg: get('--scene-bg', '#DDE3ED'),
-    clay: get('--scene-clay', '#E9EEF6'),
-    shade: get('--scene-clay-shade', '#BFC9DA'),
-    accent: get('--scene-accent', '#4F46E5'),
-    line: get('--scene-line', 'rgba(27,35,51,0.35)'),
-    risk: get('--scene-risk', '#B91C1C'),
+    bg: get('--scene-bg', SCENE_TOKEN_FALLBACKS.bg),
+    clay: get('--scene-clay', SCENE_TOKEN_FALLBACKS.clay),
+    shade: get('--scene-clay-shade', SCENE_TOKEN_FALLBACKS.shade),
+    accent: get('--scene-accent', SCENE_TOKEN_FALLBACKS.accent),
+    line: get('--scene-line', SCENE_TOKEN_FALLBACKS.line),
+    risk: get('--scene-risk', SCENE_TOKEN_FALLBACKS.risk),
   };
 }
 
@@ -28,7 +22,7 @@ export function useSceneTokens(): SceneTokens {
     try {
       return readTokens();
     } catch {
-      return { bg: '#DDE3ED', clay: '#E9EEF6', shade: '#BFC9DA', accent: '#4F46E5', line: 'rgba(27,35,51,0.35)', risk: '#B91C1C' };
+      return { ...SCENE_TOKEN_FALLBACKS };
     }
   });
   useEffect(() => {
