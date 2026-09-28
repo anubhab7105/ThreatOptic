@@ -35,6 +35,15 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
+              // 3D landing chunk: lazy-only (HeroScene/PipelineScene/GeoGlobe).
+              // Never imported by the main bundle, so it loads after first paint.
+              if (
+                id.includes('three') ||
+                id.includes('@react-three') ||
+                id.includes('maath') ||
+                id.includes('/cobe')
+              )
+                return 'vendor-3d';
               if (id.includes('react-router-dom')) return 'vendor-router';
               if (id.includes('react') || id.includes('react-dom'))
                 return 'vendor-react';

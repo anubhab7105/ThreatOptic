@@ -11,10 +11,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-three/fiber": "^8.17.10",
     "@supabase/supabase-js": "^2.117.1",
+    "cobe": "^2.0.1",
+    "maath": "^0.10.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "three": "^0.186.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -34,6 +34,13 @@
   --chart-6: #BE123C;
   --sh-light: rgba(255,255,255,0.85);
   --sh-dark: rgba(160,172,194,0.60);
+  /* Landing scene tokens (Landing_Design.md §3) — only landing code may use these */
+  --scene-bg: #DDE3ED;
+  --scene-clay: #E9EEF6;
+  --scene-clay-shade: #BFC9DA;
+  --scene-accent: #4F46E5;
+  --scene-line: rgba(27,35,51,0.35);
+  --scene-risk: #B91C1C;
   /* Text on bright entity fills: light-theme fills are dark, so use white */
   --text-on-bright: #FFFFFF;
   /* Legacy aliases (pre-redesign pages; do not use in new code) */
@@ -77,6 +84,13 @@
   --chart-6: #FB7185;
   --sh-light: rgba(70,82,110,0.28);
   --sh-dark: rgba(5,8,15,0.65);
+  /* Landing scene tokens (Landing_Design.md §3) — only landing code may use these */
+  --scene-bg: #131824;
+  --scene-clay: #2A3247;
+  --scene-clay-shade: #1A2032;
+  --scene-accent: #818CF8;
+  --scene-line: rgba(230,234,243,0.35);
+  --scene-risk: #F87171;
   /* Dark text for labels sitting on bright entity fills (bright in both themes) */
   --text-on-bright: #101828;
   /* Legacy aliases (pre-redesign pages; do not use in new code) */
