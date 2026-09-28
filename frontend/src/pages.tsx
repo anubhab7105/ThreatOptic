@@ -1082,25 +1082,6 @@ export function Dashboard() {
         )
       )}
 
-      <div className="card" id="ingest-panel" style={{ marginBottom: 18 }}>
-        <h3>Ingest email for analysis</h3>
-        <textarea id="ingest-raw" rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" />
-        <div className="row" style={{ marginTop: 10 }}>
-          <button onClick={submit} disabled={busy || !raw.trim()}>{busy ? 'Analyzing…' : 'Analyze email'}</button>
-          <label className="row" style={{ gap: 6, fontSize: 12, color: 'var(--muted)' }} title="Queue via Celery worker instead of inline analysis">
-            <input type="checkbox" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} /> background queue
-          </label>
-          <button className="ghost" onClick={() => setRaw(PHISH_SAMPLE)}>Load phishing sample</button>
-          <button className="ghost" onClick={() => setRaw(CLEAN_SAMPLE)}>Load clean sample</button>
-          <label className="row" style={{ gap: 6 }}>
-            <span style={{ color: 'var(--muted)', fontSize: 12 }}>or upload .eml</span>
-            <input type="file" accept=".eml,.txt,.mime" onChange={(e) => onFile(e.target.files?.[0])} />
-          </label>
-        </div>
-      </div>
-
-      <GmailPanel onSynced={() => load()} />
-
       <Card
         title="Recent threats"
         description="Every row opens the Email Analysis view."
@@ -1832,7 +1813,7 @@ export function EmailView({ id }: { id: string }) {
           {tab === 0 && (
             <>
               <section aria-label="Verdict and key indicators">
-                <h3 style={{ marginTop: 0 }}>Verdict</h3>
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Verdict</h2>
                 <dl className="deflist">
                   <dt>Fraud score</dt><dd><SeverityBadge score={fraud} /> {a.threat_classification}</dd>
                   <dt>Action</dt><dd>{a.action_taken || '—'}</dd>
@@ -1851,10 +1832,10 @@ export function EmailView({ id }: { id: string }) {
               </section>
               <hr className="section-divider" />
               <section aria-label="Supporting evidence">
-                <h3 style={{ marginTop: 0 }}>Supporting evidence</h3>
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Supporting evidence</h2>
                 <div className="grid-2">
                   <div>
-                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Authentication detail</h4>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Authentication detail</h3>
                     {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) ? (
                       <dl className="deflist" style={{ gridTemplateColumns: '70px 1fr' }}>
                         {auth.spf?.detail ? <><dt>SPF</dt><dd>{auth.spf.detail}</dd></> : null}
@@ -1862,11 +1843,11 @@ export function EmailView({ id }: { id: string }) {
                         {auth.dmarc?.detail ? <><dt>DMARC</dt><dd>{auth.dmarc.detail}</dd></> : null}
                       </dl>
                     ) : <p className="sub">No authentication detail recorded.</p>}
-                    <h4 style={{ margin: '16px 0 8px', fontSize: 13 }}>Body (PII masked)</h4>
+                    <h3 style={{ margin: '16px 0 8px', fontSize: 14 }}>Body (PII masked)</h3>
                     <pre className="dump" style={{ whiteSpace: 'pre-wrap' }}>{d.email.body_text_masked || '(empty)'}</pre>
                   </div>
                   <div>
-                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h4>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
                     {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits.</p> : (
                       <Table label="Threat intelligence hits">
                         <thead><tr><th scope="col">Type</th><th scope="col">Value</th><th scope="col">Reason</th></tr></thead>
@@ -1889,7 +1870,7 @@ export function EmailView({ id }: { id: string }) {
 
           {tab === 1 && (
             <section aria-label="Why this score">
-              <h3 style={{ marginTop: 0 }}>Why this score?</h3>
+              <h2 style={{ marginTop: 0, fontSize: 16 }}>Why this score?</h2>
               <ScoreWhy breakdown={a.score_breakdown} score={fraud} />
             </section>
           )}
@@ -1897,7 +1878,7 @@ export function EmailView({ id }: { id: string }) {
           {tab === 2 && (
             <>
               <section aria-label="Chain of custody">
-                <h3 style={{ marginTop: 0 }}>Chain of custody</h3>
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Chain of custody</h2>
                 <dl className="deflist">
                   <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span> <CopyButton text={String(d.email.raw_eml_hash || '')} label="Copy hash" /></dd>
                   <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span> {d.email.message_id ? <CopyButton text={String(d.email.message_id)} label="Copy ID" /> : null}</dd>
@@ -1907,7 +1888,7 @@ export function EmailView({ id }: { id: string }) {
               <hr className="section-divider" />
               <div className="grid-2">
                 <section aria-label="Parsed relay path">
-                  <h3 style={{ marginTop: 0 }}>Relay path (origin first)</h3>
+                  <h2 style={{ marginTop: 0, fontSize: 16 }}>Relay path (origin first)</h2>
                   {relay.length === 0 ? <EmptyState message="No Received headers — sender path unverifiable." /> : (
                     <ol className="timeline">
                       {relay.map((h: any, i: number) => (
@@ -1921,7 +1902,7 @@ export function EmailView({ id }: { id: string }) {
                   )}
                 </section>
                 <section aria-label="Raw headers">
-                  <h3 style={{ marginTop: 0 }}>Raw chain</h3>
+                  <h2 style={{ marginTop: 0, fontSize: 16 }}>Raw chain</h2>
                   <pre className="dump">{JSON.stringify(relay, null, 2)}</pre>
                   <div className="row" style={{ marginTop: 8 }}>
                     <CopyButton text={JSON.stringify(relay, null, 2)} label="Copy raw chain" />
@@ -1934,7 +1915,7 @@ export function EmailView({ id }: { id: string }) {
           {tab === 3 && (
             <>
               <section aria-label="Origin and map">
-                <h3 style={{ marginTop: 0 }}>Origin</h3>
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Origin</h2>
                 <dl className="deflist">
                   <dt>Origin IP</dt>
                   <dd>
@@ -1978,11 +1959,11 @@ export function EmailView({ id }: { id: string }) {
                 <summary>Secondary evidence (WHOIS, DNS)</summary>
                 <div className="grid-2" style={{ marginTop: 12 }}>
                   <section aria-label="WHOIS record">
-                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>WHOIS</h4>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>WHOIS</h3>
                     <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
                   </section>
                   <section aria-label="DNS records">
-                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>DNS</h4>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>DNS</h3>
                     <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
                   </section>
                 </div>
@@ -1992,7 +1973,7 @@ export function EmailView({ id }: { id: string }) {
 
           {tab === 4 && (
             <section aria-label="Identity correlation graph">
-              <h3 style={{ marginTop: 0 }}>Identity correlation</h3>
+              <h2 style={{ marginTop: 0, fontSize: 16 }}>Identity correlation</h2>
               <p className="sub" style={{ marginTop: 0 }}>Trace node graph — domain linked to related campaign entities.</p>
               <GraphSvg graph={graph} />
               <details className="collapsible" style={{ marginTop: 12 }}>
