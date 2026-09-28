@@ -646,7 +646,7 @@ pre.dump {
 .faq-item summary::-webkit-details-marker { display: none; }
 .faq-answer { padding: 0 20px 20px; color: var(--muted); line-height: 1.7; font-size: 14px; }
 .shortcuts-dialog { border: none; border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-lift); max-width: 520px; width: 90%; padding: 0; color: var(--text); }
-.shortcuts-dialog::backdrop { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); }
+.shortcuts-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .shortcuts-content { padding: 24px; }
 .shortcuts-content header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
 .shortcuts-content h3 { margin: 0; font-size: 18px; font-weight: 700; }
