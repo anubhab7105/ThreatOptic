@@ -129,7 +129,7 @@ export function SegmentedControl<T extends string>({ options, value, onChange, l
           key={o.value}
           type="button"
           aria-pressed={value === o.value}
-          title={o.title ?? o.label}
+          title={o.title ?? (typeof o.label === 'string' ? o.label : undefined)}
           onClick={() => onChange(o.value)}
         >
           {o.label}

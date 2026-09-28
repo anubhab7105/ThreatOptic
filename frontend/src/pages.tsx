@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, AvatarStack, Empty, ScoreBadge, SkeletonList, StatCard, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
-import { Alert, Badge, Button, Card, EmptyState, ErrorState, IconButton, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
+import { AuthPill, AvatarStack, CopyButton, Empty, ScoreBadge, SkeletonList, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, Input, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, SortTh, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
 import { useChartTheme } from './useChartTheme';
 import { ThemeToggle } from './main';
 
@@ -875,8 +875,85 @@ export function Dashboard() {
   const dist = stats?.score_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const distTotal = Math.max(1, dist.critical + dist.high + dist.medium + dist.low);
 
+  // Ingest source + analytics range + table sort (all client-side, existing data only)
+  const [source, setSource] = useState<'paste' | 'upload' | 'gmail'>('paste');
+  const [range, setRange] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
+  const [sortKey, setSortKey] = useState<'received' | 'score'>('received');
+  const [sortDir, setSortDir] = useState<'ascending' | 'descending'>('descending');
+  const [activityOpen, setActivityOpen] = useState<boolean>(() =>
+    typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 1023px)').matches);
+
+  const sevCounts = useMemo(() => {
+    const c = { all: emails.length, critical: 0, high: 0, medium: 0, low: 0 };
+    for (const e of emails) {
+      const s = scores[e.id]?.score ?? -1;
+      if (s >= 90) c.critical += 1;
+      else if (s >= 75) c.high += 1;
+      else if (s >= 50) c.medium += 1;
+      else if (s >= 0) c.low += 1;
+    }
+    return c;
+  }, [emails, scores]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sortKey === 'score') {
+        const sa = scores[a.id]?.score ?? -1;
+        const sb = scores[b.id]?.score ?? -1;
+        return sortDir === 'ascending' ? sa - sb : sb - sa;
+      }
+      const ta = new Date(a.timestamp).getTime() || 0;
+      const tb = new Date(b.timestamp).getTime() || 0;
+      return sortDir === 'ascending' ? ta - tb : tb - ta;
+    });
+    return arr;
+  }, [filtered, scores, sortKey, sortDir]);
+
+  const flipSort = (key: 'received' | 'score') => {
+    if (sortKey === key) setSortDir(sortDir === 'ascending' ? 'descending' : 'ascending');
+    else { setSortKey(key); setSortDir('descending'); }
+  };
+
+  // Ingest trend buckets from already-loaded emails (honest client-side range filter,
+  // anchored to the newest loaded email so render stays pure)
+  const trend = useMemo(() => {
+    const end = Math.max(0, ...emails.map((e) => new Date(e.timestamp).getTime() || 0));
+    const span = range === '24h' ? 864e5 : range === '7d' ? 7 * 864e5 : range === '30d' ? 30 * 864e5 : 0;
+    const inRange = emails.filter((e) => {
+      const t = new Date(e.timestamp).getTime() || 0;
+      return !span || end - t <= span;
+    });
+    const buckets = new Map<string, number>();
+    for (const e of inRange) {
+      const d = new Date(e.timestamp);
+      const key = range === '24h'
+        ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()} ${d.getHours()}:00`
+        : d.toISOString().slice(0, 10);
+      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    }
+    return [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-15);
+  }, [emails, range]);
+  const trendMax = Math.max(1, ...trend.map(([, v]) => v));
+
+  const topCats = useMemo(() => {
+    const entries = Object.entries(stats?.by_classification || {}) as [string, number][];
+    return entries.sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [stats]);
+  const topCatMax = Math.max(1, ...topCats.map(([, v]) => v));
+  const chartVars = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+  const riskOf = (s: number) => (s >= 90 ? 'critical' : s >= 75 ? 'high' : s >= 50 ? 'medium' : 'low');
+
+  const blockedShare = stats?.total_emails ? Math.round((100 * (stats.blocked_threats || 0)) / Math.max(1, stats.total_emails)) : 0;
+
+  const newAnalysis = () => {
+    setSource('paste');
+    scrollTo('ingest-panel');
+    setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300);
+  };
+
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Threat Dashboard' }]} />
       <div className="greet-row">
         <div>
@@ -884,46 +961,135 @@ export function Dashboard() {
           <p className="greet-sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
         </div>
         <div className="greet-actions">
-          <button type="button" className="btn-tpl" onClick={() => { setRaw(PHISH_SAMPLE); scrollTo('ingest-panel'); }} title="Load a sample template">Template</button>
-          <button type="button" className="btn-new" onClick={() => { scrollTo('ingest-panel'); setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300); }}>+ New Analysis</button>
+          <Button variant="ghost" onClick={() => { setRaw(PHISH_SAMPLE); scrollTo('ingest-panel'); }} title="Load a sample template">Template</Button>
+          <Button variant="primary" onClick={newAnalysis}>+ New Analysis</Button>
         </div>
       </div>
 
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Something needs attention">{err}</Alert> : null}
+        {notice && !err ? <Alert tone="success">{notice}</Alert> : null}
+      </div>
 
       {loading && !stats ? (
-        <SkeletonList rows={4} />
+        <Card title="Loading dashboard"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card>
       ) : (
         stats && (
           <>
-            <div className="grid stats">
-              <StatCard label="Emails processed" value={stats.total_emails} />
-              <StatCard label="Blocked threats (≥75)" value={stats.blocked_threats} />
-              <StatCard label="Active campaigns" value={stats.active_campaigns} caption="shared infrastructure clusters" />
-              <StatCard label="Classifications" value={Object.keys(stats.by_classification || {}).length} caption={Object.entries(stats.by_classification || {}).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'} />
-            </div>
-            <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', marginBottom: 18 }}>
-              <div className="card">
-                <h3>Emails by risk band</h3>
-                <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
-                  <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: 'var(--critical)' }} />
-                  <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: 'var(--high)' }} />
-                  <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: 'var(--medium)' }} />
-                  <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: 'var(--low)' }} />
-                </div>
-                <div className="legend">
-                  <span><span className="sev" style={{ background: 'var(--critical)' }} />Critical {dist.critical}</span>
-                  <span><span className="sev" style={{ background: 'var(--high)' }} />High {dist.high}</span>
-                  <span><span className="sev" style={{ background: 'var(--medium)' }} />Medium {dist.medium}</span>
-                  <span><span className="sev" style={{ background: 'var(--low)' }} />Low {dist.low}</span>
+            <Card title="Key metrics" description="Fleet-wide totals from the dashboard endpoint">
+              <div className="kpi-strip">
+                <div className="kpi"><div className="kpi__value">{stats.total_emails}</div><div className="kpi__label">Emails processed</div></div>
+                <div className="kpi"><div className="kpi__value">{stats.blocked_threats}</div><div className="kpi__label">Blocked threats (≥75)</div><div className="kpi__sub"><span aria-hidden="true">▸</span>{blockedShare}% of all mail</div></div>
+                <div className="kpi"><div className="kpi__value">{stats.active_campaigns}</div><div className="kpi__label">Active campaigns</div><div className="kpi__sub">shared infrastructure</div></div>
+                <div className="kpi"><div className="kpi__value">{dist.critical}</div><div className="kpi__label">Critical (90–100)</div><div className="kpi__sub"><span aria-hidden="true">⬢</span>needs immediate triage</div></div>
+                <div className="kpi"><div className="kpi__value">{Object.keys(stats.by_classification || {}).length}</div><div className="kpi__label">Classifications</div><div className="kpi__sub">{Object.entries(stats.by_classification || {}).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—'}</div></div>
+              </div>
+            </Card>
+
+            <Card
+              title="Ingest email for analysis"
+              description="Primary action area — pick a source, then analyze."
+              actions={<Badge tone="info">paste · upload · Gmail</Badge>}
+            >
+              <div id="ingest-panel">
+                <SegmentedControl
+                  label="Ingest source"
+                  value={source}
+                  onChange={setSource}
+                  options={[
+                    { value: 'paste', label: 'Paste raw email' },
+                    { value: 'upload', label: 'Upload .eml' },
+                    { value: 'gmail', label: 'Gmail live import' },
+                  ]}
+                />
+                <div style={{ marginTop: 12 }}>
+                  <Well>
+                    {source === 'paste' ? (
+                      <>
+                        <Textarea id="ingest-raw" label="Raw RFC822 message" rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" help="Nothing is sent until you press Analyze." />
+                        <div className="row" style={{ marginTop: 10 }}>
+                          <Button variant="primary" size="lg" onClick={submit} loading={busy} disabled={!raw.trim()}>Analyze email</Button>
+                          <Toggle label="Background queue (Celery)" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} />
+                          <Button variant="ghost" size="sm" onClick={() => setRaw(PHISH_SAMPLE)}>Load phishing sample</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setRaw(CLEAN_SAMPLE)}>Load clean sample</Button>
+                        </div>
+                      </>
+                    ) : source === 'upload' ? (
+                      <>
+                        <label className="neu-label" htmlFor="ingest-file" style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Email file (.eml, .txt, .mime — max 5 MB)</label>
+                        <input id="ingest-file" className="neu-input" type="file" accept=".eml,.txt,.mime" disabled={busy} onChange={(e) => onFile(e.target.files?.[0])} aria-describedby="ingest-file-help" />
+                        <div id="ingest-file-help" className="neu-help">Analysis starts automatically when a file is chosen.</div>
+                        {busy ? <div className="row" style={{ marginTop: 8 }}><Spinner label="Uploading and analyzing" /><span style={{ fontSize: 13 }}>Uploading and analyzing…</span></div> : null}
+                      </>
+                    ) : (
+                      <GmailPanel onSynced={() => load()} bare />
+                    )}
+                  </Well>
                 </div>
               </div>
-              <div className="card">
-                <h3>Threat Overview</h3>
-                <ThreatGauge dist={dist} />
+            </Card>
+
+            <Card
+              title="Threat analytics"
+              description="Severity share, ingest trend and top classifications."
+              actions={
+                <SegmentedControl
+                  label="Analytics time range"
+                  value={range}
+                  onChange={setRange}
+                  options={[
+                    { value: '24h', label: '24h' }, { value: '7d', label: '7d' },
+                    { value: '30d', label: '30d' }, { value: 'all', label: 'All' },
+                  ]}
+                />
+              }
+            >
+              <div className="chart-grid">
+                <div className="chart-block">
+                  <h4>Emails by risk band</h4>
+                  <p className="chart-sub">Critical {dist.critical} · High {dist.high} · Medium {dist.medium} · Low {dist.low}</p>
+                  <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
+                    <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: 'var(--risk-critical)' }} />
+                    <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: 'var(--risk-high)' }} />
+                    <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: 'var(--risk-medium)' }} />
+                    <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: 'var(--risk-low)' }} />
+                  </div>
+                  <div className="legend">
+                    {(['critical', 'high', 'medium', 'low'] as const).map((s) => (
+                      <span key={s}><SeverityIcon severity={s} /> {s.charAt(0).toUpperCase() + s.slice(1)} {dist[s]}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="chart-block">
+                  <h4>Ingest trend</h4>
+                  <p className="chart-sub">{range === 'all' ? 'All loaded mail, by day' : `Last ${range}, loaded mail`}</p>
+                  {trend.length === 0 ? (
+                    <p className="chart-sub">No mail in this range yet.</p>
+                  ) : (
+                    <div className="trend-wrap">
+                      <div className="trend" role="img" aria-label={`Ingest trend: ${trend.map(([k, v]) => `${k}: ${v}`).join(', ')}`}>
+                        {trend.map(([k, v]) => (
+                          <div key={k} className="trend-bar" title={`${k}: ${v}`} style={{ height: `${Math.max(4, (100 * v) / trendMax)}%` }} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="chart-block">
+                  <h4>Top classifications</h4>
+                  <p className="chart-sub">All-time counts from the dashboard endpoint</p>
+                  {topCats.length === 0 ? <p className="chart-sub">No classifications yet.</p> : topCats.map(([name, v], i) => (
+                    <div className="hbar-row" key={name}>
+                      <span className="hbar-name" title={name}>{name}</span>
+                      <span className="hbar-track"><span className="hbar-fill" style={{ display: 'block', width: `${(100 * v) / topCatMax}%`, background: chartVars[i % chartVars.length] }} /></span>
+                      <span className="hbar-val">{v}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+              <hr className="section-divider" />
+              <ThreatGauge dist={dist} />
+            </Card>
           </>
         )
       )}
@@ -947,79 +1113,105 @@ export function Dashboard() {
 
       <GmailPanel onSynced={() => load()} />
 
-      <div className="toolbar">
-        <input id="dash-search" type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} />
-        <button className="ghost" onClick={() => load()}>Search</button>
-        <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
-          <option value="all">All severities</option>
-          <option value="critical">Critical (90+)</option>
-          <option value="high">High (75–89)</option>
-          <option value="medium">Medium (50–74)</option>
-          <option value="low">Low (&lt;50)</option>
-        </select>
-        <button className="ghost" onClick={() => load()}>Refresh</button>
-      </div>
-
-      <div id="recent-investigations" className="card" style={{ marginBottom: 18 }}>
-        <h3>Recent Investigations</h3>
-        {loading ? <SkeletonList rows={2} /> : filtered.length === 0 ? <Empty msg="No investigations yet. Ingest one above to get started." /> : (
-          <div className="invest-grid" style={{ marginBottom: 0 }}>
-            {filtered.slice(0, 3).map((e) => {
-              const s = scores[e.id];
-              return (
-                <Link key={e.id} to={`/email/${e.id}`} className="card invest-card hoverable" style={{ textDecoration: 'none', color: 'inherit', margin: 0 }}>
-                  <div className="invest-card-top">
-                    {s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}
-                    <AvatarStack names={[e.sender_address, displayName]} max={2} />
-                  </div>
-                  <div className="invest-subject">{e.subject || '(no subject)'}</div>
-                  <div className="invest-meta">{e.sender_address} · {formatDateTime(e.timestamp)}</div>
-                </Link>
-              );
-            })}
+      <Card
+        title="Recent threats"
+        description="Every row opens the Email Analysis view."
+        actions={<Badge tone="neutral">{sorted.length} shown</Badge>}
+      >
+        <div className="neu-segmented" role="group" aria-label="Filter by severity" style={{ marginBottom: 12 }}>
+          {(['all', 'critical', 'high', 'medium', 'low'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={sevFilter === k}
+              title={k === 'all' ? 'All severities' : `${k} band`}
+              onClick={() => setSevFilter(k)}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {k === 'all' ? <span aria-hidden="true">◈</span> : <SeverityIcon severity={k} />}
+                {k === 'all' ? 'All' : k.charAt(0).toUpperCase() + k.slice(1)}
+                <b>{sevCounts[k]}</b>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="row" style={{ marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <Input
+              id="dash-search"
+              label="Search threats"
+              type="search"
+              placeholder="Subject, sender, body…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void load(); }}
+            />
           </div>
-        )}
-      </div>
-
-      <div className="two-col" style={{ marginBottom: 18 }}>
-        <div className="card" id="all-emails" style={{ margin: 0 }}>
-          <h3>All Emails</h3>
-          {loading ? <SkeletonList /> : filtered.length === 0 ? <Empty msg="No emails match. Ingest one above to get started." /> : (
-            <table className="tbl">
-              <thead><tr><th>Subject</th><th>Sender</th><th>Received</th><th>Verdict</th><th>Reports</th></tr></thead>
+          <div className="row" style={{ alignSelf: 'end' }}>
+            <Button variant="primary" size="sm" onClick={() => load()}>Search</Button>
+            <Button variant="ghost" size="sm" onClick={() => load()}>Refresh</Button>
+          </div>
+        </div>
+        <div id="all-emails">
+          {loading ? <><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={44} /></> : sorted.length === 0 ? (
+            <EmptyState
+              message="No emails match. Ingest one above to get started."
+              action={<Button variant="primary" size="sm" onClick={newAnalysis}>New analysis</Button>}
+            />
+          ) : (
+            <Table label="Recent threats">
+              <thead><tr>
+                <th scope="col">Subject</th><th scope="col">Sender</th>
+                <SortTh label="Received" direction={sortKey === 'received' ? sortDir : 'none'} onSort={() => flipSort('received')}>Received</SortTh>
+                <SortTh label="Fraud score" direction={sortKey === 'score' ? sortDir : 'none'} onSort={() => flipSort('score')}>Verdict</SortTh>
+                <th scope="col">Reports</th>
+              </tr></thead>
               <tbody>
-                {filtered.map((e) => {
+                {sorted.map((e) => {
                   const s = scores[e.id];
                   return (
                     <tr key={e.id}>
                       <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
                       <td><span className="mono">{e.sender_address}</span></td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
                       <td>
-                        {s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}
-                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{s?.cls ?? '—'}</div>
+                        {s ? <SeverityBadge score={s.score} label={`${s.cls} ${s.score}`} /> : <span style={{ color: 'var(--text-muted)' }}>…</span>}
                       </td>
                       <td>
-                        <button className="ghost small" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</button>{' '}
-                        <button className="ghost small" onClick={() => triggerDownload(e.id, 'json')}>JSON</button>
+                        <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+                          <Button variant="ghost" size="sm" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</Button>
+                          <Button variant="ghost" size="sm" onClick={() => triggerDownload(e.id, 'json')}>JSON</Button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-            </table>
+            </Table>
           )}
         </div>
-        <div className="card" style={{ margin: 0 }}>
-          <h3>Activity Feed</h3>
-          {loading ? <SkeletonList rows={3} /> : filtered.length === 0 ? <Empty msg="Activity will appear once mail is ingested." /> : (
+      </Card>
+
+      <Card
+        title="Activity"
+        description="Latest scoring events across loaded mail."
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => setActivityOpen(!activityOpen)} aria-expanded={activityOpen}>
+            {activityOpen ? 'Collapse' : 'Expand'}
+          </Button>
+        }
+      >
+        {activityOpen ? (
+          loading ? <Skeleton height={44} /> : filtered.length === 0 ? (
+            <EmptyState message="Activity will appear once mail is ingested." />
+          ) : (
             <ul className="activity-feed">
               {filtered.slice(0, 5).map((e) => {
                 const s = scores[e.id];
+                const sev = riskOf(s?.score ?? -1);
                 return (
                   <li key={e.id} className="activity-item">
-                    <span className="activity-dot" aria-hidden="true" />
+                    <SeverityIcon severity={s ? sev : 'unknown'} />
                     <div>
                       <div>System scored sender as <b>{s?.cls ?? '—'} {s?.score ?? ''}</b></div>
                       <div className="activity-time"><Link to={`/email/${e.id}`}>{(e.subject || '(no subject)').slice(0, 40)}</Link> · {formatDateTime(e.timestamp)}</div>
@@ -1028,9 +1220,9 @@ export function Dashboard() {
                 );
               })}
             </ul>
-          )}
-        </div>
-      </div>
+          )
+        ) : <p className="sub" style={{ margin: 0 }}>Collapsed — expand to review recent scoring events.</p>}
+      </Card>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - ThreatOptic',
@@ -1200,17 +1392,26 @@ export function GraphSvg({ graph }: { graph: any }) {
 
         {/* Zoom Controls */}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} title="Zoom Out" style={{ padding: '2px 8px' }}>−</button>
-          <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 38, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))} title="Zoom In" style={{ padding: '2px 8px' }}>+</button>
+          <Tooltip label="Zoom out"><button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} aria-label="Zoom out" style={{ padding: '2px 8px' }}>−</button></Tooltip>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 38, textAlign: 'center' }} aria-live="polite">{Math.round(zoom * 100)}%</span>
+          <Tooltip label="Zoom in"><button type="button" className="ghost small" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))} aria-label="Zoom in" style={{ padding: '2px 8px' }}>+</button></Tooltip>
           {zoom !== 1 && (
-            <button type="button" className="ghost small" onClick={() => setZoom(1)} style={{ fontSize: 11, padding: '2px 6px' }}>Reset</button>
+            <Tooltip label="Reset zoom to fit"><button type="button" className="ghost small" onClick={() => setZoom(1)} aria-label="Reset zoom to fit" style={{ fontSize: 11, padding: '2px 6px' }}>Reset</button></Tooltip>
           )}
         </div>
       </div>
+      <div className="graph-legend" aria-label="Entity type legend">
+        {availableKinds.map((k) => (
+          <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: '50%', background: getColor(k) }} />
+            {k.replace('_', ' ')}
+          </span>
+        ))}
+      </div>
 
+      <div className="graph-layout">
       {/* SVG Visualization Canvas */}
-      <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border)' }}>
+      <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border-subtle)' }}>
         <svg
           width="100%"
           viewBox={`0 0 ${w} ${h}`}
@@ -1483,31 +1684,32 @@ function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
   const rows = [...(breakdown || [])].sort(
     (x, y) => (y.contribution_to_score ?? 0) - (x.contribution_to_score ?? 0),
   );
-  if (!rows.length) return <Empty msg="No score breakdown stored for this email (analyzed before explainability was added)." />;
+  if (!rows.length) return <EmptyState message="No score breakdown stored for this email (analyzed before explainability was added)." />;
   const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.contribution_to_score ?? 0)));
   return (
     <div>
       <p className="sub">
         Each bar is a signal's point contribution to the final fraud score of <b>{score}</b> (weights × values ± rules).
+        Violet raises risk, teal lowers it — values are always stated as text.
       </p>
-      {rows.map((s) => {
-        const c = s.contribution_to_score ?? 0;
-        const w = (100 * Math.abs(c)) / maxAbs;
-        // Signal hues use the brand pair (teal/violet + neutral) — never the risk palette.
-        const bar = c > 0 ? 'var(--correlation)' : c < 0 ? 'var(--teal)' : 'var(--muted)';
-        return (
-          <div key={s.signal_name} style={{ marginBottom: 12 }}>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <span><code>{s.signal_name}</code> <span style={{ color: 'var(--muted)', fontSize: 12 }}>×{s.weight} · value {String(s.value)}</span></span>
-              <b style={{ color: bar }}>{c > 0 ? `+${c}` : c}</b>
-            </div>
-            <div className="distbar" style={{ marginTop: 4 }}>
-              <div style={{ width: `${w}%`, background: bar }} />
-            </div>
-            {s.detail && <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{s.detail}</div>}
-          </div>
-        );
-      })}
+      <ul className="contrib">
+        {rows.map((s) => {
+          const c = s.contribution_to_score ?? 0;
+          const w = (100 * Math.abs(c)) / maxAbs;
+          // Brand pair (violet/teal + neutral) — never the risk palette.
+          const bar = c > 0 ? 'var(--accent-secondary)' : c < 0 ? 'var(--chart-4)' : 'var(--text-muted)';
+          return (
+            <li key={s.signal_name}>
+              <span className="contrib-top"><code>{s.signal_name}</code> <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×{s.weight} · value {String(s.value)}</span></span>
+              <b style={{ fontVariantNumeric: 'tabular-nums' }}>{c > 0 ? `+${c}` : c}</b>
+              <span className="contrib-bar" role="img" aria-label={`${s.signal_name} contributes ${c > 0 ? '+' : ''}${c} points`}>
+                <span className="contrib-fill" style={{ display: 'block', width: `${w}%`, background: bar }} />
+              </span>
+              {s.detail ? <span style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: 12 }}>{s.detail}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -1571,245 +1773,248 @@ export function EmailView({ id }: { id: string }) {
     }
   }, [d, id]);
 
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email', href: '/dashboard' }, { label: 'Error' }]} /><Link to="/dashboard">← back</Link><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email' }]} /><Link to="/dashboard">← back</Link><SkeletonList /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email', href: '/dashboard' }, { label: 'Error' }]} /><Link to="/dashboard">← back</Link><ErrorState message="Could not load this email." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (!d) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Email' }]} /><Link to="/dashboard">← back</Link><Card title="Loading email"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={160} /></Card></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
   const auth = a.authentication_results || {};
   const relay: any[] = Array.isArray(t.relay_chain) ? t.relay_chain : [];
+  const fraud = a.fraud_score ?? 0;
+  const hasCoords = t.geolocation?.lat != null && t.geolocation?.lon != null && !isNaN(Number(t.geolocation.lat)) && !isNaN(Number(t.geolocation.lon));
 
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/dashboard' }, { label: 'Investigations', href: '/dashboard' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
-      <div className="doc-title-row">
-        <h1 className="doc-title">{d.email.subject || '(no subject)'}</h1>
-        <VerdictPill score={a.fraud_score ?? 0} classification={a.threat_classification} />
-      </div>
-      <p className="sub">
-        {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
-        received: <b>{formatDateTime(d.email.timestamp)}</b> ·{' '}
-        <button className="ghost small" onClick={() => triggerDownload('pdf')}>forensic PDF</button>{' '}
-        <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
-      </p>
-      <div className="doc-section">
-        <div className="doc-rail" aria-hidden="true" />
-        <div>
-          <h3>Introduction</h3>
-          <p>
-            Summary: message from <span className="mono">{d.email.sender_address || 'unknown sender'}</span> scored{' '}
-            <b>{a.fraud_score ?? 0}</b> ({a.threat_classification || 'Unclassified'}) with action <b>{a.action_taken || '—'}</b>.
-            SPF/DKIM/DMARC: {(auth.spf?.status || '—').toUpperCase()} / {(auth.dkim?.status || '—').toUpperCase()} / {(auth.dmarc?.status || '—').toUpperCase()}.
-            {(a.nlp_cues_detected || []).length > 0 ? ` Key signals: ${(a.nlp_cues_detected || []).join(', ')}.` : ''}
-          </p>
-          <div style={{ marginTop: 8 }}>
-            <AvatarStack names={[d.email.sender_address || 'sender', 'analyst']} max={3} />
-          </div>
-        </div>
-      </div>
 
-      {cases.length > 0 && (
-        <div className="row" id="email-case-row" style={{ marginTop: 8, marginBottom: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: 'var(--muted)' }}>Investigate:</span>
-          <select value={caseId} onChange={(e) => setCaseId(e.target.value)} style={{ maxWidth: 260, fontSize: 12 }}>
-            <option value="">Select an investigation case…</option>
-            {cases.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
-            ))}
-          </select>
-          <button className="ghost small" onClick={linkToCase} disabled={!caseId}>Link to Case</button>
-          {caseNotice && <span style={{ color: 'var(--success)', fontSize: 12 }}>✓ {caseNotice}</span>}
-        </div>
-      )}
-
-      <div className="tabs">
-        {TABS.map((name, i) => (
-          <button key={name} role="tab" aria-selected={tab === i} className={tab === i ? 'active' : ''} onClick={() => setTab(i)}>{name}</button>
-        ))}
-      </div>
-
-      {tab === 0 && (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-          <div className="card">
-            <h3>Verdict</h3>
-            <dl className="kv">
-              <dt>Fraud score</dt><dd><ScoreBadge v={a.fraud_score ?? 0} /> {a.threat_classification}</dd>
-              <dt>Action</dt><dd>{a.action_taken}</dd>
-              <dt>Breakdown</dt><dd><span className="mono">{JSON.stringify(a.trace_summary ?? {})}</span></dd>
-            </dl>
-            <h3>Cues detected</h3>
-            {(a.nlp_cues_detected || []).length === 0 ? <p className="sub">None</p> : (
-              <div>{(a.nlp_cues_detected || []).map((c: string) => <span key={c} className="auth-pill auth-none">{c}</span>)}</div>
-            )}
-          </div>
-          <div className="card">
-            <h3>Authentication</h3>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-              <AuthPill name="SPF" status={auth.spf?.status} />
-              <AuthPill name="DKIM" status={auth.dkim?.status} />
-              <AuthPill name="DMARC" status={auth.dmarc?.status} />
-              <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
-            </div>
-            {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) && (
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, lineHeight: 1.45 }}>
-                {auth.spf?.detail && <div><b>SPF:</b> {auth.spf.detail}</div>}
-                {auth.dkim?.detail && <div><b>DKIM:</b> {auth.dkim.detail}</div>}
-                {auth.dmarc?.detail && <div><b>DMARC:</b> {auth.dmarc.detail}</div>}
+      <Card
+        actions={
+          <>
+            {cases.length > 0 ? (
+              <span className="row" id="email-case-row" style={{ gap: 8 }}>
+                <span style={{ maxWidth: 240 }}>
+                  <Select label="Investigation case" value={caseId} onChange={(e) => setCaseId(e.target.value)}>
+                    <option value="">Select a case…</option>
+                    {cases.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
+                    ))}
+                  </Select>
+                </span>
+                <Button variant="primary" size="sm" onClick={linkToCase} disabled={!caseId}>Link to case</Button>
+              </span>
+            ) : null}
+            <details className="collapsible">
+              <summary className="neu-btn neu-btn--ghost neu-btn--sm" style={{ textDecoration: 'none' }}>Export ▾</summary>
+              <div className="row" style={{ marginTop: 8 }}>
+                <Button variant="ghost" size="sm" onClick={() => triggerDownload('pdf')}>Forensic PDF</Button>
+                <Button variant="ghost" size="sm" onClick={() => triggerDownload('json')}>JSON</Button>
               </div>
-            )}
-            <h3 style={{ marginTop: 14 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
-            {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits</p> : (
-              <table className="tbl">
-                <thead><tr><th>Type</th><th>Value</th><th>Reason</th></tr></thead>
-                <tbody>
-                  {(a.threat_intel_hits || []).slice(0, 20).map((h: any, i: number) => (
-                    <tr key={i}>
-                      <td>{h.type}</td>
-                      <td><span className="mono">{String(h.value ?? h.url ?? '').slice(0, 80)}</span></td>
-                      <td style={{ fontSize: 12 }}>{(h.reasons || []).join(', ') || (h.blocklisted ? 'blocklisted' : 'hit')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <h3>Body (PII masked)</h3>
-            <pre className="dump" style={{ whiteSpace: 'pre-wrap' }}>{d.email.body_text_masked || '(empty)'}</pre>
-          </div>
+            </details>
+          </>
+        }
+      >
+        <Tooltip label={d.email.subject || '(no subject)'}>
+          <h1 className="case-head__subject">{d.email.subject || '(no subject)'}</h1>
+        </Tooltip>
+        <div className="case-meta">
+          <span>From <span className="mono">{d.email.sender_address || 'unknown sender'}</span></span>
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <SeverityBadge score={fraud} label={`${a.threat_classification || 'Unclassified'} ${fraud}`} />
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <span>action: <b>{a.action_taken || '—'}</b></span>
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <span>received: <b>{formatDateTime(d.email.timestamp)}</b></span>
         </div>
-      )}
-
-      {tab === 1 && (
-        <div className="card">
-          <h3>Why this score</h3>
-          <p className="sub" style={{ marginBottom: 10 }}>Weighted contribution of each signal to the final score — violet bars raise risk, teal bars lower it.</p>
-          <ScoreWhy breakdown={a.score_breakdown} score={a.fraud_score ?? 0} />
-          <div style={{ marginTop: 10 }}>
-            <AvatarStack names={['analyst', 'soc.ir']} max={2} />
-          </div>
+        <div className="case-score" style={{ marginTop: 12 }}>
+          <span className="case-score__num" aria-label={`Fraud score ${fraud} out of 100`}>{fraud}</span>
+          <span className="hbar-track" role="img" aria-label={`Fraud score ${fraud} of 100`} style={{ display: 'block', maxWidth: 280, flex: 1, height: 10, borderRadius: 5, background: 'var(--surface-inset)', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, fraud))}%`, background: 'var(--risk-high)' }} />
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>/ 100</span>
         </div>
-      )}
+        <div aria-live="polite">
+          {caseNotice ? <Alert tone="success">{caseNotice}</Alert> : null}
+        </div>
+      </Card>
 
-      {tab === 2 && (
-        <div className="card">
-          <h3>Chain of custody</h3>
-          <dl className="kv">
-            <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span></dd>
-            <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span></dd>
-            <dt>Relay hops</dt><dd>{relay.length}</dd>
-          </dl>
-          <h3>Relay path (origin first)</h3>
-          {relay.length === 0 ? <Empty msg="No Received headers - sender path unverifiable." /> : (
-            <ol className="timeline">
-              {relay.map((h: any, i: number) => (
-                <li key={i}>
-                  <div><b>Hop {i + 1}</b> - from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>IPs: {(h.ips || []).map((ip: string) => <span key={ip} className="mono" style={{ marginRight: 4 }}>{ip}</span>)}
-                    {(h.ips || []).length === 0 && 'none parsed'}</div>
-                </li>
-              ))}
-            </ol>
+      <Tabs tabs={[...TABS]} active={tab} onChange={setTab} label="Email analysis views" />
+
+      <Well>
+        <div role="tabpanel" id={`email-tabpanel-${tab}`} aria-label={TABS[tab]}>
+          {tab === 0 && (
+            <>
+              <section aria-label="Verdict and key indicators">
+                <h3 style={{ marginTop: 0 }}>Verdict</h3>
+                <dl className="deflist">
+                  <dt>Fraud score</dt><dd><SeverityBadge score={fraud} /> {a.threat_classification}</dd>
+                  <dt>Action</dt><dd>{a.action_taken || '—'}</dd>
+                  <dt>SPF / DKIM / DMARC</dt>
+                  <dd>
+                    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+                      <AuthPill name="SPF" status={auth.spf?.status} />
+                      <AuthPill name="DKIM" status={auth.dkim?.status} />
+                      <AuthPill name="DMARC" status={auth.dmarc?.status} />
+                      <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
+                    </span>
+                  </dd>
+                  <dt>NLP cues</dt>
+                  <dd>{(a.nlp_cues_detected || []).length === 0 ? 'None' : (a.nlp_cues_detected || []).join(', ')}</dd>
+                </dl>
+              </section>
+              <hr className="section-divider" />
+              <section aria-label="Supporting evidence">
+                <h3 style={{ marginTop: 0 }}>Supporting evidence</h3>
+                <div className="grid-2">
+                  <div>
+                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Authentication detail</h4>
+                    {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) ? (
+                      <dl className="deflist" style={{ gridTemplateColumns: '70px 1fr' }}>
+                        {auth.spf?.detail ? <><dt>SPF</dt><dd>{auth.spf.detail}</dd></> : null}
+                        {auth.dkim?.detail ? <><dt>DKIM</dt><dd>{auth.dkim.detail}</dd></> : null}
+                        {auth.dmarc?.detail ? <><dt>DMARC</dt><dd>{auth.dmarc.detail}</dd></> : null}
+                      </dl>
+                    ) : <p className="sub">No authentication detail recorded.</p>}
+                    <h4 style={{ margin: '16px 0 8px', fontSize: 13 }}>Body (PII masked)</h4>
+                    <pre className="dump" style={{ whiteSpace: 'pre-wrap' }}>{d.email.body_text_masked || '(empty)'}</pre>
+                  </div>
+                  <div>
+                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h4>
+                    {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits.</p> : (
+                      <Table label="Threat intelligence hits">
+                        <thead><tr><th scope="col">Type</th><th scope="col">Value</th><th scope="col">Reason</th></tr></thead>
+                        <tbody>
+                          {(a.threat_intel_hits || []).slice(0, 20).map((h: any, i: number) => (
+                            <tr key={i}>
+                              <td>{h.type}</td>
+                              <td><span className="mono">{String(h.value ?? h.url ?? '').slice(0, 80)}</span></td>
+                              <td style={{ fontSize: 12 }}>{(h.reasons || []).join(', ') || (h.blocklisted ? 'blocklisted' : 'hit')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </>
           )}
-          <h3>Raw chain</h3>
-          <pre className="dump">{JSON.stringify(relay, null, 2)}</pre>
-        </div>
-      )}
 
-      {tab === 3 && (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-          <div className="card">
-            <h3>Origin & Infrastructure</h3>
-            <dl className="kv">
-              <dt>Origin IP</dt>
-              <dd>
-                <span className="mono">{t.origin_ip || '-'}</span>
-                {t.geolocation?.is_private && (
-                  <span className="badge" style={{ marginLeft: 6, fontSize: 11, background: 'var(--surface-inset)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: 4 }}>
-                    Private RFC1918
-                  </span>
-                )}
-              </dd>
-              <dt>Coordinates</dt>
-              <dd className="mono">
-                {t.geolocation?.lat != null && t.geolocation?.lon != null
-                  ? `${Number(t.geolocation.lat).toFixed(4)}, ${Number(t.geolocation.lon).toFixed(4)}`
-                  : '-'}
-              </dd>
-              <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
-              <dt>ISP / ASN</dt><dd>{t.isp_asn || t.geolocation?.isp || '-'}</dd>
-              <dt>Country / City</dt>
-              <dd>
-                {t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'}
-                {t.geolocation?.source && (
-                  <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>
-                    ({t.geolocation.source})
-                  </span>
-                )}
-              </dd>
-            </dl>
-            <h3>WHOIS</h3>
-            <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
-            <h3>DNS</h3>
-            <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
-          </div>
-          <div className="card">
-            <h3>Origin Geolocation Map</h3>
-            {t.geolocation?.lat != null && t.geolocation?.lon != null && !isNaN(Number(t.geolocation.lat)) && !isNaN(Number(t.geolocation.lon)) ? (
-              <>
-                <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--muted)' }}>
-                  Target: <b>{t.geolocation.city || t.geolocation.country || 'Coordinates'}</b>
-                  {t.geolocation.source && <span> ({t.geolocation.source})</span>}
-                </div>
-                <div className="rounded-map">
-                  <iframe
-                    title="Geolocation map of email origin"
-                    width="100%"
-                    height="380"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    sandbox="allow-scripts allow-same-origin allow-popups"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
-                  />
-                </div>
-                <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
-                  Origin IP <span className="mono">{t.origin_ip || '—'}</span>
-                  {t.geolocation?.city || t.geolocation?.country ? ` — ${t.geolocation.city || ''}${t.geolocation.city && t.geolocation.country ? ', ' : ''}${t.geolocation.country || ''}` : ''}
-                </p>
-                <p style={{ marginTop: 8 }}>
-                  <a
-                    target="_blank"
-                    rel="noreferrer"
-                    href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=7/${t.geolocation.lat}/${t.geolocation.lon}`}
-                  >
-                    Open full map (OSM)
-                  </a>
-                </p>
-              </>
-            ) : (
-              <Empty msg="No coordinates available - sender origin IP is unresolvable or network lookups are offline." />
-            )}
-          </div>
-        </div>
-      )}
+          {tab === 1 && (
+            <section aria-label="Why this score">
+              <h3 style={{ marginTop: 0 }}>Why this score?</h3>
+              <ScoreWhy breakdown={a.score_breakdown} score={fraud} />
+            </section>
+          )}
 
-      {tab === 4 && (
-        <div className="card">
-          <h3>Identity correlation</h3>
-          <p className="sub" style={{ marginBottom: 10 }}>Trace node graph — domain linked to related campaign entities.</p>
-          <GraphSvg graph={graph} />
-          <h3 style={{ marginTop: 12 }}>Raw graph</h3>
-          <pre className="dump">{JSON.stringify(graph, null, 2)}</pre>
+          {tab === 2 && (
+            <>
+              <section aria-label="Chain of custody">
+                <h3 style={{ marginTop: 0 }}>Chain of custody</h3>
+                <dl className="deflist">
+                  <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span> <CopyButton text={String(d.email.raw_eml_hash || '')} label="Copy hash" /></dd>
+                  <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span> {d.email.message_id ? <CopyButton text={String(d.email.message_id)} label="Copy ID" /> : null}</dd>
+                  <dt>Relay hops</dt><dd>{relay.length}</dd>
+                </dl>
+              </section>
+              <hr className="section-divider" />
+              <div className="grid-2">
+                <section aria-label="Parsed relay path">
+                  <h3 style={{ marginTop: 0 }}>Relay path (origin first)</h3>
+                  {relay.length === 0 ? <EmptyState message="No Received headers — sender path unverifiable." /> : (
+                    <ol className="timeline">
+                      {relay.map((h: any, i: number) => (
+                        <li key={i}>
+                          <div><b>Hop {i + 1}</b> — from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>IPs: {(h.ips || []).map((ip: string) => <span key={ip} className="mono" style={{ marginRight: 4 }}>{ip}</span>)}
+                            {(h.ips || []).length === 0 && 'none parsed'}</div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+                <section aria-label="Raw headers">
+                  <h3 style={{ marginTop: 0 }}>Raw chain</h3>
+                  <pre className="dump">{JSON.stringify(relay, null, 2)}</pre>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <CopyButton text={JSON.stringify(relay, null, 2)} label="Copy raw chain" />
+                  </div>
+                </section>
+              </div>
+            </>
+          )}
+
+          {tab === 3 && (
+            <>
+              <section aria-label="Origin and map">
+                <h3 style={{ marginTop: 0 }}>Origin</h3>
+                <dl className="deflist">
+                  <dt>Origin IP</dt>
+                  <dd>
+                    <span className="mono">{t.origin_ip || '-'}</span>
+                    {t.geolocation?.is_private ? <Badge tone="neutral">Private RFC1918</Badge> : null}
+                  </dd>
+                  <dt>Country / City</dt><dd>{t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'} {t.geolocation?.source ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>({t.geolocation.source})</span> : null}</dd>
+                  <dt>ISP / ASN</dt><dd>{t.isp_asn || t.geolocation?.isp || '-'}</dd>
+                  <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
+                  <dt>Coordinates</dt>
+                  <dd className="mono">{hasCoords ? `${Number(t.geolocation.lat).toFixed(4)}, ${Number(t.geolocation.lon).toFixed(4)}` : '-'}</dd>
+                </dl>
+                <div style={{ marginTop: 12 }}>
+                  {hasCoords ? (
+                    <>
+                      <div className="map-frame">
+                        <iframe
+                          title="Geolocation map of email origin"
+                          width="100%"
+                          height="380"
+                          style={{ border: 0 }}
+                          loading="lazy"
+                          sandbox="allow-scripts allow-same-origin allow-popups"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
+                        />
+                      </div>
+                      <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                        Origin IP <span className="mono">{t.origin_ip || '—'}</span>
+                        {t.geolocation?.city || t.geolocation?.country ? ` — ${t.geolocation.city || ''}${t.geolocation.city && t.geolocation.country ? ', ' : ''}${t.geolocation.country || ''}` : ''}
+                        {' · '}<a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=7/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map (OSM)</a>
+                      </p>
+                    </>
+                  ) : (
+                    <EmptyState message="No coordinates available — sender origin IP is unresolvable or network lookups are offline." />
+                  )}
+                </div>
+              </section>
+              <hr className="section-divider" />
+              <details className="collapsible">
+                <summary>Secondary evidence (WHOIS, DNS)</summary>
+                <div className="grid-2" style={{ marginTop: 12 }}>
+                  <section aria-label="WHOIS record">
+                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>WHOIS</h4>
+                    <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
+                  </section>
+                  <section aria-label="DNS records">
+                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>DNS</h4>
+                    <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
+                  </section>
+                </div>
+              </details>
+            </>
+          )}
+
+          {tab === 4 && (
+            <section aria-label="Identity correlation graph">
+              <h3 style={{ marginTop: 0 }}>Identity correlation</h3>
+              <p className="sub" style={{ marginTop: 0 }}>Trace node graph — domain linked to related campaign entities.</p>
+              <GraphSvg graph={graph} />
+              <details className="collapsible" style={{ marginTop: 12 }}>
+                <summary>Raw graph JSON</summary>
+                <pre className="dump" style={{ marginTop: 8 }}>{JSON.stringify(graph, null, 2)}</pre>
+              </details>
+            </section>
+          )}
         </div>
-      )}
-      <div className="doc-footer">
-        <AvatarStack names={['analyst', 'soc.ir']} max={2} />
-        <span>Last analyzed {formatDateTime(d.email.timestamp)}</span>
-        <span style={{ flex: 1 }} />
-        <button className="ghost small" onClick={() => document.getElementById('email-case-row')?.scrollIntoView({ behavior: 'smooth' })}>Add to case</button>
-        <button className="ghost small" onClick={() => triggerDownload('pdf')}>Export PDF</button>
-        <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
-      </div>
+      </Well>
+
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
         description: `Forensic analysis for email ${id}`, url: `${CANONICAL_BASE}/email/${id}`,

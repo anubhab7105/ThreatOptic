@@ -908,6 +908,10 @@ table.neu-table { width: 100%; border-collapse: collapse; font-variant-numeric: 
 .collapsible > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: var(--text-primary); border-radius: var(--r-sm); }
 .collapsible > summary::-webkit-details-marker { display: none; }
 .collapsible > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* Graph layout: canvas + side detail panel (desktop), stacked bottom sheet (tablet/mobile) */
+.graph-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: start; }
+@media (max-width: 1023px) { .graph-layout { grid-template-columns: minmax(0, 1fr); } }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12px; color: var(--text-secondary); padding: 4px 2px; }
 /* Map frame: inset well, themed border */
 .map-frame { background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-inset-md); overflow: hidden; }
 .map-frame iframe { display: block; border: 0; width: 100%; }
