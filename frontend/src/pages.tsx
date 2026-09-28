@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, AvatarStack, Empty, ScoreBadge, SkeletonList, StatCard, ThreatGauge, Toast, VerdictPill, greetingFor, severityColor, PasswordToggle } from './components';
+import { Alert, Badge, Button, Card, EmptyState, ErrorState, IconButton, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
+import { useChartTheme } from './useChartTheme';
 import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -446,7 +448,7 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 const DEFAULT_GOOGLE_CLIENT_ID = '';
 const DEFAULT_GOOGLE_CLIENT_SECRET = '';
 
-function GmailPanel({ onSynced }: { onSynced: () => void }) {
+function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: boolean }) {
   const [status, setStatus] = useState<any>(null);
   const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
   const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
@@ -593,33 +595,69 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
-  return (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <h3>Gmail live import (OAuth2, read-only)</h3>
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
+  // Stepper phase (Design.md §7.6): Waiting > Connecting > Connected / Error.
+  // OAuth code/state are still auto-captured (see effect above); no visible auth-code field.
+  const phase = status?.connected ? 'connected' : err ? 'error' : busy || code ? 'connecting' : 'waiting';
+  const steps = ['waiting', 'connecting', 'connected'] as const;
+  const stepLabel: Record<string, string> = { waiting: 'Waiting', connecting: 'Connecting', connected: 'Connected' };
+  const stepIcon = (s: string) => {
+    if (phase === 'error' && s === 'connecting') return <span aria-hidden="true">⬢</span>;
+    if (s === 'connected' && phase === 'connected') return <span aria-hidden="true">✓</span>;
+    if (s === 'connecting' && phase === 'connecting') return <Spinner label="Connecting" />;
+    if (steps.indexOf(s as typeof steps[number]) < steps.indexOf(phase as typeof steps[number])) return <span aria-hidden="true">✓</span>;
+    return <span aria-hidden="true">○</span>;
+  };
+
+  const body = (
+    <>
+      <ol className="stepper" aria-label="Gmail connection progress">
+        {steps.map((s, i) => (
+          <li key={s} className={phase === 'error' && s === 'connecting' ? 'is-error' : s === phase ? 'is-current' : steps.indexOf(phase as typeof steps[number]) > i ? 'is-done' : undefined} aria-current={s === phase ? 'step' : undefined}>
+            {stepIcon(s)} {stepLabel[s]}{i < steps.length - 1 ? <span className="step-sep" aria-hidden="true">›</span> : null}
+          </li>
+        ))}
+        {phase === 'error' ? <li className="is-error"><span aria-hidden="true">⬢</span> Error</li> : null}
+      </ol>
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Gmail connection issue">{err}</Alert> : null}
+        {notice && !err ? <Alert tone={status?.connected ? 'success' : 'info'}>{notice}</Alert> : null}
+      </div>
+      {phase === 'error' ? (
+        <div className="row" style={{ marginTop: 8 }}>
+          <Button size="sm" variant="primary" onClick={() => { setErr(''); void refresh(); }}>Retry</Button>
+        </div>
+      ) : null}
       {status?.connected ? (
         <div>
-          <p>Connected as <b>{status.gmail_address}</b>
-            {status.last_sync_at ? <span style={{ color: 'var(--muted)' }}> · last sync {formatDateTime(status.last_sync_at)}</span> : null}
+          <p style={{ margin: '12px 0 8px' }}>
+            <StatusIndicator color="var(--success)" label={`Connected as ${status.gmail_address}`} />
+            {status.last_sync_at ? (
+              <Tooltip label={formatDateTime(status.last_sync_at)}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> · last sync {formatDateTime(status.last_sync_at)}</span>
+              </Tooltip>
+            ) : null}
           </p>
-          <div className="row">
-            <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
-            <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
-            <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
-            <button className="ghost" onClick={disconnect}>Disconnect</button>
-            <button className="ghost small" onClick={() => setShowCreds(!showCreds)} title="Show/hide OAuth credentials">{showCreds ? '▲ Hide credentials' : '▼ Change credentials'}</button>
+          <div className="grid-2" style={{ maxWidth: 560 }}>
+            <Input label="Gmail search query" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="is:unread" />
+            <Input label="Max emails to sync" type="number" min="1" value={maxN} onChange={(e) => setMaxN(e.target.value)} />
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <Button size="sm" variant="primary" onClick={sync} loading={busy}>Sync now</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowCreds(!showCreds)}>{showCreds ? 'Hide credentials' : 'Change credentials'}</Button>
+            <Button size="sm" variant="danger" onClick={disconnect}>Disconnect</Button>
           </div>
           {showCreds && (
-            <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client ID</label>
-              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client Secret</label>
-              <div className="row" style={{ gap: 6 }}>
-                <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
-                <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+            <Well>
+              <div className="grid-2">
+                <Input label="Google OAuth Client ID" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
+                <div>
+                  <Input label="Google OAuth Client Secret" type={showSecret ? 'text' : 'password'} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <Button size="sm" variant="ghost" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </Well>
           )}
         </div>
       ) : (
@@ -627,71 +665,58 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           <p className="sub" style={{ marginTop: 0 }}>
             Connect your Gmail mailbox via Google OAuth (read-only) to import and analyze emails.
           </p>
-          <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match Google Console)</label>
-              <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" style={{ width: '100%' }} />
-            </div>
-            <div>
-              <button
-                type="button"
-                className="ghost small"
-                onClick={() => setShowCreds(!showCreds)}
-                style={{ fontSize: 11, cursor: 'pointer', padding: '3px 8px', marginTop: 2 }}
-              >
-                {showCreds ? '▲ Hide custom credentials' : '⚙ Custom credentials (optional)'}
-              </button>
-            </div>
-            {showCreds && (
-              <div className="grid" style={{ gap: 8, marginTop: 4, padding: 10, background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client ID</label>
-                  <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Leave blank to use server .env" style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client Secret</label>
-                  <div className="row" style={{ gap: 6 }}>
-                    <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Leave blank to use server .env" />
-                    <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+          <div style={{ maxWidth: 560 }}>
+            <Input label="Redirect URI" help="Must match the Google Console entry exactly." value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" />
+            <details className="collapsible" style={{ marginTop: 8 }}>
+              <summary>{showCreds ? '▲ Hide custom credentials' : '⚙ Custom credentials (optional)'}</summary>
+              <div style={{ marginTop: 8 }}>
+                <Well>
+                  <div className="grid-2">
+                    <Input label="Google OAuth Client ID" help="Leave blank to use the server .env value." value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Leave blank to use server .env" />
+                    <div>
+                      <Input label="Google OAuth Client Secret" help="Leave blank to use the server .env value." type={showSecret ? 'text' : 'password'} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Leave blank to use server .env" />
+                      <div className="row" style={{ marginTop: 6 }}>
+                        <Button size="sm" variant="ghost" onClick={() => { setShowCreds(true); setShowSecret(!showSecret); }}>{showSecret ? 'Hide' : 'Show'}</Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </Well>
               </div>
-            )}
-            <div className="row" style={{ marginTop: 4 }}>
-              <button className="ghost" onClick={getUrl} disabled={busy || !redirectUri.trim()}>Connect Gmail</button>
+            </details>
+            <div className="row" style={{ marginTop: 10 }}>
+              <Button variant="primary" onClick={getUrl} loading={busy} disabled={!redirectUri.trim()}>Connect Gmail</Button>
             </div>
             {authUrl && (
-              <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.12)', border: '1px solid #3b82f6', borderRadius: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#93c5fd', marginBottom: 6 }}>
-                  👉 Click below if Google login did not open automatically:
+              <Well>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  Click below if Google login did not open automatically:
                 </div>
-                <a
-                  href={authUrl}
-                  style={{
-                    display: 'inline-block',
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    fontSize: 13,
-                    padding: '8px 16px',
-                    borderRadius: 6,
-                    textDecoration: 'none',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                  }}
-                >
+                <a className="neu-btn neu-btn--primary neu-btn--md" href={authUrl}>
                   Open Google Consent Screen →
                 </a>
-              </div>
+              </Well>
             )}
-            <div className="row" style={{ marginTop: 6 }}>
-              <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code (auto-filled on redirect)" style={{ flex: 1 }} />
-              <input type="text" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State (auto-filled on redirect)" style={{ flex: 1 }} />
-              <button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</button>
-            </div>
+            <details className="collapsible" style={{ marginTop: 8 }}>
+              <summary>Manual connection retry</summary>
+              <div className="grid-2" style={{ marginTop: 8 }}>
+                <Input label="Authorization code" help="Auto-filled on redirect; only needed for manual retry." value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code" />
+                <Input label="OAuth state" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State" />
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <Button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</Button>
+              </div>
+            </details>
           </div>
         </div>
       )}
-    </div>
+    </>
+  );
+
+  if (bare) return <>{body}</>;
+  return (
+    <Card title="Gmail live import" description="OAuth2, read-only mailbox sync">
+      {body}
+    </Card>
   );
 }
 
@@ -1024,6 +1049,7 @@ export function GraphSvg({ graph }: { graph: any }) {
   const [filterKind, setFilterKind] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const ct = useChartTheme();
 
   const rawNodes: any[] = graph?.nodes ?? [];
   const edges: any[] = graph?.edges ?? [];
@@ -1108,14 +1134,9 @@ export function GraphSvg({ graph }: { graph: any }) {
   const connectedToActive = activeFocusId ? neighborsMap.get(activeFocusId) || new Set() : null;
 
   const getColor = (k: string) => {
-    // PDF p.11 — entity colors fixed by type, identical on map/graph/case file.
-    switch (k) {
-      case 'IP_Address': return 'var(--teal)';
-      case 'Domain': return 'var(--correlation)';
-      case 'Email_Address': return 'var(--high)';
-      case 'Threat_Campaign': return 'var(--critical)';
-      default: return 'var(--muted)';
-    }
+    // Entity colors fixed by type (Design.md §7.2), resolved via useChartTheme
+    // so the canvas re-renders with new-theme values instead of stale ones.
+    return ct.entity[k] ?? ct.entity.Entity;
   };
 
   const getIcon = (k: string) => {
@@ -1161,7 +1182,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 padding: '2px 8px',
                 borderRadius: 12,
                 border: `1px solid ${getColor(k)}`,
-                color: filterKind === k ? '#060a14' : getColor(k),
+                color: filterKind === k ? ct.onBright : getColor(k),
                 background: filterKind === k ? getColor(k) : 'transparent',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -1206,26 +1227,26 @@ export function GraphSvg({ graph }: { graph: any }) {
           <desc>Interactive graph showing relationships between senders, domains, IPs and threat campaigns.</desc>
           <defs>
             <filter id="glow-strong" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#38bdf8" floodOpacity="0.6" />
+              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={ct.accentInfo} floodOpacity="0.6" />
             </filter>
             <filter id="glow-node" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#ffffff" floodOpacity="0.3" />
+              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={ct.textPrimary} floodOpacity="0.3" />
             </filter>
             <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" fillOpacity="0.8" />
+              <path d="M 0 1 L 10 5 L 0 9 z" fill={ct.charts[0]} fillOpacity="0.8" />
             </marker>
             <marker id="arrow-highlight" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0.5 L 10 5 L 0 9.5 z" fill="#38bdf8" />
+              <path d="M 0 0.5 L 10 5 L 0 9.5 z" fill={ct.accentInfo} />
             </marker>
           </defs>
 
           {/* Grid background lines */}
           <g opacity={0.12}>
             {Array.from({ length: 11 }).map((_, i) => (
-              <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+              <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke={ct.textMuted} strokeWidth={1} strokeDasharray="3,3" />
             ))}
             {Array.from({ length: 6 }).map((_, i) => (
-              <line key={`gy-${i}`} x1={0} y1={i * 80} x2={w} y2={i * 80} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+              <line key={`gy-${i}`} x1={0} y1={i * 80} x2={w} y2={i * 80} stroke={ct.textMuted} strokeWidth={1} strokeDasharray="3,3" />
             ))}
           </g>
 
@@ -1248,7 +1269,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke={isHighlighted && activeFocusId ? '#38bdf8' : '#3b82f6'}
+                  stroke={isHighlighted && activeFocusId ? ct.accentInfo : ct.charts[0]}
                   strokeWidth={isHighlighted && activeFocusId ? 2.8 : 1.8}
                   strokeOpacity={isHighlighted && activeFocusId ? 1 : 0.65}
                   markerEnd={isHighlighted && activeFocusId ? 'url(#arrow-highlight)' : 'url(#arrow)'}
@@ -1261,11 +1282,11 @@ export function GraphSvg({ graph }: { graph: any }) {
                       width={e.rel.length * 6.8 + 10}
                       height={16}
                       rx={4}
-                      fill="#0b1329"
-                      stroke={isHighlighted && activeFocusId ? '#38bdf8' : 'var(--border)'}
+                      fill={ct.surfaceInset}
+                      stroke={isHighlighted && activeFocusId ? ct.accentInfo : ct.border}
                       strokeWidth={0.9}
                     />
-                    <text x={0} y={2.8} fill={isHighlighted && activeFocusId ? '#e0f2fe' : '#94a3b8'} fontSize={8} fontWeight={700} textAnchor="middle">
+                    <text x={0} y={2.8} fill={isHighlighted && activeFocusId ? ct.textPrimary : ct.textMuted} fontSize={8} fontWeight={700} textAnchor="middle">
                       {e.rel}
                     </text>
                   </g>
@@ -1317,13 +1338,13 @@ export function GraphSvg({ graph }: { graph: any }) {
                 <circle
                   r={r}
                   fill={nodeColor}
-                  stroke="#070d1d"
+                  stroke={ct.surfaceInset}
                   strokeWidth={2.5}
                   filter={isSelected || isHovered ? 'url(#glow-strong)' : 'url(#glow-node)'}
                 />
 
                 {/* Node Icon / Letter */}
-                <text y={4} fill="#060a14" fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
+                <text y={4} fill={ct.onBright} fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
                   {getIcon(n.kind)}
                 </text>
 
@@ -1335,11 +1356,13 @@ export function GraphSvg({ graph }: { graph: any }) {
                     width={Math.min(lbl.length * 6.8, 120) + 8}
                     height={15}
                     rx={3}
-                    fill="rgba(8, 12, 24, 0.85)"
+                    fill={ct.surfaceInset}
+                    stroke={ct.border}
+                    strokeWidth={0.75}
                   />
                   <text
                     y={3.5}
-                    fill={isSelected || isHovered ? '#ffffff' : '#e2e8f0'}
+                    fill={ct.textPrimary}
                     fontSize={10.5}
                     fontWeight={isSelected || isHovered ? 700 : 600}
                     textAnchor="middle"
@@ -1349,7 +1372,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 </g>
 
                 {/* Node Kind Badge */}
-                <text y={r + 28} fill="#94a3b8" fontSize={8.5} fontWeight={500} textAnchor="middle">
+                <text y={r + 28} fill={ct.textMuted} fontSize={8.5} fontWeight={500} textAnchor="middle">
                   {n.kind.replace('_', ' ')}
                 </text>
               </g>
@@ -1360,14 +1383,14 @@ export function GraphSvg({ graph }: { graph: any }) {
 
       {/* Selected Entity Details Card */}
       {selectedNodeData && (
-        <div className="card" style={{ background: '#0b1329', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
+        <div className="card" style={{ background: 'var(--surface-inset)', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span
                   style={{
                     background: getColor(selectedNodeData.kind),
-                    color: '#060a14',
+                    color: ct.onBright,
                     fontSize: 11,
                     fontWeight: 800,
                     padding: '2px 8px',
@@ -1376,7 +1399,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 >
                   {selectedNodeData.kind.replace('_', ' ')}
                 </span>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {getCleanLabel(selectedNodeData.id)}
                 </span>
               </div>
@@ -1424,7 +1447,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 6,
-                        background: '#131e3d',
+                        background: 'var(--surface-raised)',
                         border: '1px solid var(--border)',
                         padding: '3px 8px',
                         borderRadius: 6,
@@ -1433,7 +1456,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                       }}
                       title="Click to jump to this entity"
                     >
-                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                      <span style={{ color: 'var(--accent-info)', fontWeight: 700 }}>
                         {isOutgoing ? `→ ${e.rel || 'LINKS'}` : `← ${e.rel || 'LINKS'}`}
                       </span>
                       <span style={{ color: getColor(targetKind), fontWeight: 600 }}>
@@ -1594,7 +1617,7 @@ export function EmailView({ id }: { id: string }) {
             ))}
           </select>
           <button className="ghost small" onClick={linkToCase} disabled={!caseId}>Link to Case</button>
-          {caseNotice && <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ {caseNotice}</span>}
+          {caseNotice && <span style={{ color: 'var(--success)', fontSize: 12 }}>✓ {caseNotice}</span>}
         </div>
       )}
 
@@ -1701,7 +1724,7 @@ export function EmailView({ id }: { id: string }) {
               <dd>
                 <span className="mono">{t.origin_ip || '-'}</span>
                 {t.geolocation?.is_private && (
-                  <span className="badge" style={{ marginLeft: 6, fontSize: 11, background: 'var(--muted)', color: '#fff', padding: '2px 6px', borderRadius: 4 }}>
+                  <span className="badge" style={{ marginLeft: 6, fontSize: 11, background: 'var(--surface-inset)', color: 'var(--text-secondary)', padding: '2px 6px', borderRadius: 4 }}>
                     Private RFC1918
                   </span>
                 )}

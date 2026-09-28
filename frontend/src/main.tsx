@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
+import { ThemeProvider, useTheme } from './theme';
 import { BASE, jpost } from './api';
 import { BackToTop, ScrollProgress, SkipToContent } from './components';
 
@@ -19,6 +20,8 @@ const ModelInfo = lazy(() => import('./pages').then(m => ({ default: m.ModelInfo
 const Mailboxes = lazy(() => import('./pages').then(m => ({ default: m.Mailboxes })));
 const PrivacyPolicy = lazy(() => import('./pages').then(m => ({ default: m.PrivacyPolicy })));
 const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.TermsConditions })));
+// Dev-only showcase; the route element below renders null in production builds.
+const DesignSystem = lazy(() => import('./designSystem').then(m => ({ default: m.DesignSystem })));
 
 // Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -79,19 +82,17 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<string>(() => {
-    try {
-      const s = localStorage.getItem('soc-theme');
-      if (s === 'light' || s === 'dark') return s;
-      return document.documentElement.getAttribute('data-theme') || 'dark';
-    } catch { return 'dark'; }
-  });
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('soc-theme', theme); } catch { /* storage unavailable */ }
-  }, [theme]);
+  const { theme, setTheme } = useTheme();
+  const next = theme === 'dark' ? 'light' : 'dark';
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode (dark SOC is default; light is for daytime desks and print)`}>
+    <button
+      type="button"
+      className="theme-toggle"
+      aria-pressed={theme === 'dark'}
+      aria-label={`Switch to ${next} mode (currently ${theme})`}
+      title={`Switch to ${next} mode`}
+      onClick={() => setTheme(next)}
+    >
       <span aria-hidden="true">{theme === 'dark' ? '☾' : '☀'}</span> {theme === 'dark' ? 'Light' : 'Dark'}
     </button>
   );
@@ -454,6 +455,9 @@ useEffect(() => {
           <span className="dot" style={{ background: health === 'ok' ? 'var(--low)' : health === 'down' ? 'var(--critical)' : 'var(--medium)' }} aria-hidden="true" />
           {health === 'ok' ? 'API online' : health === 'down' ? 'API unreachable' : 'checking API...'}
         </div>
+        <div style={{ marginTop: 14 }}>
+          <ThemeToggle />
+        </div>
       </aside>
       <div className="shell-main">
         <div className="topbar">
@@ -496,6 +500,7 @@ useEffect(() => {
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsConditions />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            {import.meta.env.DEV ? <Route path="/design-system" element={<DesignSystem />} /> : null}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<NotFoundPage />} />
@@ -512,7 +517,7 @@ useEffect(() => {
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
           {' - '}<span>ThreatOptic - 301 Congress Ave, Austin, TX 78701</span>
         </div>
-        <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 ThreatOptic - socforensics.io</div>
+        <div style={{ marginTop: 6, color: 'var(--muted)' }}>© 2026 ThreatOptic - socforensics.io</div>
       </footer>
         </div>
       </div>
@@ -533,9 +538,11 @@ useEffect(() => {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <AuthProvider>
-      <Shell />
-    </AuthProvider>
-  </BrowserRouter>,
+  <ThemeProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
+    </BrowserRouter>
+  </ThemeProvider>,
 );

@@ -34,7 +34,8 @@
   <link rel="dns-prefetch" href="https://www.openstreetmap.org" />
 
   <script>
-    (function(){try{var t=localStorage.getItem('soc-theme'); if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t);} else{document.documentElement.setAttribute('data-theme','dark');}}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+    /* Pre-hydration theme: stored (`theme`, legacy `soc-theme`) > system > light. Must run before first paint. */
+    (function(){try{var t=localStorage.getItem('theme')||localStorage.getItem('soc-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}document.documentElement.setAttribute('data-theme',t);document.documentElement.style.colorScheme=t;}catch(e){document.documentElement.setAttribute('data-theme','light');document.documentElement.style.colorScheme='light';}})();
   </script>
 
   <!-- Structured Data: Organization + Website -->
