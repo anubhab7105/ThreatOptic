@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './auth';
 import { ThemeProvider, useTheme } from './theme';
 import { BASE, jpost } from './api';
 import { BackToTop, ScrollProgress, SkipToContent } from './components';
+import { Alert } from './primitives';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -276,7 +277,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         <div className="page">
           <h1>Something went wrong</h1>
           <p className="sub">An unexpected error occurred in the forensic UI. Reload or return to the dashboard.</p>
-          <div className="toast">{this.state.msg.slice(0, 400)}</div>
+          <Alert tone="error" title="Something went wrong">{this.state.msg.slice(0, 400)}</Alert>
           <Link to="/dashboard">Back to Dashboard</Link>
         </div>
       );

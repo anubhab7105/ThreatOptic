@@ -19,35 +19,6 @@ export function severityColor(s: string): string {
   return 'var(--muted)';
 }
 
-export function verdictLabel(score: number): string {
-  const sev = severityOf(score);
-  if (sev === 'critical') return 'Critical';
-  if (sev === 'high') return 'High';
-  if (sev === 'medium') return 'Medium';
-  if (sev === 'low') return 'Low';
-  return 'Draft';
-}
-
-export function ScoreBadge({ v, showLabel = true }: { v: number; showLabel?: boolean }) {
-  const sev = severityOf(v ?? 0);
-  const label = verdictLabel(v ?? 0);
-  return (
-    <span className={`badge ${sev}`} title={`fraud score ${v} — ${label}`}>
-      {showLabel && sev !== 'unknown' ? `${label} ${v}` : v}
-    </span>
-  );
-}
-
-export function VerdictPill({ score, classification }: { score: number; classification?: string | null }) {
-  const sev = severityOf(score ?? 0);
-  const label = classification && classification !== '—' ? classification : verdictLabel(score ?? 0);
-  return (
-    <span className={`verdict-pill verdict-${sev === 'unknown' ? 'draft' : sev}`} title={`verdict ${label}, score ${score}`}>
-      {sev === 'unknown' ? label : `${label} ${score}`}
-    </span>
-  );
-}
-
 const AVATAR_COLORS = ['var(--teal)', 'var(--correlation)', 'var(--muted)'];
 
 export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
@@ -65,14 +36,6 @@ export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number 
       ))}
       {extra > 0 ? <span className="avatar-more">+{extra}</span> : null}
     </span>
-  );
-}
-
-export function AISparkle({ onClick, title = 'Explain / summarize with AI' }: { onClick?: () => void; title?: string }) {
-  return (
-    <button type="button" className="ai-sparkle" onClick={onClick} title={title} aria-label={title}>
-      <span aria-hidden="true">✦</span>
-    </button>
   );
 }
 
@@ -141,50 +104,8 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
   );
 }
 
-export function MetricRing({ pct, size = 120 }: { pct: number; size?: number }) {
-  const R = 48;
-  const CIRC = 2 * Math.PI * R;
-  const frac = Math.max(0, Math.min(1, pct / 100));
-  return (
-    <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={`${pct.toFixed(1)} percent`}>
-      <circle cx="60" cy="60" r={R} fill="none" stroke="var(--panel-2)" strokeWidth="13" />
-      <circle
-        cx="60" cy="60" r={R} fill="none" stroke="var(--teal)" strokeWidth="13"
-        strokeDasharray={`${frac * CIRC} ${CIRC}`} strokeLinecap="round"
-        transform="rotate(-90 60 60)"
-      />
-      <text x="60" y="67" textAnchor="middle" fontSize="21" fontWeight="800" fill="var(--text)">{pct.toFixed(1)}%</text>
-    </svg>
-  );
-}
-
-export function StatCard({ label, value, caption }: { label: string; value: React.ReactNode; caption?: string }) {
-  return (
-    <div className="card">
-      <h3>{label}</h3>
-      <div className="stat-num">{value}</div>
-      {caption && <div className="stat-cap">{caption}</div>}
-    </div>
-  );
-}
-
-export function Toast({ msg, kind }: { msg: string; kind?: 'error' | 'info' }) {
-  if (!msg) return null;
-  return <div role="alert" className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
-}
-
 export function Empty({ msg }: { msg: string }) {
   return <div className="empty">{msg}</div>;
-}
-
-export function SkeletonList({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="grid">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="skel" style={{ height: 44 }} />
-      ))}
-    </div>
-  );
 }
 
 export function AuthPill({ name, status }: { name: string; status: string }) {
@@ -291,25 +212,6 @@ export function CopyButton({ text, label = 'Copy', successLabel = 'Copied!' }: {
         </>
       )}
     </button>
-  );
-}
-
-export function FAQ({ items }: { items: { question: string; answer: React.ReactNode }[] }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  return (
-    <div className="faq">
-      {items.map((item, i) => (
-        <details key={i} className="faq-item" open={openIndex === i} onToggle={() => setOpenIndex(openIndex === i ? null : i)}>
-          <summary className="faq-question">
-            {item.question}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="faq-chevron">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </summary>
-          <div className="faq-answer">{item.answer}</div>
-        </details>
-      ))}
-    </div>
   );
 }
 
