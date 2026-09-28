@@ -460,8 +460,8 @@ useEffect(() => {
           <ThemeToggle />
         </div>
       </aside>
-      <div className="shell-main">
-        <div className="topbar">
+      <main className="shell-main">
+        <header className="topbar">
           <button className="mobile-menu-btn ws-toggle" onClick={() => setWsOpen((o) => !o)} aria-label="Toggle workspace panel" aria-expanded={wsOpen}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="3" y1="12" x2="21" y2="12" />
@@ -483,7 +483,7 @@ useEffect(() => {
             </span>
             <Link to="/" onClick={async (e) => { e.preventDefault(); await logout(); navigate('/'); }} style={{ fontSize: 12, fontWeight: 600 }}>Sign out</Link>
           </div>
-        </div>
+        </header>
         <div className="content-well">
 
       <ErrorBoundary>
@@ -521,7 +521,7 @@ useEffect(() => {
         <div style={{ marginTop: 6, color: 'var(--muted)' }}>© 2026 ThreatOptic - socforensics.io</div>
       </footer>
         </div>
-      </div>
+      </main>
       <CookieConsent />
       <KeyboardShortcuts shortcuts={[
         { key: 'Ctrl+K', description: 'Focus search' },

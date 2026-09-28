@@ -46,7 +46,7 @@ Implement as CSS custom properties on `:root[data-theme="light"]` and `:root[dat
 | `--text-muted` | `#56637A` | `#8792A8` |
 | `--text-on-accent` | `#FFFFFF` | `#0F1220` |
 | `--border-subtle` | `rgba(27,35,51,0.14)` | `rgba(230,234,243,0.12)` |
-| `--border-strong` | `rgba(27,35,51,0.32)` | `rgba(230,234,243,0.28)` |
+| `--border-strong` | `rgba(27,35,51,0.50)` | `rgba(230,234,243,0.40)` |
 | `--accent-primary` (indigo) | `#4F46E5` | `#818CF8` |
 | `--accent-primary-hover` | `#4338CA` | `#A5B4FC` |
 | `--accent-secondary` (violet) | `#6D28D9` | `#A78BFA` |

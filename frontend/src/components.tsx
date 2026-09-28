@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useChartTheme } from './useChartTheme';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
 
@@ -54,11 +55,14 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
   const total = Math.max(1, c + h + m + l);
   const highRisk = c + h;
   const pct = Math.round((100 * highRisk) / total);
+  // Resolved (not var()) colors: SVG presentation attributes do not resolve
+  // CSS var(), and the hook re-renders the gauge on theme change (§8).
+  const ct = useChartTheme();
   const segs = [
-    { v: c, color: 'var(--critical)' },
-    { v: h, color: 'var(--high)' },
-    { v: m, color: 'var(--medium)' },
-    { v: l, color: 'var(--low)' },
+    { v: c, color: ct.risk.critical },
+    { v: h, color: ct.risk.high },
+    { v: m, color: ct.risk.medium },
+    { v: l, color: ct.risk.low },
   ];
   const R = 54;
   const CIRC = 2 * Math.PI * R;
@@ -68,7 +72,7 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
     <div className="gauge-card">
       <svg className="gauge-svg" width="132" height="132" viewBox="0 0 132 132" role="img" aria-label={label}>
         <title>Threat overview gauge</title>
-        <circle cx="66" cy="66" r={R} fill="none" stroke="var(--panel-2)" strokeWidth="16" />
+        <circle cx="66" cy="66" r={R} fill="none" stroke={ct.surfaceRaised} strokeWidth="16" />
         {segs.map((s, i) => {
           if (!s.v) return null;
           const frac = s.v / total;
@@ -87,16 +91,16 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
             />
           );
         })}
-        <text x="66" y="64" textAnchor="middle" fontSize="22" fontWeight="800" fill="var(--text)">{pct}%</text>
-        <text x="66" y="82" textAnchor="middle" fontSize="10" fill="var(--muted)">high-risk</text>
+        <text x="66" y="64" textAnchor="middle" fontSize="22" fontWeight="800" fill={ct.textPrimary}>{pct}%</text>
+        <text x="66" y="82" textAnchor="middle" fontSize="10" fill={ct.textMuted}>high-risk</text>
       </svg>
       <div>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{highRisk} / {total} emails</div>
         <div className="gauge-legend" style={{ marginTop: 8 }}>
-          <span><span className="sev" style={{ background: 'var(--critical)' }} />Critical <b>{c}</b></span>
-          <span><span className="sev" style={{ background: 'var(--high)' }} />High <b>{h}</b></span>
-          <span><span className="sev" style={{ background: 'var(--medium)' }} />Medium <b>{m}</b></span>
-          <span><span className="sev" style={{ background: 'var(--low)' }} />Low <b>{l}</b></span>
+          <span><span className="sev" style={{ background: ct.risk.critical }} />Critical <b>{c}</b></span>
+          <span><span className="sev" style={{ background: ct.risk.high }} />High <b>{h}</b></span>
+          <span><span className="sev" style={{ background: ct.risk.medium }} />Medium <b>{m}</b></span>
+          <span><span className="sev" style={{ background: ct.risk.low }} />Low <b>{l}</b></span>
         </div>
         <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{label}</span>
       </div>
