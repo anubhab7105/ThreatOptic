@@ -1,4 +1,4 @@
-"""Step 2 (C3/C4/tenancy/RBAC/CaseUpdate/refresh-persist/client_id/rate-limit)."""
+
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -11,7 +11,7 @@ from app.config import get_settings
 
 
 def _session():
-    """Fresh session from the (possibly test-rebound) sessionmaker."""
+
     from app.database import SessionLocal
     return SessionLocal()
 
@@ -21,13 +21,12 @@ def _uname(prefix: str) -> str:
 
 
 def _register(c: TestClient, username: str, role: str | None = None) -> dict:
-    """Provision the `users` mirror row (what the Supabase trigger does) and
-    return a matching Authorization header. Sign-up itself is Supabase-side."""
+
     return login(role=role or "ReadOnly", email=f"{username}@test.local")[0]
 
 
 def _make_org_with_user(c: TestClient, role: str = "Analyst") -> tuple[dict, str, str]:
-    """Provision a user, then move them into a fresh org. Returns (headers, user_id, org_id)."""
+
     uname = _uname("tenant")
     h, user = login(role=role, email=f"{uname}@test.local")
     db = _session()
@@ -50,14 +49,14 @@ def test_oauth_state_expiry_and_allowlist(monkeypatch):
     monkeypatch.setattr(settings, "google_client_id", "gid")
     with TestClient(app) as c:
         h = _register(c, _uname("st"), role="Analyst")
-        # non-allowlisted redirect rejected
+
         r = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "https://evil.test/cb", "client_id": "gid"})
         assert r.status_code == 400 and "allowlisted" in r.text
-        # unknown state rejected
+
         r = c.get("/api/v1/oauth/google/callback", params={"code": "x", "state": "bogus-state"})
         assert r.status_code == 400 and "state" in r.text.lower()
-        # expired state rejected
+
         db = _session()
         try:
             u = db.query(models.User).order_by(models.User.created_at.desc()).first()
@@ -89,7 +88,7 @@ def test_tenant_isolation_emails_cases_dashboard():
                      json={"raw": f"From: {marker}\nTo: x@y.test\nSubject: A secret\n\nbody"}).json()["email_id"]
         cid = c.post("/api/v1/cases", headers=ha, json={"title": "A case"}).json()["id"]
 
-        # B cannot see A's rows (404, not 403 — no existence leak)
+
         assert c.get(f"/api/v1/emails/{eid}", headers=hb).status_code == 404
         assert c.patch(f"/api/v1/cases/{cid}", headers=hb, json={"notes": "hijack"}).status_code == 404
         ids_b = [e["id"] for e in c.get("/api/v1/emails?limit=200", headers=hb).json()]
@@ -97,7 +96,7 @@ def test_tenant_isolation_emails_cases_dashboard():
         assert all(x["id"] != cid for x in c.get("/api/v1/cases", headers=hb).json())
         dash_b = c.get("/api/v1/dashboard", headers=hb).json()
         assert dash_b["total_emails"] == 0
-        # owner + admin can
+
         assert c.get(f"/api/v1/emails/{eid}", headers=ha).status_code == 200
         db = _session()
         try:
@@ -107,7 +106,7 @@ def test_tenant_isolation_emails_cases_dashboard():
             db.close()
         assert c.get(f"/api/v1/emails/{eid}", headers=dh).status_code == 200
         assert c.get("/api/v1/dashboard", headers=dh).json()["total_emails"] >= 1
-        # cleanup
+
         db = _session()
         try:
             for m, col in ((models.AnalysisResult, "email_id"), (models.TraceabilityData, "email_id")):
@@ -126,12 +125,12 @@ def test_readonly_cannot_write():
     from app.main import app
 
     with TestClient(app) as c:
-        h = _register(c, _uname("ro"))  # ReadOnly default
+        h = _register(c, _uname("ro"))
         assert c.get("/api/v1/emails", headers=h).status_code == 200
         assert c.get("/api/v1/dashboard", headers=h).status_code == 200
         assert c.post("/api/v1/emails/ingest", headers=h, json={"raw": "hi"}).status_code == 403
         assert c.post("/api/v1/cases", headers=h, json={"title": "x"}).status_code == 403
-        # analyst can
+
         ha = _register(c, _uname("wr"), role="Analyst")
         assert c.post("/api/v1/cases", headers=ha, json={"title": "ok"}).status_code == 200
 
@@ -142,7 +141,7 @@ def test_case_update_schema():
     with TestClient(app) as c:
         h = _register(c, _uname("cu"), role="Analyst")
         cid = c.post("/api/v1/cases", headers=h, json={"title": "t"}).json()["id"]
-        # unknown field rejected, bad types rejected
+
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"hacked": 1}).status_code == 422
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"email_ids": "nope"}).status_code == 422
         assert c.patch(f"/api/v1/cases/{cid}", headers=h, json={"title": "  "}).status_code == 400
@@ -223,7 +222,7 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
 
     with TestClient(app) as c:
         h = _register(c, _uname("pin"), role="Analyst")
-        # connect with an explicit client_id override (P0: via opaque state)
+
         au = c.post("/api/v1/gmail/auth-url", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "override-id"}).json()["auth_url"]
         from urllib.parse import parse_qs as _pqs, urlparse as _up
@@ -235,14 +234,14 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
         try:
             u = db.query(models.User).order_by(models.User.created_at.desc()).first()
             acct = db.query(models.GmailAccount).filter_by(user_id=u.id).first()
-            # Pinned at connect time AND stored as vault ciphertext, never
-            # plaintext-only (the legacy column is a cache, not the source).
+
+
             assert acct.client_id == "override-id"
             assert decrypt_secret(acct.encrypted_client_id) == "override-id"
             uid = u.id
         finally:
             db.close()
-        # server secret changes afterwards: sync still uses the PINNED client_id
+
         monkeypatch.setattr(settings, "google_client_id", "other-id")
         assert c.post("/api/v1/gmail/sync", headers=h, json={}).status_code == 200
         assert seen.get("cid") == "override-id"
@@ -256,12 +255,7 @@ def test_gmail_client_id_pinned_and_reused(monkeypatch):
 
 
 def test_rate_limit_and_lockout(monkeypatch):
-    """Limiter must actually gate a live endpoint once enabled.
 
-    Local password login moved to Supabase (which rate-limits its own auth
-    endpoints), so the backend's remaining limiter coverage is the API/OAuth
-    surface — proved here against /oauth/sync-now (10/minute).
-    """
     from app.config import get_settings as gs
     from app.main import app
     from app.modules.auth import rate_limit as rl
@@ -283,7 +277,7 @@ def test_rate_limit_and_lockout(monkeypatch):
 
 
 def test_rate_limiter_disabled(monkeypatch):
-    """RATE_LIMIT_ENABLED=0 turns the limiter off (conftest posture)."""
+
     from app.main import app
     from app.modules.auth import rate_limit as rl
 
@@ -315,7 +309,7 @@ def test_scheduler_uses_service_layer():
 
 
 def test_case_linkage_validates_email_tenant():
-    """P0: linked email IDs must exist in the caller's tenant (404 else)."""
+
     from app.main import app
 
     with TestClient(app) as c:
@@ -323,16 +317,16 @@ def test_case_linkage_validates_email_tenant():
         hb, _b, _org_b = _make_org_with_user(c)
         eid_a = c.post("/api/v1/emails/ingest", headers=ha,
                        json={"raw": "From: a@x.test\nTo: y@y.test\nSubject: A\n\nbody"}).json()["email_id"]
-        # cross-tenant link rejected on create and on patch (404, no leak)
+
         assert c.post("/api/v1/cases", headers=hb,
                       json={"title": "hijack", "email_ids": [eid_a]}).status_code == 404
         cid_b = c.post("/api/v1/cases", headers=hb, json={"title": "ok"}).json()["id"]
         assert c.patch(f"/api/v1/cases/{cid_b}", headers=hb,
                        json={"email_ids": [eid_a]}).status_code == 404
-        # unknown IDs rejected the same way
+
         assert c.post("/api/v1/cases", headers=hb,
                       json={"title": "ghost", "email_ids": ["no-such-id"]}).status_code == 404
-        # own mail links fine (deduped, order kept)
+
         eid_b = c.post("/api/v1/emails/ingest", headers=hb,
                        json={"raw": "From: b@x.test\nTo: y@y.test\nSubject: B\n\nbody"}).json()["email_id"]
         r = c.patch(f"/api/v1/cases/{cid_b}", headers=hb,

@@ -2,7 +2,7 @@ import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
-from app import models  # noqa
+from app import models
 from app.services.pipeline import process_raw_email
 from helpers import login
 
@@ -50,7 +50,7 @@ def test_clean_scores_low():
 def test_received_chain_and_geo():
     from app.modules.forensics.received_chain import reconstruct_path
     from app.modules.traceability.ip_extractor import extract_origin_ip
-    # minimal dict form
+
     h = {"Received": "from evil.test (evil.test [45.148.10.88]) by mx.company.com with ESMTPS\nfrom internal ([10.0.0.5]) by evil.test"}
     path = reconstruct_path(h)
     assert len(path) == 2
@@ -74,7 +74,7 @@ def test_graph_related_no_crash():
     upsert_email_graph("ceo@xn--paypa1-secure.top", "45.148.10.88", ["xn--paypa1-secure.top"])
     rel = related_entities("ceo@xn--paypa1-secure.top")
     assert len(rel["nodes"]) >= 2
-    # full display-name header must also resolve (API extracts bare email)
+
     import re
     m = re.search(r"[\w.\-+]+@[\w.\-]+\.\w+", '"CEO" <ceo@xn--paypa1-secure.top>')
     assert m and related_entities(m.group(0))["nodes"]
@@ -85,7 +85,7 @@ def test_api_validation():
     from fastapi.testclient import TestClient
     from app.main import app
     with TestClient(app) as c:
-        # unauthenticated requests are rejected before validation
+
         assert c.post("/api/v1/emails/ingest", json={"raw": ""}).status_code == 401
         assert c.get("/api/v1/emails/does-not-exist").status_code == 401
         assert c.post("/api/v1/cases", json={"title": ""}).status_code == 401
@@ -98,7 +98,7 @@ def test_api_validation():
 
 
 def test_geo_fallbacks_offline_skips_system_resolver(monkeypatch):
-    """P0: offline switch gates every resolver network path."""
+
     import socket
     from app.services.pipeline import _geo_fallbacks
 
@@ -109,11 +109,11 @@ def test_geo_fallbacks_offline_skips_system_resolver(monkeypatch):
     geo = {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
     out = _geo_fallbacks([], {"mx": ["mx.evil.test"]}, "nonexistent-domain-xyz.test",
                          {}, geo, live_lookups=False)
-    assert isinstance(out, dict)  # country fallback may fill in; no resolver used
+    assert isinstance(out, dict)
 
 
 def test_geo_fallbacks_live_mx_path(monkeypatch):
-    """P0: live mode still resolves MX/A for approximate geo."""
+
     import socket
     from app.services.pipeline import _geo_fallbacks
     import app.modules.traceability.geoip as geoip
@@ -130,7 +130,7 @@ def test_geo_fallbacks_live_mx_path(monkeypatch):
 
 
 def test_pipeline_offline_no_system_dns(monkeypatch):
-    """P0: end-to-end offline ingest never touches the system resolver."""
+
     import socket
 
     def _boom(host):

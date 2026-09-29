@@ -1,25 +1,4 @@
-"""Queue abstraction: bounded thread-safe queue; Kafka as opt-in mirror.
 
-P0 durability contract (read before changing):
-- The in-memory queue is the PRIMARY path the pipeline consumes. It is
-  bounded by item count (SMTP_QUEUE_MAX) AND byte budget
-  (SMTP_QUEUE_MAX_BYTES, default 100MB): a 1000-deep queue of 10MB mails
-  would otherwise OOM the worker. Overflow raises queue.Full and the SMTP
-  handler answers 452 — never silent-drop, never unbounded growth.
-- Kafka (KAFKA_BOOTSTRAP) is an opt-in MIRROR for external consumers, not
-  the pipeline path: every mail is enqueued to memory first, then
-  best-effort mirrored. (Previously a successful Kafka publish returned
-  early and the mail never reached the pipeline — a black hole, since no
-  consumer exists in this repo.) Mirror failures only log.
-- The Kafka producer is started ONCE (start-per-enqueue silently fell back
-  to memory after the first message in some client libraries).
-- Consumer discipline: dequeue_email() hands one payload to exactly one
-  consumer; the consumer MUST call ack_email() after finishing (success or
-  failure) so queue_inflight() reflects reality. In-memory state cannot
-  survive a process restart — unacked/queued mail on a crash is lost;
-  cross-restart durability needs an external durable broker + consumer
-  group, which is explicitly out of scope here.
-"""
 import asyncio
 import base64
 import json
@@ -36,7 +15,7 @@ _producer = None
 _producer_lock = threading.Lock()
 _producer_started = False
 
-# Byte-budget + in-flight accounting (guarded; self-heals when empty).
+
 _budget_lock = threading.Lock()
 _mem_bytes = 0
 _inflight = 0
@@ -85,7 +64,7 @@ def queue_inflight() -> int:
 
 
 def _get_producer():
-    """Process-wide singleton Kafka producer (lazy)."""
+
     global _producer
     from ...config import get_settings
     settings = get_settings()
@@ -99,13 +78,7 @@ def _get_producer():
 
 
 async def _get_started_producer():
-    """Singleton producer, started exactly once (P0).
 
-    Re-awaiting start() on every enqueue made some client versions raise
-    (or wedge), which the old code swallowed into a silent memory
-    fallback. Concurrent first-enqueues may both call start(); the loser
-    observes "already started" and proceeds.
-    """
     global _producer_started
     producer = _get_producer()
     if producer is None:
@@ -133,12 +106,12 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
     global _mem_bytes
     from ...config import get_settings
     settings = get_settings()
-    # Primary path first: bounded memory queue (byte budget + item cap).
+
     _ensure_capacity()
     size = _payload_bytes(payload)
     with _budget_lock:
         if _mem_queue.qsize() == 0:
-            _mem_bytes = 0  # self-heal if drained outside dequeue_email
+            _mem_bytes = 0
         if _mem_bytes + size > _max_bytes():
             log.warning("ingest queue byte budget exceeded (%s+%s), rejecting", _mem_bytes, size)
             raise queue.Full
@@ -148,7 +121,7 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
             log.warning("ingest queue full (%s items), rejecting", _mem_queue.maxsize)
             raise
         _mem_bytes += size
-    # Opt-in mirror for external consumers; never replaces the primary path.
+
     if settings.kafka_bootstrap:
         try:
             producer = await _get_started_producer()
@@ -159,10 +132,10 @@ async def enqueue_email(payload: dict[str, Any]) -> None:
 
 
 async def dequeue_email() -> dict[str, Any]:
-    # task.cancel() is the shutdown signal: CancelledError propagates out of
-    # the sleep immediately. get_nowait (not a blocking get) means a cancel
-    # can never strand an already-removed item: every returned payload is
-    # exactly-once handed out and byte/inflight-accounted here.
+
+
+
+
     global _mem_bytes, _inflight
     while True:
         try:
@@ -177,12 +150,7 @@ async def dequeue_email() -> dict[str, Any]:
 
 
 def ack_email() -> None:
-    """Mark one dequeued payload finished (P0 consumer discipline).
 
-    Call after the pipeline run completes, success or failure. Memory-only
-    bookkeeping for queue_inflight(); see module docstring for the
-    durability contract.
-    """
     global _inflight
     with _budget_lock:
         _inflight = max(0, _inflight - 1)

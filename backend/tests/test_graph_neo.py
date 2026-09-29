@@ -1,4 +1,4 @@
-"""Graph consistency tests (F8): Neo4j-first reads with networkx fallback."""
+
 import app.modules.graph.store as store
 
 
@@ -42,7 +42,7 @@ def _neo_script(query, params):
             {"t": "HOSTS", "slab": ["IP_Address"], "sprops": {"ip": "9.9.9.9"},
              "elab": ["Domain"], "eprops": {"name": "a.test"}},
         ]
-    # root lookup
+
     return [{"labels": ["Email_Address"], "props": {"address": "x@a.test"}}]
 
 
@@ -67,7 +67,7 @@ def test_neo_error_falls_back_to_memory(monkeypatch):
             raise ConnectionError("neo down")
     monkeypatch.setattr(store, "_neo", lambda: Boom())
     store.upsert_email_graph("fb@mem.test", "10.10.10.10", ["mem.test"])
-    # error in reads -> networkx fallback still answers from local graph
+
     rel = store.related_entities("fb@mem.test")
     assert any(n["id"] == "email:fb@mem.test" for n in rel["nodes"])
     assert store.find_campaigns(min_shared=99) == []
@@ -85,7 +85,7 @@ def test_consistency_note(monkeypatch):
 
 
 def test_neo_mirror_batched_statements(monkeypatch):
-    """P0: one mail mirrors in a handful of statements, not ~62."""
+
     calls: list = []
 
     def _script(query, params):
@@ -99,13 +99,13 @@ def test_neo_mirror_batched_statements(monkeypatch):
     assert len(calls) <= 5, calls
     unwinds = [p for q, p in calls if "UNWIND" in q]
     assert unwinds, "domains must go as UNWIND batches"
-    # 10 passed domains + the sender's own domain, in as few batches as possible
+
     assert sum(len(p.get("ds", [])) for p in unwinds) >= 10
     assert max(len(p.get("ds", [])) for p in unwinds) >= 10
 
 
 def test_hydration_paginated_and_capped(monkeypatch):
-    """P0: hydration pages through rows and respects the total cap."""
+
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from app.database import Base
@@ -134,7 +134,7 @@ def test_hydration_paginated_and_capped(monkeypatch):
 
 
 def test_related_depth_clamped_and_output_capped(monkeypatch):
-    """P0: absurd depth cannot hang the request or dump the graph."""
+
     monkeypatch.setattr(store, "_neo", lambda: None)
     store.G.clear()
     try:
@@ -143,8 +143,8 @@ def test_related_depth_clamped_and_output_capped(monkeypatch):
         rel = store.related_entities("9.9.9.9", depth=999)
         assert len(rel["nodes"]) <= store.NX_MAX_NODES
         assert len(rel["edges"]) <= store.NX_MAX_EDGES
-        # garbage depth falls back instead of crashing
-        rel2 = store.related_entities("9.9.9.9", depth="abc")  # type: ignore[arg-type]
+
+        rel2 = store.related_entities("9.9.9.9", depth="abc")
         assert rel2["nodes"]
     finally:
         store.G.clear()

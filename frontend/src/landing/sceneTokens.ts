@@ -7,11 +7,11 @@ export type SceneTokens = {
   risk: string;
 };
 
-/**
- * Single source for --scene-* fallback values (Landing_Design.md §3, light
- * theme). Used only when the CSS variables cannot be read; the themed
- * variables on :root[data-theme] remain authoritative.
- */
+
+
+
+
+
 export const SCENE_TOKEN_FALLBACKS: SceneTokens = {
   bg: '#DDE3ED',
   clay: '#E9EEF6',

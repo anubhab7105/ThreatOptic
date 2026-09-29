@@ -1,19 +1,4 @@
-"""ML-based URL phishing detection (NEXUSSCAN model).
 
-Bundle: RandomForest (250 trees) + StandardScaler + SimpleImputer, 48 lexical features.
-See /home/babai/Desktop/codeing/NEXUSSCAN/api/ml_detector.py for reference implementation.
-
-Features 0-25 are URL-lexical (computed from URL string alone).
-Features 26-47 are page-content features → NaN when only URL available; imputer fills them.
-
-Usage:
-    from .url_ml import predict_url, score_urls_batch
-    result = predict_url("https://paypal-secure-login.example.com/verify")
-    # {"is_phishing": True, "confidence": 94.2, "risk_score": 0.94}
-
-Thread-safe lazy loading: model loaded once on first predict_url call.
-If model unavailable/failed → ModelUnavailableError, caller should fallback gracefully.
-"""
 from __future__ import annotations
 
 import logging
@@ -28,11 +13,11 @@ import pandas as pd
 
 logger = logging.getLogger("url_ml")
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
-# Model located at backend/ml_models/url_phishing_model.pkl
+
+
+
+
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _MODEL_PATH = os.path.abspath(os.path.join(_THIS_DIR, "..", "..", "..", "ml_models", "url_phishing_model.pkl"))
 
@@ -48,12 +33,12 @@ _BRAND_NAMES = [
     "apple", "chase", "wellsfargo", "citibank", "netflix", "instagram",
 ]
 
-# ---------------------------------------------------------------------------
-# Lazy loader
-# ---------------------------------------------------------------------------
+
+
+
 
 class ModelUnavailableError(RuntimeError):
-    """Raised when the ML model cannot be loaded or is structurally invalid."""
+    pass
 
 
 _model_lock: Lock = Lock()
@@ -62,7 +47,7 @@ _model_error: str | None = None
 
 
 def _load_bundle() -> dict:
-    """Load and validate the model bundle from disk. Thread-safe, loads once."""
+
     global _model_bundle, _model_error
 
     with _model_lock:
@@ -77,7 +62,7 @@ def _load_bundle() -> dict:
             logger.error("URL ML model unavailable — %s", _model_error)
             raise ModelUnavailableError(_model_error)
 
-        # P0: trust gate BEFORE unpickling (pickle == RCE on write access).
+
         try:
             from ..model_trust import verify_model_artifact, ModelTrustError
             verify_model_artifact(_MODEL_PATH, purpose="url-ml")
@@ -125,7 +110,7 @@ def _load_bundle() -> dict:
 
 
 def warmup() -> None:
-    """Pre-load model at startup (called from lifespan). Best-effort."""
+
     try:
         _load_bundle()
     except ModelUnavailableError as e:
@@ -133,7 +118,7 @@ def warmup() -> None:
 
 
 def is_available() -> bool:
-    """Check if model is loadable without raising."""
+
     try:
         _load_bundle()
         return True
@@ -141,17 +126,13 @@ def is_available() -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Feature extraction (identical to NEXUSSCAN ml_detector.py)
-# ---------------------------------------------------------------------------
+
+
+
 
 def _extract_features(url: str, feature_names: list[str]) -> pd.DataFrame:
-    """
-    Extract the 48 features expected by the model and return a single-row
-    DataFrame. Features requiring live page content are set to NaN; the
-    imputer fills them with training-set medians at prediction time.
-    """
-    # Normalize www. URLs without scheme for correct parsing
+
+
     normalized = url if "://" in url else "http://" + url
     parsed = urlparse(normalized)
     hostname = parsed.netloc.lower()
@@ -187,77 +168,65 @@ def _extract_features(url: str, feature_names: list[str]) -> pd.DataFrame:
     NaN = np.nan
 
     values = [
-        url.count("."),            # NumDots
-        subdomain_level,            # SubdomainLevel
-        path_level,                 # PathLevel
-        len(url),                   # UrlLength
-        url.count("-"),             # NumDash
-        hostname.count("-"),        # NumDashInHostname
-        url.count("@"),             # AtSymbol
-        url.count("~"),             # TildeSymbol
-        url.count("_"),             # NumUnderscore
-        url.count("%"),             # NumPercent
-        query_comps,                # NumQueryComponents
-        url.count("&"),             # NumAmpersand
-        url.count("#"),             # NumHash
-        num_numeric,                # NumNumericChars
-        0 if parsed.scheme == "https" else 1,  # NoHttps
-        random_str,                 # RandomString
-        1 if re.search(r"\d+\.\d+\.\d+\.\d+", hostname) else 0,  # IpAddress
-        domain_in_sub,              # DomainInSubdomains
-        domain_in_path,             # DomainInPaths
-        https_in_host,              # HttpsInHostname
-        len(hostname),              # HostnameLength
-        len(parsed.path),           # PathLength
-        query_len,                  # QueryLength
-        double_slash,               # DoubleSlashInPath
-        num_sensitive,              # NumSensitiveWords
-        embedded_brand,             # EmbeddedBrandName
-        NaN,  # PctExtHyperlinks
-        NaN,  # PctExtResourceUrls
-        NaN,  # ExtFavicon
-        NaN,  # InsecureForms
-        NaN,  # RelativeFormAction
-        NaN,  # ExtFormAction
-        NaN,  # AbnormalFormAction
-        NaN,  # PctNullSelfRedirectHyperlinks
-        NaN,  # FrequentDomainNameMismatch
-        NaN,  # FakeLinkInStatusBar
-        NaN,  # RightClickDisabled
-        NaN,  # PopUpWindow
-        NaN,  # SubmitInfoToEmail
-        NaN,  # IframeOrFrame
-        NaN,  # MissingTitle
-        NaN,  # ImagesOnlyInForm
-        subdomain_level,  # SubdomainLevelRT
-        len(url),         # UrlLengthRT
-        NaN,  # PctExtResourceUrlsRT
-        NaN,  # AbnormalExtFormActionR
-        NaN,  # ExtMetaScriptLinkRT
-        NaN,  # PctExtNullSelfRedirectHyperlinksRT
+        url.count("."),
+        subdomain_level,
+        path_level,
+        len(url),
+        url.count("-"),
+        hostname.count("-"),
+        url.count("@"),
+        url.count("~"),
+        url.count("_"),
+        url.count("%"),
+        query_comps,
+        url.count("&"),
+        url.count("#"),
+        num_numeric,
+        0 if parsed.scheme == "https" else 1,
+        random_str,
+        1 if re.search(r"\d+\.\d+\.\d+\.\d+", hostname) else 0,
+        domain_in_sub,
+        domain_in_path,
+        https_in_host,
+        len(hostname),
+        len(parsed.path),
+        query_len,
+        double_slash,
+        num_sensitive,
+        embedded_brand,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        subdomain_level,
+        len(url),
+        NaN,
+        NaN,
+        NaN,
+        NaN,
     ]
 
     return pd.DataFrame([values], columns=feature_names)
 
 
-# ---------------------------------------------------------------------------
-# Public prediction API
-# ---------------------------------------------------------------------------
+
+
+
 
 def predict_url(url: str) -> dict:
-    """
-    Run the ML phishing classifier on a URL.
 
-    Returns:
-        {
-            'is_phishing': bool,
-            'confidence': float  # 0–100 probability of predicted class
-            'risk_score': float  # 0–1 phishing probability
-        }
-
-    Raises:
-        ModelUnavailableError – if the model cannot be loaded.
-    """
     bundle = _load_bundle()
 
     model = bundle["model"]
@@ -279,7 +248,7 @@ def predict_url(url: str) -> dict:
 
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[0]
-        # Find index of phishing class (1)
+
         classes = list(model.classes_)
         try:
             phish_idx = classes.index(1)
@@ -304,10 +273,7 @@ def predict_url(url: str) -> dict:
 
 
 def score_url(url: str) -> float:
-    """
-    Convenience: return phishing risk_score 0–1 for a single URL.
-    Returns 0.0 if model unavailable (graceful fallback).
-    """
+
     try:
         return predict_url(url)["risk_score"]
     except ModelUnavailableError:
@@ -318,10 +284,7 @@ def score_url(url: str) -> float:
 
 
 def score_urls_batch(urls: list[str]) -> list[dict]:
-    """
-    Score a batch of URLs. Each entry: {"url": str, "is_phishing": bool, "confidence": float, "risk_score": float}
-    Unavailable model → empty scores with is_phishing=False.
-    """
+
     results = []
     for u in urls:
         try:
@@ -334,9 +297,9 @@ def score_urls_batch(urls: list[str]) -> list[dict]:
     return results
 
 
-# Backwards-compat helper for url_analyzer integration
+
 def get_risk_label(risk_score: float) -> str:
-    """Map 0-1 risk_score to human label."""
+
     if risk_score >= 0.85:
         return "critical"
     if risk_score >= 0.70:

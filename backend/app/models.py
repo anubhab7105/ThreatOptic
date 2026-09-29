@@ -1,18 +1,12 @@
-"""DB models — mirrors Shema.md (Postgres relational + document tables in SQL for dev).
 
-Relational: User, Organization, InvestigationCase
-Document (stored in SQL for local dev, mirrored to Elastic when configured):
-  EmailRecord, AnalysisResult, TraceabilityData
-Graph entities are in Neo4j / networkx, not here.
-"""
 import uuid
 from datetime import datetime
 from sqlalchemy import CheckConstraint, Index, String, Text, Float, Boolean, DateTime, ForeignKey, JSON, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base, utcnow
 
-# Timezone-aware timestamps everywhere (P1): TIMESTAMPTZ on Postgres,
-# ISO8601 on SQLite (offset stripped on store, as_utc() on read).
+
+
 TZDateTime = DateTime(timezone=True)
 
 
@@ -34,15 +28,11 @@ class Organization(Base):
 
 
 class User(Base):
-    """
-    Mirror of auth.users from Supabase. Row is created by the
-    on_auth_user_created trigger when a user confirms their email.
-    The `id` matches the Supabase auth UUID (sub claim in JWT).
-    """
+
     __tablename__ = "users"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # no default — set by trigger
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String(32), default="Analyst")  # Admin, Analyst, ReadOnly
+    role: Mapped[str] = mapped_column(String(32), default="Analyst")
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     organization: Mapped[Organization | None] = relationship(back_populates="users")
@@ -55,7 +45,7 @@ class InvestigationCase(Base):
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), default="Open")  # Open, InProgress, Closed
+    status: Mapped[str] = mapped_column(String(32), default="Open")
     assignee_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     email_ids: Mapped[list] = mapped_column(JSON, default=list)
@@ -67,8 +57,8 @@ class InvestigationCase(Base):
 class EmailRecord(Base):
     __tablename__ = "email_records"
     __table_args__ = (
-        # Partial unique index (P1): enforced only for real tenants; NULL-org
-        # rows dedup via the app's IS NULL query (NULLs never compare equal).
+
+
         Index("uq_email_hash_org", "raw_eml_hash", "organization_id", unique=True,
               postgresql_where=text("organization_id IS NOT NULL"),
               sqlite_where=text("organization_id IS NOT NULL")),
@@ -116,12 +106,12 @@ class TraceabilityData(Base):
 
 
 class GmailAccount(Base):
-    """One connected Gmail mailbox per user (OAuth2 refresh token vault)."""
+
     __tablename__ = "gmail_accounts"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     gmail_address: Mapped[str] = mapped_column(String(320), default="")
-    # Vault ciphertext (Fernet v1$...), NOT plaintext — name kept for migration stability.
+
     refresh_token: Mapped[str] = mapped_column(Text, default="")
     client_id: Mapped[str] = mapped_column(String(320), default="")
     encrypted_client_id: Mapped[str] = mapped_column(Text, default="")
@@ -132,16 +122,13 @@ class GmailAccount(Base):
 
 
 class MailboxConnection(Base):
-    """Organization-level mailbox connection for background polling (F7).
 
-    Refresh tokens are Fernet-encrypted (modules/auth/vault.py).
-    """
     __tablename__ = "mailbox_connections"
     __table_args__ = (UniqueConstraint("provider", "account_email", name="uq_mailbox_provider_email"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
-    provider: Mapped[str] = mapped_column(String(32), default="google")  # google | microsoft
+    provider: Mapped[str] = mapped_column(String(32), default="google")
     account_email: Mapped[str] = mapped_column(String(320), default="")
     encrypted_refresh_token: Mapped[str] = mapped_column(Text, default="")
     encrypted_client_id: Mapped[str] = mapped_column(Text, default="")
@@ -152,11 +139,7 @@ class MailboxConnection(Base):
 
 
 class OAuthState(Base):
-    """Server-side OAuth state + PKCE store (C3).
 
-    Single-use, short-lived: authorize() creates a row, callback() verifies
-    the state belongs to a live session, checks expiry, then consumes it.
-    """
     __tablename__ = "oauth_states"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     state: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)

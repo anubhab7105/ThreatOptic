@@ -1,7 +1,4 @@
-"""GeoIP: MaxMind GeoLite2 if present, else multi-provider live lookup
-(ipwho.is HTTPS -> ip-api.com HTTP fallback), with country centroids and
-graceful private/internal IP detection.
-"""
+
 import ipaddress
 import os
 import threading
@@ -10,7 +7,7 @@ from collections import deque
 from functools import lru_cache
 from typing import Any
 
-# Static fallback so demo/Test IPs still map somewhere useful offline.
+
 _STATIC = {
     "45.148.10.88": {"lat": 52.52, "lon": 13.40, "country": "DE", "city": "Berlin"},
     "93.184.216.34": {"lat": 37.77, "lon": -122.41, "country": "US", "city": "San Francisco"},
@@ -18,7 +15,7 @@ _STATIC = {
     "1.1.1.1": {"lat": -33.87, "lon": 151.21, "country": "AU", "city": "Sydney"},
 }
 
-# Country centroids (lat, lon) for fallback coordinate approximation
+
 COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "US": (37.0902, -95.7129),
     "GB": (55.3781, -3.4360),
@@ -73,7 +70,7 @@ COUNTRY_CENTROIDS: dict[str, tuple[float, float]] = {
     "KE": (-0.0236, 37.9062),
 }
 
-# Live lookup rate throttle
+
 _IPAPI_BUDGET = 60
 _IPAPI_WINDOW_S = 60.0
 _ipapi_hits: deque = deque()
@@ -81,7 +78,7 @@ _ipapi_lock = threading.Lock()
 
 
 def has_coords(geo: dict | None) -> bool:
-    """True only for real numeric non-zero coordinates."""
+
     if not isinstance(geo, dict):
         return False
     lat, lon = geo.get("lat"), geo.get("lon")
@@ -93,14 +90,14 @@ def _unresolved(source: str) -> dict[str, Any]:
 
 
 def get_country_centroid(country_code: str) -> tuple[float, float] | None:
-    """Return (lat, lon) centroid for an ISO country code, if available."""
+
     if not country_code:
         return None
     return COUNTRY_CENTROIDS.get(country_code.strip().upper())
 
 
 def geolocate_country(country_code: str, source: str = "country-centroid") -> dict[str, Any]:
-    """Provide country-level centroid coordinates when city-level coords are unavailable."""
+
     code = (country_code or "").strip().upper()
     coords = get_country_centroid(code)
     if coords:
@@ -155,7 +152,7 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
     if ip in _STATIC:
         return {**_STATIC[ip], "source": "static-fallback"}
 
-    # Handle loopback, private RFC1918, and link-local IP spaces explicitly
+
     if addr.is_loopback:
         return {
             "lat": None,
@@ -186,7 +183,7 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
             "is_private": True,
         }
 
-    # 1. MaxMind local DB (if file present)
+
     try:
         db_path = os.environ.get("MAXMIND_DB", "./GeoLite2-City.mmdb")
         if os.path.exists(db_path):
@@ -203,11 +200,11 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
     except Exception:
         pass
 
-    # 2. Multi-provider live lookup over HTTPS / HTTP
+
     if _live() and _throttle_allow():
         import requests
 
-        # Provider A: ipwho.is (Free HTTPS API, fast, rich metadata)
+
         try:
             r = requests.get(f"https://ipwho.is/{ip}", timeout=2.5)
             if r.status_code == 200:
@@ -231,7 +228,7 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
         except Exception:
             pass
 
-        # Provider B: ip-api.com over HTTP (Free HTTP endpoint)
+
         try:
             r = requests.get(
                 f"http://ip-api.com/json/{ip}?fields=status,message,countryCode,country,regionName,city,lat,lon,isp,org,as",
@@ -260,10 +257,7 @@ def _geolocate_cached(ip: str) -> dict[str, Any]:
 
 
 def geolocate(ip: str) -> dict[str, Any]:
-    """Public entry: shared-cache (24h) in front of the compute path.
 
-    Always returns a FRESH dict (cache poisoning impossible).
-    """
     from ..cache import cache_get, cache_set
     if not ip:
         return _unresolved("none")

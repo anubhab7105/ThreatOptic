@@ -1,9 +1,9 @@
-# All secrets come from the environment. This file reads the REPO-ROOT .env
-# (env_file below), which is also what the backend reads when you run it
-# directly — one set of values, no hand-syncing. A backend/.env, if present,
-# overrides it. Copy .env.example and fill in real values.
-# Production uses Supabase Postgres — no local postgres service, so
-# DATABASE_URL must point somewhere real before `docker compose up` works.
+
+
+
+
+
+
 services:
   backend:
     build:
@@ -21,7 +21,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       CUSTODY_KEY: ${CUSTODY_KEY:?set CUSTODY_KEY in .env}
       APP_ENV: ${APP_ENV:-development}
-    # No depends_on postgres — using Supabase
+
   frontend:
     build:
       context: ./frontend
@@ -36,7 +36,7 @@ services:
     env_file: [.env]
     environment:
       NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-}
-    # Localhost-only: the browser UI and DB consoles are dev tools, not public.
+
     ports: ["127.0.0.1:7474:7474", "127.0.0.1:7687:7687"]
     volumes: [neodata:/data]
   elasticsearch:

@@ -1,6 +1,4 @@
-"""Step 5 reliability tests: CORS guard, SMTP auth/limits/RCPT, queue bounds,
-tokenUrl, Alembic path, tz-aware stamps, pagination, filename guard, metrics
-errors, ingest dedup."""
+
 import uuid
 
 from fastapi.testclient import TestClient
@@ -22,12 +20,7 @@ def test_cors_star_with_credentials_refuses_boot(monkeypatch):
 
 
 def test_bearer_scheme_is_bearer():
-    """Auth is Supabase-issued Bearer tokens only — no local tokenUrl/login flow.
 
-    After the Supabase migration there is no password endpoint to point a
-    flow at; the scheme must still reject non-Bearer credentials with 401
-    (and never fall back to accepting a query-string token).
-    """
     from fastapi.testclient import TestClient
     from app.config import get_settings
     from app.main import app
@@ -68,14 +61,14 @@ def test_smtp_auth_size_and_rcpt(monkeypatch):
             msg["Subject"] = "auth probe"
             msg["Message-ID"] = marker
             msg.set_content("hello")
-            # unauthenticated send must fail
+
             try:
                 await aiosmtplib.send(msg, hostname="127.0.0.1", port=10026,
                                       sender="alice@test.local", recipients=["bcc@test.local"])
                 raise SystemExit("unauthenticated send should have failed")
             except Exception as e:
                 assert "535" in str(e) or "auth" in str(e).lower()
-            # authenticated send preserves RCPT TO distinctly from To:
+
             await aiosmtplib.send(msg, hostname="127.0.0.1", port=10026,
                                   username="relay", password="s3cret-relay",
                                   sender="alice@test.local", recipients=["bcc@test.local"])
@@ -161,7 +154,7 @@ def test_queue_bounded_and_bytes_safe(monkeypatch):
         pass
     while not qmod._mem_queue.empty():
         qmod._mem_queue.get()
-    # bytes payloads serialize for Kafka instead of raising
+
     blob = qmod._json_safe({"raw": b"\x00\x01"})
     assert isinstance(blob, bytes)
     import json
@@ -191,7 +184,7 @@ def test_kafka_producer_singleton(monkeypatch):
     qmod._producer = None
     try:
         assert qmod._get_producer() is qmod._get_producer()
-        assert len(made) == 1  # constructed once, shared afterwards
+        assert len(made) == 1
         assert made[0][1] == {"bootstrap_servers": "kafka:9092"}
     finally:
         qmod._producer = None
@@ -211,9 +204,9 @@ def test_alembic_upgrade_fresh_db(tmp_path):
     cfg = Config(ini_path)
     cfg.set_main_option("script_location", script_loc)
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db}")
-    # env.py ignores sqlalchemy.url and uses settings; point settings at tmp
-    # db via TEST_DATABASE_URL (takes precedence; the isolation fixture owns
-    # plain DATABASE_URL shadowing, so setting that here would be ignored).
+
+
+
     os.environ["TEST_DATABASE_URL"] = f"sqlite:///{db}"
     from app.config import get_settings
     get_settings.cache_clear()
@@ -223,11 +216,11 @@ def test_alembic_upgrade_fresh_db(tmp_path):
         os.environ.pop("TEST_DATABASE_URL", None)
         get_settings.cache_clear()
     tables = {r[0] for r in sqlite3.connect(db).execute("select name from sqlite_master where type='table'")}
-    # refresh_tokens is gone since the Supabase migration (Supabase owns
-    # session refresh); gmail_accounts/organizations replaced it.
+
+
     assert {"users", "organizations", "email_records", "mailbox_connections",
             "gmail_accounts", "oauth_states"} <= tables
-    assert "alembic_version" in tables  # chain reached head
+    assert "alembic_version" in tables
 
 
 def test_tz_aware_model_defaults():
@@ -260,11 +253,11 @@ def test_pagination_report_metrics_dedup():
         assert c.get("/api/v1/emails?limit=5&offset=0", headers=h).status_code == 200
         assert c.get("/api/v1/cases?limit=5&offset=0", headers=h).status_code == 200
         assert c.get("/api/v1/emails?limit=0", headers=h).status_code == 422
-        # report id reflected into Content-Disposition must be a plain id
+
         assert c.get("/api/v1/reports/..%2F..%2Fetc.pdf", headers=h).status_code in (400, 404)
-        # unknown email id still 404s (valid shape, missing row)
+
         assert c.get("/api/v1/reports/00000000-0000-0000-0000-000000000000.pdf", headers=h).status_code == 404
-        # same bytes twice -> same row (dedup), not two rows
+
         raw = f"From: dup-{uuid.uuid4().hex[:6]}@t.test\nSubject: dup\n\nsame body"
         e1 = c.post("/api/v1/emails/ingest", headers=h, json={"raw": raw}).json()["email_id"]
         e2 = c.post("/api/v1/emails/ingest", headers=h, json={"raw": raw}).json()["email_id"]
@@ -290,7 +283,7 @@ def test_metrics_corrupt_file(tmp_path):
 
 
 def test_queue_byte_budget_and_accounting(monkeypatch):
-    """P0: byte budget bounds memory independently of item count."""
+
     import asyncio
     import queue as std_queue
     from app.modules.ingestion import queue as qmod
@@ -306,13 +299,13 @@ def test_queue_byte_budget_and_accounting(monkeypatch):
     try:
         asyncio.run(qmod.enqueue_email({"raw": b"x" * 500}))
         assert qmod.queue_bytes() > 0
-        # 500+1024 + 2000+1024 > 3000 budget -> Full (452 upstream)
+
         try:
             asyncio.run(qmod.enqueue_email({"raw": b"y" * 2000}))
             raise SystemExit("byte budget should have rejected")
         except std_queue.Full:
             pass
-        # dequeue frees budget; ack clears inflight
+
         assert qmod.queue_inflight() == 0
         payload = asyncio.run(qmod.dequeue_email())
         assert payload["raw"] == b"x" * 500
@@ -330,7 +323,7 @@ def test_queue_byte_budget_and_accounting(monkeypatch):
 
 
 def test_kafka_mirror_never_blackholes_and_starts_once(monkeypatch):
-    """P0: Kafka is a mirror — memory always receives; producer starts once."""
+
     import asyncio
     import sys
     import types
@@ -364,9 +357,9 @@ def test_kafka_mirror_never_blackholes_and_starts_once(monkeypatch):
     try:
         asyncio.run(qmod.enqueue_email({"raw": b"one"}))
         asyncio.run(qmod.enqueue_email({"raw": b"two"}))
-        assert len(starts) == 1  # started once, not per-enqueue
-        assert len(sends) == 2  # mirrored
-        # ...and the pipeline path still got both (no black hole)
+        assert len(starts) == 1
+        assert len(sends) == 2
+
         assert qmod.queue_depth() == 2
         first = asyncio.run(qmod.dequeue_email())
         assert first["raw"] == b"one"

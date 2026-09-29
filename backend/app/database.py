@@ -1,4 +1,4 @@
-"""SQLAlchemy engine/session/Base. Postgres (Supabase) via DATABASE_URL."""
+
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -6,12 +6,12 @@ from .config import get_settings
 
 
 def utcnow() -> datetime:
-    """Timezone-aware UTC now — the single source for stored timestamps (Step 5)."""
+
     return datetime.now(timezone.utc)
 
 
 def as_utc(dt: datetime | None) -> datetime | None:
-    """Normalize a possibly-naive stored timestamp to aware UTC for comparison."""
+
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -24,17 +24,12 @@ CONNECT_TIMEOUT_S = 5
 
 
 def _make_engine():
-    """Build from FRESH settings (called at startup/test time, not frozen).
 
-    Postgres-only. A minimal SQLite branch is kept SOLELY for the pytest
-    escape hatch (TEST_DATABASE_URL=sqlite:///... set by tests/conftest.py);
-    production (DATABASE_URL) has no SQLite fallback and fails closed.
-    """
     settings = get_settings()
     url = settings.resolved_db_url()
     if url.startswith("sqlite"):
-        # Test-only path: plain SQLite engine for pytest isolation.
-        # Enable WAL mode, foreign keys, and busy timeout for test reliability.
+
+
         def _sqlite_connect(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
@@ -64,12 +59,12 @@ def _make_session_factory(bind):
     return sessionmaker(bind=bind, autoflush=False, autocommit=False, future=True)
 
 
-# Import-time defaults so `from app.database import engine` keeps working
-# (and stays monkeypatchable in tests); init_db() rebuilds both from fresh
-# settings at startup so post-import env changes are never frozen in.
-# If DATABASE_URL is unset at import time, keep a placeholder (in-memory
-# SQLite) so imports don't crash — init_db()/rebuild_engine() still fail
-# closed with a clear RuntimeError when the real URL is missing.
+
+
+
+
+
+
 try:
     engine = _make_engine()
 except RuntimeError:
@@ -79,7 +74,7 @@ Base = declarative_base()
 
 
 def rebuild_engine():
-    """Rebuild engine + sessionmaker from current settings (startup path)."""
+
     global engine, SessionLocal
     engine = _make_engine()
     SessionLocal = _make_session_factory(engine)
@@ -98,11 +93,7 @@ def get_db():
 
 
 def _alembic_upgrade() -> bool:
-    """Managed-database path: real Alembic migrations. True on success.
 
-    False lets the caller fail boot loudly — there is intentionally no
-    create_all fallback on managed databases (it masks failed migrations).
-    """
     import logging
     import os
 
@@ -123,13 +114,8 @@ def _alembic_upgrade() -> bool:
 
 
 def init_db():
-    """Boot the database: Alembic migrations only (no create_all fallback).
 
-    A create_all path is kept SOLELY for the pytest SQLite escape hatch
-    (TEST_DATABASE_URL=sqlite:///...); managed Postgres/Supabase fails
-    boot loudly when migrations fail instead of masking it.
-    """
-    from . import models  # noqa: F401
+    from . import models
     rebuild_engine()
     if get_settings().resolved_db_url().startswith("sqlite"):
         Base.metadata.create_all(bind=engine)

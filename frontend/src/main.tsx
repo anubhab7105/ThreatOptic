@@ -9,7 +9,7 @@ import { BASE, jpost } from './api';
 import { BackToTop, ScrollProgress, SkipToContent } from './components';
 import { Alert } from './primitives';
 
-// Code-split pages to reduce initial bundle
+
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
 const EmailView = lazy(() => import('./pages').then(m => ({ default: m.EmailView })));
 const Cases = lazy(() => import('./pages').then(m => ({ default: m.Cases })));
@@ -21,14 +21,14 @@ const ModelInfo = lazy(() => import('./pages').then(m => ({ default: m.ModelInfo
 const Mailboxes = lazy(() => import('./pages').then(m => ({ default: m.Mailboxes })));
 const PrivacyPolicy = lazy(() => import('./pages').then(m => ({ default: m.PrivacyPolicy })));
 const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.TermsConditions })));
-// Dev-only showcase; the route element below renders null in production builds.
+
 const DesignSystem = lazy(() => import('./designSystem').then(m => ({ default: m.DesignSystem })));
 
-// Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
+
 const CANONICAL_BASE = 'https://socforensics.io';
 
-/** Serialize for <script> injection: escape `</` so crafted strings can
- * never break out of the script tag (C14 stored-XSS). */
+
+
 function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
 }
@@ -62,7 +62,7 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\//, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\
     })),
   };
   return (
@@ -227,19 +227,19 @@ function AlertBell() {
         const base = BASE;
         const wsBase = base
           ? base.replace(/^http/, 'ws')
-          : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+          : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}:
         ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?ticket=${encodeURIComponent(t.ticket)}`);
         ws.onopen = () => { if (!closed) setLive(true); };
         ws.onmessage = (ev) => {
           try {
             const msg = JSON.parse(ev.data);
             if (msg.event === 'high-risk-alert') setAlerts((a) => [msg, ...a].slice(0, 20));
-          } catch { /* ignore malformed frames */ }
+          } catch {  }
         };
         ws.onclose = () => { if (!closed) setLive(false); };
-      } catch { /* WS unavailable: bell stays dormant */ }
+      } catch {  }
     })();
-    return () => { closed = true; try { ws?.close(); } catch { /* noop */ } };
+    return () => { closed = true; try { ws?.close(); } catch {  } };
   }, []);
   return (
     <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
@@ -270,7 +270,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 {
   constructor(props: any) { super(props); this.state = { hasError: false, msg: '' }; }
   static getDerivedStateFromError(err: any) { return { hasError: true, msg: err?.message || String(err) }; }
-  componentDidCatch() { /* handled */ }
+  componentDidCatch() {  }
   render() {
     if (this.state.hasError) {
       return (
@@ -308,9 +308,9 @@ function Shell() {
     const state = params.get('state');
     if (code) {
       const originPath = window.location.origin + window.location.pathname;
-      // P0: never read OAuth secrets from browser storage and never forward
-      // them as query params (proxy/access-log leak). Forward only the opaque
-      // code + state; server resolves credentials/redirect from its own store.
+
+
+
       const prov = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('soc_oauth_provider')) || 'google';
       if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('soc_oauth_provider');
       const apiBase = (BASE || '').replace(/\/+$/, '');
@@ -320,7 +320,7 @@ function Shell() {
       window.history.replaceState({}, '', window.location.pathname);
       window.location.href = target;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   useEffect(() => {
@@ -345,13 +345,13 @@ useEffect(() => {
     window.dispatchEvent(new CustomEvent('soc:top-search', { detail: { q: topQ } }));
     if (location.pathname !== '/dashboard') navigate('/dashboard');
     else {
-      // already on dashboard — focus the in-page search as well
+
       setTimeout(() => document.getElementById('dash-search')?.focus(), 50);
     }
     setWsOpen(false);
   };
 
-  // Global keyboard shortcuts
+
   useKeyboardShortcuts({
     'ctrl+k': () => { (document.getElementById('topbar-search') || document.getElementById('dash-search') || document.getElementById('search-input'))?.focus(); },
     'ctrl+shift+d': () => { navigate('/dashboard'); },
@@ -378,7 +378,7 @@ useEffect(() => {
   }
 
   if (!user) {
-    // Public pages: landing, login, privacy, terms
+
     return (
       <div>
         <SkipToContent />
@@ -538,12 +538,12 @@ useEffect(() => {
   );
 }
 
-/** Last-resort boundary around the whole app: a crash here (broken chunk,
- * provider failure, etc.) shows a themed message instead of a blank page. */
+
+
 class AppCrashBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
   constructor(props: { children: React.ReactNode }) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch() { /* handled: static fallback below */ }
+  componentDidCatch() {  }
   render() {
     if (this.state.hasError) {
       return (

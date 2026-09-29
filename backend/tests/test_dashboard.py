@@ -1,5 +1,4 @@
-"""P0 dashboard: SQL aggregates (no full-table scans), singleflight cache,
-offline detail gate."""
+
 import threading
 import uuid
 
@@ -12,7 +11,7 @@ def _auth(c: TestClient, role: str = "Analyst") -> dict:
 
 
 def _seed_scored_mail(db, org_id, band_scores):
-    """Insert mails with analyses directly (fast, no pipeline)."""
+
     from app import models
     from datetime import datetime, timezone
     for i, score in enumerate(band_scores):
@@ -43,7 +42,7 @@ def test_dashboard_aggregates_match_bands():
             from app import models
             me = db.query(models.User).order_by(models.User.created_at.desc()).first()
             _seed_scored_mail(db, me.organization_id, [95, 80, 60, 10])
-            # bust the cache so aggregates recompute
+
             from app.modules.cache import cache_delete_prefix
             cache_delete_prefix("dash:")
             stats = c.get("/api/v1/dashboard", headers=h).json()
@@ -58,7 +57,7 @@ def test_dashboard_aggregates_match_bands():
 
 
 def test_dashboard_concurrent_miss_singleflight():
-    """P0: concurrent cold-cache dashboard hits all succeed identically."""
+
     from app.main import app
 
     with TestClient(app) as c:
@@ -71,7 +70,7 @@ def test_dashboard_concurrent_miss_singleflight():
             try:
                 r = c.get("/api/v1/dashboard", headers=h)
                 results.append((r.status_code, r.json().get("total_emails")))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 errors.append(e)
 
         threads = [threading.Thread(target=_hit) for _ in range(5)]
@@ -99,7 +98,7 @@ def test_singleflight_helpers():
 
 
 def test_email_detail_offline_no_system_dns(monkeypatch):
-    """P0: offline detail never touches the system resolver."""
+
     import socket
     from app.main import app
 

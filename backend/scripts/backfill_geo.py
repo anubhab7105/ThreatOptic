@@ -1,11 +1,11 @@
-"""Backfill missing geolocation for existing emails in the database."""
+
 import json
 import sqlite3
 import time
 import os
 import sys
 
-# Ensure backend is on sys.path
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ["ENABLE_LIVE_LOOKUPS"] = "1"
 

@@ -1,4 +1,4 @@
-"""WHOIS + DNS/MX lookups. Offline-safe; live lookups only when ENABLE_LIVE_LOOKUPS=1."""
+
 import os
 from functools import lru_cache
 from typing import Any
@@ -20,9 +20,9 @@ def _live() -> bool:
 def _whois_cached(domain: str) -> dict[str, Any]:
     try:
         import whois
-        # python-whois has no timeout parameter: run the blocking call in a
-        # worker thread with join(timeout) instead of touching any
-        # process-global socket defaults (Step 4 — no global side effects).
+
+
+
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(whois.whois, domain)
@@ -44,7 +44,7 @@ def _whois_cached(domain: str) -> dict[str, Any]:
 
 
 def _stringify_date(value: Any) -> str:
-    """whois dates arrive as datetime | list[datetime] | str | None."""
+
     from datetime import datetime
     if value is None:
         return ""
@@ -102,7 +102,7 @@ def dns_lookup_uncached(domain: str) -> dict[str, Any]:
 
 
 def dns_lookup(domain: str) -> dict[str, Any]:
-    """Public entry: shared cache (1h TTL) in front of the compute path."""
+
     from ..cache import cache_get, cache_set
     key = (domain or "").strip().lower()
     hit = cache_get(f"dns:{key}")
@@ -114,10 +114,7 @@ def dns_lookup(domain: str) -> dict[str, Any]:
 
 
 def domain_age_days(whois_data: dict) -> int | None:
-    """Best-effort parse of creation_date to days. None if unknown.
 
-    Handles date, datetime, ISO-Z strings, and list-valued whois fields.
-    """
     from datetime import datetime, timezone
     raw_val = whois_data.get("creation_date", "")
     if isinstance(raw_val, (list, tuple)):
@@ -126,7 +123,7 @@ def domain_age_days(whois_data: dict) -> int | None:
     if not raw:
         return None
     normalized = raw.replace("Z", "+00:00")
-    try:  # full ISO first (covers offsets and fractional seconds)
+    try:
         dt = datetime.fromisoformat(normalized)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)

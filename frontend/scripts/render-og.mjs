@@ -1,5 +1,5 @@
-// One-off/dev-time OG image renderer: SVG -> public/og-image.png (1200x630).
-// Usage: node scripts/render-og.mjs. Requires devDependency @resvg/resvg-js.
+
+
 import { writeFileSync } from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 

@@ -53,9 +53,9 @@ export function formatDateTime(ts: string | null | undefined): string {
   return isNaN(d.getTime()) ? String(ts) : d.toLocaleString();
 }
 
-/* ---------------- Landing Page (Public) ---------------- */
-// New Inspection-Chamber landing lives in its own feature folder (Landing_Design.md section 9).
-// Route behavior unchanged: public / for logged-out visitors (see main.tsx Shell).
+
+
+
 export { LandingPage } from './landing/LandingPage';
 
 function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
@@ -66,7 +66,7 @@ function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
       '@type': 'ListItem',
       position: i + 1,
       name: it.label,
-      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\//, '')}` : undefined,
+      item: it.href ? `${CANONICAL_BASE}/${it.href.replace(/^\
     })),
   };
   return (
@@ -223,7 +223,7 @@ Received: from evil-relay.test (evil-relay.test [45.148.10.88]) by mx.company.co
 Received: from internal ([10.0.0.5]) by evil-relay.test with SMTP id y2
 Content-Type: text/plain
 
-Hi, kindly wire $48,000 to new vendor bank details immediately. Do not disclose. Verify account now at http://malicious-example.com/login`;
+Hi, kindly wire $48,000 to new vendor bank details immediately. Do not disclose. Verify account now at http:
 
 const CLEAN_SAMPLE = `From: Alice <alice@company.com>
 To: bob@company.com
@@ -241,7 +241,7 @@ Content-Type: text/plain
 
 Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
-/* ---------------- Gmail live import ---------------- */
+
 
 const DEFAULT_GOOGLE_CLIENT_ID = '';
 const DEFAULT_GOOGLE_CLIENT_SECRET = '';
@@ -292,8 +292,8 @@ function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: b
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      // P1: never hand the browser to an unverified host — an analyst
-      // connecting a mailbox is exactly the moment a phishing hop lands.
+
+
       const safeUrl = assertIdpUrl(r.auth_url, 'google');
       setAuthUrl(safeUrl);
       setNotice('Redirecting to Google consent page… If not redirected, click the link below.');
@@ -315,7 +315,7 @@ function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: b
     }
     setBusy(true); setErr(''); setNotice('');
     try {
-      // P0: client_id from state only, client_secret never from browser storage
+
       const effectiveCid = clientId.trim() || undefined;
       const effectiveSec = clientSecret.trim() || undefined;
 
@@ -359,14 +359,14 @@ function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: b
       setNotice(`Successfully connected as ${addr}!`);
       void refresh();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   const sync = async () => {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, parseInt(maxN, 10) || 10);
-      // P0: client_id from state only, client_secret never from browser storage
+
       const effectiveCid = clientId.trim() || undefined;
       const effectiveSec = clientSecret.trim() || undefined;
 
@@ -393,8 +393,8 @@ function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: b
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
-  // Stepper phase (Design.md §7.6): Waiting > Connecting > Connected / Error.
-  // OAuth code/state are still auto-captured (see effect above); no visible auth-code field.
+
+
   const phase = status?.connected ? 'connected' : err ? 'error' : busy || code ? 'connecting' : 'waiting';
   const steps = ['waiting', 'connecting', 'connected'] as const;
   const stepLabel: Record<string, string> = { waiting: 'Waiting', connecting: 'Connecting', connected: 'Connected' };
@@ -518,7 +518,7 @@ function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: b
   );
 }
 
-/* ---------------- Dashboard ---------------- */
+
 
 type EmailRow = {
   id: string;
@@ -590,7 +590,7 @@ export function Dashboard() {
       ]);
       setStats(s);
       setEmails(list);
-      // Scores and classification are included directly from the batch endpoint
+
       const scoreMap: Record<string, { score: number; cls: string }> = {};
       for (const e of list) {
         scoreMap[e.id] = {
@@ -624,7 +624,7 @@ export function Dashboard() {
     setNotice('');
     try {
       if (asyncMode) {
-        // Celery path (Phase 3 item 10): queue, then poll the task id.
+
         const q = await jpost(`/emails/ingest?async_mode=true`, { raw });
         setNotice(`Queued background task ${q.task_id} — polling for the verdict…`);
         const r = await pollTask(q.task_id);
@@ -673,7 +673,7 @@ export function Dashboard() {
   const dist = stats?.score_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const distTotal = Math.max(1, dist.critical + dist.high + dist.medium + dist.low);
 
-  // Ingest source + analytics range + table sort (all client-side, existing data only)
+
   const [source, setSource] = useState<'paste' | 'upload' | 'gmail'>('paste');
   const [range, setRange] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
   const [sortKey, setSortKey] = useState<'received' | 'score'>('received');
@@ -713,8 +713,8 @@ export function Dashboard() {
     else { setSortKey(key); setSortDir('descending'); }
   };
 
-  // Ingest trend buckets from already-loaded emails (honest client-side range filter,
-  // anchored to the newest loaded email so render stays pure)
+
+
   const trend = useMemo(() => {
     const end = Math.max(0, ...emails.map((e) => new Date(e.timestamp).getTime() || 0));
     const span = range === '24h' ? 864e5 : range === '7d' ? 7 * 864e5 : range === '30d' ? 30 * 864e5 : 0;
@@ -1012,7 +1012,7 @@ export function Dashboard() {
   );
 }
 
-/* ---------------- Graph SVG (Identity & Threat Correlation) ---------------- */
+
 
 export function GraphSvg({ graph }: { graph: any }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -1029,7 +1029,7 @@ export function GraphSvg({ graph }: { graph: any }) {
     return <Empty msg="No related entities yet — graph correlation links shared sender IPs, domains, and campaigns as emails are ingested." />;
   }
 
-  // Deduplicate and normalize nodes
+
   const nodeMap = new Map<string, any>();
   rawNodes.forEach((n) => {
     const id = String(n.id || n);
@@ -1050,7 +1050,7 @@ export function GraphSvg({ graph }: { graph: any }) {
   const cx = w / 2;
   const cy = h / 2;
 
-  // Build adjacency map and degree count
+
   const degreeMap = new Map<string, number>();
   const neighborsMap = new Map<string, Set<string>>();
   nodes.forEach((n) => neighborsMap.set(n.id, new Set()));
@@ -1062,11 +1062,11 @@ export function GraphSvg({ graph }: { graph: any }) {
     if (neighborsMap.has(e.target)) neighborsMap.get(e.target)!.add(e.source);
   });
 
-  // Identify central focal node (highest degree or primary email)
+
   const sortedByDegree = [...nodes].sort((a, b) => (degreeMap.get(b.id) || 0) - (degreeMap.get(a.id) || 0));
   const centerId = sortedByDegree.length > 0 && (degreeMap.get(sortedByDegree[0].id) || 0) >= 1 ? sortedByDegree[0].id : nodes[0]?.id;
 
-  // Position calculation with multi-ring topology
+
   const posMap = new Map<string, { x: number; y: number }>();
   if (nodes.length === 1) {
     posMap.set(nodes[0].id, { x: cx, y: cy });
@@ -1074,11 +1074,11 @@ export function GraphSvg({ graph }: { graph: any }) {
     posMap.set(nodes[0].id, { x: cx - 140, y: cy });
     posMap.set(nodes[1].id, { x: cx + 140, y: cy });
   } else {
-    // Center focal entity at the center
+
     posMap.set(centerId, { x: cx, y: cy });
     const otherNodes = nodes.filter((n) => n.id !== centerId);
 
-    // Group remaining nodes by kind for cohesive cluster distribution
+
     const domains = otherNodes.filter((n) => n.kind === 'Domain');
     const ips = otherNodes.filter((n) => n.kind === 'IP_Address');
     const emails = otherNodes.filter((n) => n.kind === 'Email_Address');
@@ -1089,7 +1089,7 @@ export function GraphSvg({ graph }: { graph: any }) {
     const baseRadius = Math.min(w, h) * 0.38;
 
     orderedSatellites.forEach((n, idx) => {
-      // Alternate radial distance slightly to prevent dense cluster label collisions
+
       const rOffset = (idx % 2 === 0 ? 0 : 25) + (n.kind === 'Threat_Campaign' ? 20 : 0);
       const rad = baseRadius + rOffset;
       const angle = (idx / orderedSatellites.length) * 2 * Math.PI - Math.PI / 2;
@@ -1100,13 +1100,13 @@ export function GraphSvg({ graph }: { graph: any }) {
     });
   }
 
-  // Active focus calculation
+
   const activeFocusId = hoveredId || selectedId;
   const connectedToActive = activeFocusId ? neighborsMap.get(activeFocusId) || new Set() : null;
 
   const getColor = (k: string) => {
-    // Entity colors fixed by type (Design.md §7.2), resolved via useChartTheme
-    // so the canvas re-renders with new-theme values instead of stale ones.
+
+
     return ct.entity[k] ?? ct.entity.Entity;
   };
 
@@ -1122,7 +1122,7 @@ export function GraphSvg({ graph }: { graph: any }) {
 
   const getCleanLabel = (id: string) => String(id).replace(/^(email|ip|domain|campaign):/, '');
 
-  // Filter kinds summary
+
   const availableKinds = Array.from(new Set(nodes.map((n) => n.kind)));
 
   const selectedNodeData = selectedId ? nodeMap.get(selectedId) : null;
@@ -1136,7 +1136,7 @@ export function GraphSvg({ graph }: { graph: any }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* Top Controls & Legend Bar */}
+      {}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '4px 2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginRight: 4 }}>
@@ -1169,7 +1169,7 @@ export function GraphSvg({ graph }: { graph: any }) {
           )}
         </div>
 
-        {/* Zoom Controls */}
+        {}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <Tooltip label="Zoom out"><button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} aria-label="Zoom out" style={{ padding: '2px 8px' }}>−</button></Tooltip>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 38, textAlign: 'center' }} aria-live="polite">{Math.round(zoom * 100)}%</span>
@@ -1189,7 +1189,7 @@ export function GraphSvg({ graph }: { graph: any }) {
       </div>
 
       <div className="graph-layout">
-      {/* SVG Visualization Canvas */}
+      {}
       <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border-subtle)' }}>
         <svg
           width="100%"
@@ -1220,7 +1220,7 @@ export function GraphSvg({ graph }: { graph: any }) {
             </marker>
           </defs>
 
-          {/* Grid background lines */}
+          {}
           <g opacity={0.12}>
             {Array.from({ length: 11 }).map((_, i) => (
               <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke={ct.textMuted} strokeWidth={1} strokeDasharray="3,3" />
@@ -1230,7 +1230,7 @@ export function GraphSvg({ graph }: { graph: any }) {
             ))}
           </g>
 
-          {/* Edges */}
+          {}
           {edges.map((e, i) => {
             const a = posMap.get(e.source);
             const b = posMap.get(e.target);
@@ -1275,7 +1275,7 @@ export function GraphSvg({ graph }: { graph: any }) {
             );
           })}
 
-          {/* Nodes */}
+          {}
           {nodes.map((n) => {
             const p = posMap.get(n.id) || { x: cx, y: cy };
             const lbl = getCleanLabel(n.id);
@@ -1302,7 +1302,7 @@ export function GraphSvg({ graph }: { graph: any }) {
               >
                 <title>{`${n.kind.replace('_', ' ')}: ${lbl}\nClick to inspect details`}</title>
 
-                {/* Selection or Center pulse ring */}
+                {}
                 {(isCenter || isSelected || isHovered) && (
                   <circle
                     r={r + 6}
@@ -1314,7 +1314,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                   />
                 )}
 
-                {/* Main Node Circle */}
+                {}
                 <circle
                   r={r}
                   fill={nodeColor}
@@ -1323,12 +1323,12 @@ export function GraphSvg({ graph }: { graph: any }) {
                   filter={isSelected || isHovered ? 'url(#glow-strong)' : 'url(#glow-node)'}
                 />
 
-                {/* Node Icon / Letter */}
+                {}
                 <text y={4} fill={ct.onBright} fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
                   {getIcon(n.kind)}
                 </text>
 
-                {/* Primary Entity Label */}
+                {}
                 <g transform={`translate(0, ${r + 14})`}>
                   <rect
                     x={-Math.min(lbl.length * 3.4, 60) - 4}
@@ -1351,7 +1351,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                   </text>
                 </g>
 
-                {/* Node Kind Badge */}
+                {}
                 <text y={r + 28} fill={ct.textMuted} fontSize={8.5} fontWeight={500} textAnchor="middle">
                   {n.kind.replace('_', ' ')}
                 </text>
@@ -1361,7 +1361,7 @@ export function GraphSvg({ graph }: { graph: any }) {
         </svg>
       </div>
 
-      {/* Selected Entity Details Card */}
+      {}
       {selectedNodeData && (
         <div className="card" style={{ background: 'var(--surface-inset)', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
@@ -1407,7 +1407,7 @@ export function GraphSvg({ graph }: { graph: any }) {
             </div>
           </div>
 
-          {/* Connected Links Breakdown */}
+          {}
           {selectedEdges.length > 0 && (
             <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
@@ -1456,7 +1456,7 @@ export function GraphSvg({ graph }: { graph: any }) {
 }
 
 
-/* ---------------- Email detail ---------------- */
+
 
 const TABS = ['Summary', 'Why this score?', 'Header Forensics', 'GeoLocation', 'Graph View'] as const;
 
@@ -1476,7 +1476,7 @@ function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
         {rows.map((s) => {
           const c = s.contribution_to_score ?? 0;
           const w = (100 * Math.abs(c)) / maxAbs;
-          // Brand pair (violet/teal + neutral) — never the risk palette.
+
           const bar = c > 0 ? 'var(--accent-secondary)' : c < 0 ? 'var(--chart-4)' : 'var(--text-muted)';
           return (
             <li key={s.signal_name}>
@@ -1549,7 +1549,7 @@ export function EmailView({ id }: { id: string }) {
       const val = d.email.sender_address || d.email.id;
       jget(`/graph/related?value=${encodeURIComponent(val)}&email_id=${encodeURIComponent(d.email.id || id || '')}`)
         .then(setGraph)
-        .catch(() => { /* non-fatal */ });
+        .catch(() => {  });
     }
   }, [d, id]);
 
@@ -1750,7 +1750,7 @@ export function EmailView({ id }: { id: string }) {
                           loading="lazy"
                           sandbox="allow-scripts allow-same-origin allow-popups"
                           referrerPolicy="no-referrer-when-downgrade"
-                          src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
+                          src={`https:
                         />
                       </div>
                       <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -1804,7 +1804,7 @@ export function EmailView({ id }: { id: string }) {
   );
 }
 
-/* ---------------- Campaigns ---------------- */
+
 
 export function Campaigns() {
   usePageMeta({
@@ -1949,7 +1949,7 @@ export function CampaignDetail({ id }: { id: string }) {
   );
 }
 
-/* ---------------- Model transparency ---------------- */
+
 
 export function ModelInfo() {
   usePageMeta({
@@ -2069,7 +2069,7 @@ export function ModelInfo() {
   );
 }
 
-/* ---------------- Mailboxes (OAuth org connectors) ---------------- */
+
 
 export function Mailboxes() {
   usePageMeta({
@@ -2082,7 +2082,7 @@ export function Mailboxes() {
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  // OAuth secrets are held in form state only and are never persisted.
+
   const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
   const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
   const [showSecret, setShowSecret] = useState(false);
@@ -2134,8 +2134,8 @@ export function Mailboxes() {
         client_id: clientId.trim() || undefined,
         client_secret: clientSecret.trim() || undefined,
       });
-      // P1: see getUrl() — the consent hop is verified against the IdP
-      // allowlist before the browser leaves the dashboard.
+
+
       window.location.assign(assertIdpUrl(r.auth_url, provider));
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
@@ -2173,7 +2173,7 @@ export function Mailboxes() {
     if (!ts) return 'never';
     const t = new Date(ts).getTime();
     if (isNaN(t)) return 'never';
-    // eslint-disable-next-line react-hooks/purity -- relative "x ago" labels are inherently time-dependent; absolute time stays in the tooltip
+
     const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
     if (mins < 1) return 'just now';
     if (mins < 60) return `${mins}m ago`;
@@ -2192,7 +2192,7 @@ export function Mailboxes() {
       : conn ? { color: 'var(--success)', label: 'Connected' }
       : err ? { color: 'var(--danger)', label: 'Error' }
       : { color: 'var(--text-muted)', label: 'Disconnected' };
-    // Polling fields are optional in /oauth/status — fall back to manual sync.
+
     const pollOn = conn?.poll_enabled === true || (typeof conn?.poll_interval_minutes === 'number' && conn.poll_interval_minutes > 0);
     return (
       <Card
@@ -2312,7 +2312,7 @@ export function Mailboxes() {
   );
 }
 
-/* ---------------- Cases ---------------- */
+
 
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };
 
@@ -2326,7 +2326,7 @@ function statusLabel(s: string) {
   return CASE_STATUSES.find((x) => x.key === s)?.label ?? s;
 }
 
-/** Desktop ≥1024 / tablet 768–1023 / mobile <768 (Design.md §6). */
+
 function useLayoutMode(): 'desktop' | 'tablet' | 'mobile' {
   const current = () => {
     if (typeof window === 'undefined' || !window.matchMedia) return 'desktop';
@@ -2422,7 +2422,7 @@ export function Cases() {
 
   const selected = filtered.find((k) => k.id === selectedId) ?? cases.find((k) => k.id === selectedId) ?? null;
   const showDetail = mode === 'desktop' ? true : selectedId !== null;
-  // Mobile sequential view: hide the list while a case is open.
+
   const showList = mode === 'mobile' ? selectedId === null : true;
 
   const statusTone = (s: string) => (CASE_STATUSES.find((x) => x.key === s)?.tone ?? 'neutral') as 'info' | 'medium' | 'low' | 'neutral';
@@ -2591,7 +2591,7 @@ export function Cases() {
   );
 }
 
-/* ---------------- Privacy Policy ---------------- */
+
 
 export function PrivacyPolicy() {
   usePageMeta({
@@ -2630,7 +2630,7 @@ export function PrivacyPolicy() {
   );
 }
 
-/* ---------------- Terms and Conditions ---------------- */
+
 
 export function TermsConditions() {
   usePageMeta({

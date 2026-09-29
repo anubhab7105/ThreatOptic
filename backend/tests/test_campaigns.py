@@ -1,4 +1,4 @@
-"""Campaign view tests: shared-IP clusters surface as cards with email lists."""
+
 import uuid
 
 from fastapi.testclient import TestClient
@@ -36,7 +36,7 @@ def test_campaign_cards_and_detail():
 
     with TestClient(app) as c:
         h = _auth(c)
-        # two domains sharing one IP -> one cluster; third mail on another IP stays out
+
         for dom, n, relay in (("evilcamp1.test", "c1", "a"), ("evilcamp2.test", "c2", "b"),
                               ("lonely.test", "c3", "c")):
             tmpl = A_TMPL if relay in ("a", "b") else B_TMPL
@@ -69,7 +69,7 @@ def test_campaign_cards_and_detail():
 
 
 def _auth_org(c, role="Analyst"):
-    """Provision a user inside a fresh org. Returns (headers, org_id)."""
+
     from app import models
     from app.database import SessionLocal
     db = SessionLocal()
@@ -96,7 +96,7 @@ def _ingest(c, headers, sender, ip, n):
 
 
 def test_org_less_user_sees_only_null_org_campaigns():
-    """P0: organization_id=None means org-less scope, never the Admin view."""
+
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -104,7 +104,7 @@ def test_org_less_user_sees_only_null_org_campaigns():
         hx, org_x = _auth_org(c)
         _ingest(c, hx, "x@orgx1.test", "203.0.113.90", "x1")
         _ingest(c, hx, "x@orgx2.test", "203.0.113.90", "x2")
-        hn = _auth(c)  # org-less
+        hn = _auth(c)
         _ingest(c, hn, "n@null1.test", "203.0.113.91", "n1")
         _ingest(c, hn, "n@null2.test", "203.0.113.91", "n2")
 
@@ -122,7 +122,7 @@ def test_org_less_user_sees_only_null_org_campaigns():
 
 
 def test_graph_related_hides_foreign_email_nodes():
-    """P0: shared-IP neighbourhood shows own addresses only; infra stays."""
+
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -138,11 +138,11 @@ def test_graph_related_hides_foreign_email_nodes():
         assert "email:aaa@aten.test" in ids, ids
         assert "email:bbb@bten.test" not in ids, ids
         assert "ip:203.0.113.92" in ids, ids
-        # dangling edges to hidden nodes are removed too
+
         for e in rel["edges"]:
             assert e["source"] in ids and e["target"] in ids
 
-        # campaign detail embeds the same filtered graph
+
         cards = c.get("/api/v1/campaigns", headers=ha).json()
         card = next(k for k in cards if k["ip"] == "203.0.113.92")
         detail = c.get(f"/api/v1/campaigns/{card['id']}", headers=ha).json()

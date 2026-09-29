@@ -1,15 +1,4 @@
-"""Shared test helpers: Supabase-style JWT minting + mirror-row provisioning.
 
-The Supabase migration removed local password auth from the backend
-(`app/modules/auth/security.py` now only mints short-lived WebSocket
-tickets). The API trusts Supabase-issued JWTs and looks the user up in
-the `users` mirror table, so tests do exactly what the
-`on_auth_user_created` trigger does — insert the mirror row — and then
-mint an equivalent HS256 token with SUPABASE_JWT_SECRET.
-
-`deps.get_current_user` verifies `aud="authenticated"`, so the audience
-claim is mandatory; tests that need a bad audience pass it explicitly.
-"""
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from app import models
 
-# Never used outside the suite: conftest pins the same value in the env so
-# `get_settings()` (cached) and this module agree.
+
+
 DEFAULT_JWT_SECRET = "pytest-supabase-jwt-secret-32-chars-min"
 
 
@@ -37,7 +26,7 @@ def mint_token(
     expires_in: timedelta = timedelta(minutes=20),
     **extra,
 ) -> str:
-    """Mint a token shaped like a Supabase access token (HS256, aud=authenticated)."""
+
     now = datetime.now(timezone.utc)
     payload: dict = {
         "sub": user_id,
@@ -65,7 +54,7 @@ def make_user(
     org_id: str | None = None,
     email: str | None = None,
 ) -> models.User:
-    """Insert a `users` mirror row (what the Supabase trigger would create)."""
+
     uid = str(uuid.uuid4())
     user = models.User(
         id=uid,
@@ -79,14 +68,14 @@ def make_user(
 
 
 def auth_headers(user: models.User) -> dict:
-    """Authorization header for an existing mirror row."""
+
     return {
         "Authorization": f"Bearer {mint_token(user.id, email=user.email, role=user.role)}"
     }
 
 
 def anonymous_token() -> str:
-    """Valid-shaped token whose `sub` matches no user row (401 user-not-found path)."""
+
     return mint_token(str(uuid.uuid4()))
 
 
@@ -95,7 +84,7 @@ def login(
     org_id: str | None = None,
     email: str | None = None,
 ) -> tuple[dict, models.User]:
-    """Provision a mirror row in the per-test DB and return (headers, user)."""
+
     from app.database import SessionLocal
 
     db = SessionLocal()

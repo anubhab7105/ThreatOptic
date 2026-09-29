@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { useSceneStore } from './sceneStore';
 
-/**
- * M3 scroll-driven pipeline visual (M3).
- * Deliberately SVG (no second WebGL context): the hero canvas keeps the only
- * WebGL context while this strip reflects the same zustand scroll progress.
- * Full plain-text equivalent lives in the DOM cards beside it.
- */
+
+
+
+
+
+
 const PHASES = ['Ingest', 'Analyze', 'Score', 'Investigate'] as const;
 
 export function PipelineScene(_props: { progress?: number; reduced?: boolean }) {
@@ -15,7 +15,7 @@ export function PipelineScene(_props: { progress?: number; reduced?: boolean }) 
   void _props.reduced;
 
   useEffect(() => {
-    // Keep the host's aria progress in sync for assistive tech OCH.
+
     const host = document.getElementById('pipeline-scene-host');
     if (host) host.setAttribute('aria-valuenow', String(Math.round(progress * 100)));
   }, [progress]);

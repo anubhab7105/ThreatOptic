@@ -1,6 +1,4 @@
-"""Step 4 detection-correctness tests: lookalikes, honest feeds, VT flow,
-scoring guards, attribution weights, parser bleach/limits, model pinning,
-alert dedup/rate-limit."""
+
 from app.modules.threat_intel.lookalikes import (
     decode_punycode,
     levenshtein,
@@ -16,7 +14,7 @@ def test_levenshtein_and_normalize():
     assert normalize_homoglyphs("micros0ft") == "microsoft"
     assert normalize_homoglyphs("rnicrosoft") == "microsoft"
     assert registrable("mail.google.com") == "google.com"
-    assert "paypal" in decode_punycode("xn--pple-43d.com") or True  # decodes without crashing
+    assert "paypal" in decode_punycode("xn--pple-43d.com") or True
 
 
 def test_lookalike_matrix():
@@ -29,7 +27,7 @@ def test_lookalike_matrix():
     assert r and r["impersonates"] == "paypal.com" and "combo-squat" in r["via"]
     r = lookalike_of("g00gle.com")
     assert r and r["impersonates"] == "google.com"
-    # configurable list
+
     import os
     os.environ["KNOWN_LEGIT_DOMAINS"] = "mybank.test"
     try:
@@ -43,9 +41,9 @@ def test_feeds_honesty_and_aggregate():
     import os
     from app.modules.threat_intel import feeds
 
-    # demo fixtures fire in dev...
+
     assert "demo-fixture" in feeds.check_domain_blocklists("malicious-example.com")
-    # ...but never in prod
+
     os.environ["APP_ENV"] = "production"
     from app.config import get_settings
     get_settings.cache_clear()
@@ -54,19 +52,19 @@ def test_feeds_honesty_and_aggregate():
     finally:
         os.environ["APP_ENV"] = "development"
         get_settings.cache_clear()
-    # aggregate covers urls and returns the field scoring reads
+
     out = feeds.aggregate_threat_intel(["malicious-example.com"], ["9.9.9.9"],
                                        ["http://malicious-example.com/login"])
     assert "malicious_count" in out
     assert any(h.get("type") == "url" for h in out["hits"])
     assert out["malicious_count"] >= 1
-    # operator blocklist file path exists (empty by default, real entries live there)
+
     assert feeds._operator_blocklist() == frozenset()
 
 
 def test_spamhaus_parser_unit():
     from app.modules.threat_intel.feeds import check_ip_spamhaus
-    # offline: no live feed, no crash, no hits
+
     assert check_ip_spamhaus("8.8.8.8") == []
     assert check_ip_spamhaus("not-an-ip") == []
 
@@ -94,7 +92,7 @@ def test_virustotal_submit_poll_flow(monkeypatch):
     out = ua.check_virustotal("http://evil.test/x", api_key="k")
     assert out == {"source": "virustotal", "malicious": 7, "suspicious": 1}
     assert calls == {"post": 1, "get": 2}
-    # no key -> skip, never touches network
+
     assert ua.check_virustotal("http://x.test/") == {"source": "virustotal", "skipped": True}
 
 
@@ -105,7 +103,7 @@ def test_url_analyzer_vt_cap_and_lookalike(monkeypatch):
     urls = [f"http://n{i}.test/x" for i in range(8)]
     out = ua.analyze_urls(urls, vt_key="k")
     vt_hits = [h for h in out["hits"] if h.get("virustotal_hit")]
-    assert len(vt_hits) == ua.VT_MAX_URLS  # capped, not 8
+    assert len(vt_hits) == ua.VT_MAX_URLS
     out2 = ua.analyze_urls(["http://paypa1-secure.top/login"])
     assert any("lookalike" in str(h.get("reasons", [])) for h in out2["hits"])
 
@@ -126,8 +124,8 @@ def test_attachment_vt_cache_and_cap(monkeypatch):
     atts = [{"filename": f"f{i}.pdf", "content_type": "application/pdf", "size": 10,
              "sha256": "ab" * 32, "magic": "25504446"} for i in range(7)]
     out = aa.analyze_attachments(atts, vt_key="k")
-    assert out["risk"] == 100.0 and out["malicious_count"] == 5  # capped lookups, all hit
-    # same hash twice -> one HTTP call (cache); 7 files -> cap still bounds fresh hashes
+    assert out["risk"] == 100.0 and out["malicious_count"] == 5
+
     aa.analyze_attachments(atts[:1], vt_key="k")
     assert calls["n"] == 1
 
@@ -141,14 +139,14 @@ def test_scoring_guards():
     intel = {"count": None, "malicious_count": "2"}
     r = compute_scores(nlp, auth, intel, [], [], None, False)
     assert isinstance(r["fraud_score"], float)
-    # offline/unverifiable auth scores near-zero, not +45-per-none
+
     auth_off = {"spf": {"status": "unverifiable", "detail": "live-lookups-disabled"},
                 "dkim": {"status": "unverifiable", "detail": "live-lookups-disabled"},
                 "dmarc": {"status": "unverifiable", "detail": "x"}, "aligned": False}
     r2 = compute_scores({"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []},
                         auth_off, {"count": 0, "malicious_count": 0}, [], [], None, False)
     assert r2["fraud_score"] < 20
-    # future-dated domain gets no new-domain bonus
+
     r3 = compute_scores({"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []},
                         auth_off, {"count": 0, "malicious_count": 0}, [], [], -5, True)
     assert all(s["contribution_to_score"] == 0 for s in r3["signals"]
@@ -161,10 +159,10 @@ def test_attribution_weighted_no_crash():
     store.G.clear()
     try:
         store.upsert_email_graph("A@X.TEST", "9.9.9.9", ["x.test", "y.test"])
-        r = attribute("a@x.test", "9.9.9.9", ["X.TEST"])  # mixed case must match
+        r = attribute("a@x.test", "9.9.9.9", ["X.TEST"])
         assert 0.0 <= r["confidence"] <= 0.99
         assert r["campaign"] != "unknown"
-        # malformed campaign dicts (missing ip) must not KeyError
+
         orig = store.find_campaigns
         store.find_campaigns = lambda *a, **k: [{"domains": ["x.test"]}]
         try:
@@ -201,18 +199,18 @@ def test_parser_bleach_and_limits():
 def test_nlp_model_pinned_and_verified(monkeypatch, tmp_path):
     import app.modules.nlp.engine as eng
     eng._classifier = None
-    # prod ignores env-controlled model paths
+
     from app.config import get_settings
     settings = get_settings()
     monkeypatch.setattr(settings, "app_env", "production")
     monkeypatch.setenv("NLP_MODEL_PATH", "/tmp/evil.joblib")
     assert eng._model_path() == eng.PINNED_MODEL_PATH
-    # checksum sidecar written by training
+
     import os
     sha = eng.PINNED_MODEL_PATH + ".sha256"
     assert os.path.exists(sha)
     assert eng._verify_checksum(eng.PINNED_MODEL_PATH) is True
-    # tampered model file fails verification
+
     assert eng._verify_checksum(str(tmp_path / "nope.joblib")) is False
 
 
@@ -223,17 +221,17 @@ def test_alert_dedup_rate_limit_honesty(monkeypatch):
     monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("PAGERDUTY_ROUTING_KEY", raising=False)
     r1 = d.dispatch_alert("abc-123", 95.0, "Phishing", {})
-    assert r1["sent"] == [] and r1["channel"] == "none"  # no phantom dashboard claim
+    assert r1["sent"] == [] and r1["channel"] == "none"
     assert "dashboard" not in r1["sent"]
     r2 = d.dispatch_alert("abc-123", 95.0, "Phishing", {})
     assert r2.get("deduped") is True
-    # malicious ids are sanitized, never interpolated raw
+
     r3 = d.dispatch_alert("x\"; rm -rf", 10.0, "Clean", {})
     assert r3["severity"] == "Low"
 
 
 def test_virustotal_async_bounded_deadline(monkeypatch):
-    """P0: async VT completes fast on success and honors the deadline."""
+
     import asyncio
     import time
     import app.modules.threat_intel.url_analyzer as ua
@@ -272,10 +270,10 @@ def test_virustotal_async_bounded_deadline(monkeypatch):
         "http://evil.test/x", "k", deadline=time.monotonic() + 10))
     elapsed = time.monotonic() - t0
     assert out == {"source": "virustotal", "malicious": 7, "suspicious": 1}
-    # one 1s poll interval, NOT 2x VT_POLL_SECONDS blocking sleeps
+
     assert elapsed < 5.0
 
-    # never-completing analysis -> pending at the deadline, fast
+
     class HangingClient(FakeClient):
         async def get(self, *a, **k):
             return Resp(200, {"data": {"attributes": {"status": "queued"}}})
@@ -289,7 +287,7 @@ def test_virustotal_async_bounded_deadline(monkeypatch):
 
 
 def test_analyze_urls_async_merges_vt_hits(monkeypatch):
-    """P0: async entrypoint merges VT hits, skips already-hit URLs."""
+
     import asyncio
     import app.modules.threat_intel.url_analyzer as ua
 
@@ -305,14 +303,14 @@ def test_analyze_urls_async_merges_vt_hits(monkeypatch):
     vt_hits = [h for h in out["hits"] if h.get("virustotal_hit")]
     assert len(vt_hits) == 1 and vt_hits[0]["domain"] == "evil.test"
     assert out["malicious_count"] == 1
-    # no key -> sync-equivalent local result, no VT attempted
+
     out2 = asyncio.run(ua.analyze_urls_async(urls))
     assert out2["malicious_count"] == 0
     assert all("virustotal_hit" not in h for h in out2["hits"])
 
 
 def test_misp_single_batched_deduped_cached(monkeypatch):
-    """P0: one batched MISP POST per mail, deduped values, TTL cache."""
+
     import app.modules.threat_intel.feeds as feeds
 
     calls: list = []
@@ -337,11 +335,11 @@ def test_misp_single_batched_deduped_cached(monkeypatch):
     ips = ["1.2.3.4"]
     urls = ["http://evil.test/login", "http://evil.test/other"]
     out = feeds.aggregate_threat_intel(domains, ips, urls)
-    # exactly ONE network call for all indicators...
+
     assert len(calls) == 1
     sent = calls[0]["value"]
     assert sorted(sent) == sorted({"evil.test", "clean.test", "1.2.3.4"})
-    # ...hits mapped back per entry type...
+
     by_type = {}
     for h in out["hits"]:
         by_type.setdefault(h["type"], []).append(h)
@@ -349,14 +347,14 @@ def test_misp_single_batched_deduped_cached(monkeypatch):
     assert any(h.get("misp", {}).get("hits") == 1 for h in by_type.get("ip", []))
     assert any(h.get("misp", {}).get("hits") == 2 for h in by_type.get("url", []))
     assert out["malicious_count"] >= 3
-    # ...and the second identical mail is fully cache-served (no network).
+
     out2 = feeds.aggregate_threat_intel(domains, ips, urls)
     assert len(calls) == 1
     assert out2["malicious_count"] == out["malicious_count"]
 
 
 def test_misp_unconfigured_and_error_paths(monkeypatch):
-    """P0: unconfigured MISP never touches network; errors fail open."""
+
     import app.modules.threat_intel.feeds as feeds
     import requests
 
@@ -375,7 +373,7 @@ def test_misp_unconfigured_and_error_paths(monkeypatch):
     assert calls == []
     assert feeds.query_misp("a.test") == {"source": "misp", "skipped": True}
 
-    # transport failure -> zero hits, no crash, nothing cached
+
     monkeypatch.setenv("MISP_URL", "https://misp.test")
     monkeypatch.setenv("MISP_KEY", "k")
 

@@ -1,4 +1,4 @@
-"""Mailbox OAuth tests (F7): vault, authorize, callback, sync-now, poller."""
+
 import uuid
 
 from fastapi.testclient import TestClient
@@ -15,7 +15,7 @@ Quarterly report draft ready for review.
 
 
 def _auth(c: TestClient) -> tuple[dict, object]:
-    """Return (Authorization headers, provisioned mirror row)."""
+
     return login()
 
 
@@ -31,7 +31,7 @@ def test_authorize_urls():
 
     with TestClient(app) as c:
         h, _u = _auth(c)
-        assert c.post("/api/v1/oauth/google/authorize", headers=h, json={}).status_code == 422  # redirect_uri required
+        assert c.post("/api/v1/oauth/google/authorize", headers=h, json={}).status_code == 422
         r = c.post("/api/v1/oauth/google/authorize", headers=h,
                    json={"redirect_uri": "http://localhost:5173/", "client_id": "gid"})
         assert r.status_code == 200, r.text
@@ -45,18 +45,17 @@ def test_authorize_urls():
 
 
 def test_authorize_rejects_query_param_secrets():
-    """P0: authorize/auth-url accept secrets in POST body only — GET with
-    query params must not exist (405), so secrets never land in URLs/logs."""
+
     from app.main import app
 
     with TestClient(app) as c:
         h, _u = _auth(c)
-        # GET authorize route removed: query-string secrets impossible
+
         assert c.get("/api/v1/oauth/google/authorize",
                      headers=h,
                      params={"redirect_uri": "http://localhost:5173/", "client_id": "gid",
                              "client_secret": "topsecret"}).status_code == 405
-        # GET gmail auth-url route removed as well
+
         assert c.get("/api/v1/gmail/auth-url",
                      headers=h,
                      params={"redirect_uri": "http://localhost:5173/", "client_id": "gid",
@@ -98,7 +97,7 @@ def test_callback_sync_disconnect(monkeypatch):
 
     with TestClient(app) as c:
         h, _u = _auth(c)
-        # disconnect requires Analyst+: promote the freshly registered (ReadOnly) user
+
         dbp = SessionLocal()
         try:
             tok_user = dbp.query(models.User).order_by(models.User.created_at.desc()).first()
@@ -106,7 +105,7 @@ def test_callback_sync_disconnect(monkeypatch):
             dbp.commit()
         finally:
             dbp.close()
-        # hermetic: drop any leftover fixture row from interrupted runs
+
         db0 = SessionLocal()
         try:
             db0.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
@@ -115,7 +114,7 @@ def test_callback_sync_disconnect(monkeypatch):
             db0.close()
         try:
             assert c.get("/api/v1/oauth/status", headers=h).json() == []
-            # full flow: authorize mints server-side state + PKCE, callback consumes it
+
             au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
                 "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
             from urllib.parse import parse_qs, urlparse
@@ -125,7 +124,7 @@ def test_callback_sync_disconnect(monkeypatch):
                       params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
             assert r.status_code == 302, r.text
             assert "/mailboxes?connected=" in r.headers["location"]
-            # state is single-use: replay fails
+
             r2 = c.get("/api/v1/oauth/google/callback",
                        params={"code": "4/x", "state": q["state"][0]}, follow_redirects=False)
             assert r2.status_code == 400
@@ -161,7 +160,7 @@ def test_callback_sync_disconnect(monkeypatch):
             assert c.get("/api/v1/oauth/status", headers=h).json() == []
             assert c.post("/api/v1/oauth/sync-now", headers=h, json={}).status_code == 404
         finally:
-            # never leak the fixture row (disconnect deletes by provider only)
+
             dbf = SessionLocal()
             try:
                 dbf.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
@@ -171,7 +170,7 @@ def test_callback_sync_disconnect(monkeypatch):
 
 
 def test_oauth_hijack_prevention(monkeypatch):
-    """Attacker cannot hijack victim's OAuth flow by replaying state."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -185,7 +184,7 @@ def test_oauth_hijack_prevention(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        # Victim starts OAuth flow
+
         victim_h, _u = _auth(c)
         victim_au = c.post("/api/v1/oauth/google/authorize", headers=victim_h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
@@ -193,10 +192,10 @@ def test_oauth_hijack_prevention(monkeypatch):
         q = parse_qs(urlparse(victim_au).query)
         victim_state = q["state"][0]
 
-        # P0: state is opaque — no embedded payload, no dot-separated blob.
+
         assert "." not in victim_state
 
-        # Resolve the state owner server-side (browser never sees user_id).
+
         db0 = SessionLocal()
         try:
             row = db0.query(models.OAuthState).filter_by(state=victim_state).first()
@@ -205,15 +204,15 @@ def test_oauth_hijack_prevention(monkeypatch):
         finally:
             db0.close()
 
-        # Attacker tries to use victim's state with their own session
-        # The mailbox should be attached to the VICTIM (state's user_id), not the attacker
+
+
         attacker_h, _u = _auth(c)
         r = c.get("/api/v1/oauth/google/callback",
                   params={"code": "4/x", "state": victim_state}, follow_redirects=False)
-        # Callback succeeds but mailbox is attached to victim (state's user_id)
+
         assert r.status_code == 302, f"Expected 302, got {r.status_code}: {r.text}"
 
-        # Verify mailbox is attached to victim, not attacker
+
         from app.database import SessionLocal
         from app import models
         db = SessionLocal()
@@ -229,7 +228,7 @@ def test_oauth_hijack_prevention(monkeypatch):
 
 
 def test_opaque_state_carries_no_secrets(monkeypatch):
-    """P0: authorize state is an opaque token — no secrets/PKCE/data inside."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -248,7 +247,7 @@ def test_opaque_state_carries_no_secrets(monkeypatch):
         import base64
         q = parse_qs(urlparse(au).query)
         state = q["state"][0]
-        # Opaque: single token, no dot-separated signed blob to decode.
+
         assert "." not in state
         assert "csec" not in state and "pkv" not in state and "gsec" not in state
         try:
@@ -259,7 +258,7 @@ def test_opaque_state_carries_no_secrets(monkeypatch):
         if decodes:
             raw = base64.urlsafe_b64decode(state + "=" * (-len(state) % 4)).decode("utf8", "ignore")
             assert "gsec" not in raw and "pkv" not in raw
-        # Server holds the verifier + owner; browser got only the token.
+
         db = SessionLocal()
         try:
             row = db.query(models.OAuthState).filter_by(state=state).first()
@@ -272,7 +271,7 @@ def test_opaque_state_carries_no_secrets(monkeypatch):
 
 
 def test_cross_tenant_mailbox_access(monkeypatch):
-    """Users cannot access mailboxes from other tenants."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -287,7 +286,7 @@ def test_cross_tenant_mailbox_access(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "gsec")
 
     with TestClient(app) as c:
-        # Create two users in different orgs
+
         h1, user1 = _auth(c)
         db = SessionLocal()
         try:
@@ -313,7 +312,7 @@ def test_cross_tenant_mailbox_access(monkeypatch):
         finally:
             db.close()
 
-        # User 1 connects a mailbox
+
         au1 = c.post("/api/v1/oauth/google/authorize", headers=h1, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         q1 = parse_qs(urlparse(au1).query)
@@ -322,13 +321,13 @@ def test_cross_tenant_mailbox_access(monkeypatch):
                   params={"code": "4/x", "state": state1}, follow_redirects=False)
         assert r.status_code == 302
 
-        # User 2 should NOT see user 1's mailbox in status
+
         st2 = c.get("/api/v1/oauth/status", headers=h2).json()
         assert len(st2) == 0, "User 2 should not see User 1's mailbox"
 
-        # User 2 must NOT disconnect user 1's mailbox. Disconnect is
-        # tenant-scoped, so it is a no-op for user 2 (removed=0) — the
-        # invariant that matters is that user 1's row survives untouched.
+
+
+
         r = c.delete("/api/v1/oauth/google", headers=h2)
         assert r.status_code == 200, r.text
         assert r.json()["removed"] == 0, r.text
@@ -340,17 +339,17 @@ def test_cross_tenant_mailbox_access(monkeypatch):
         finally:
             db.close()
 
-        # User 1 still sees their mailbox after user 2's attempt.
+
         st1 = c.get("/api/v1/oauth/status", headers=h1).json()
         assert len(st1) == 1, st1
 
-        # User 2 sync-now should return 404 (no mailbox)
+
         r = c.post("/api/v1/oauth/sync-now", headers=h2, json={"provider": "google", "max_results": 5})
         assert r.status_code == 404
 
 
 def test_invalid_missing_state(monkeypatch):
-    """Invalid or missing state parameters are rejected."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -363,16 +362,16 @@ def test_invalid_missing_state(monkeypatch):
 
     with TestClient(app) as c:
         h, _u = _auth(c)
-        # Missing state
+
         r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x"})
         assert r.status_code == 400
         assert "state" in r.text.lower()
 
-        # Invalid state (unknown opaque token)
+
         r = c.get("/api/v1/oauth/google/callback", params={"code": "4/x", "state": "bogus-opaque-state-token"})
         assert r.status_code == 400
 
-        # Expired state (server-side row past expiry)
+
         from datetime import datetime, timedelta, timezone
         from app import models as _models
         from app.database import SessionLocal as _SessionLocal
@@ -398,7 +397,7 @@ def test_invalid_missing_state(monkeypatch):
 
 
 def test_tampered_redirect_uri(monkeypatch):
-    """Tampered redirect_uri is rejected."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -411,14 +410,14 @@ def test_tampered_redirect_uri(monkeypatch):
 
     with TestClient(app) as c:
         h, _u = _auth(c)
-        # Start flow with allowed redirect_uri
+
         au = c.post("/api/v1/oauth/google/authorize", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "gid"}).json()["auth_url"]
         from urllib.parse import parse_qs, urlparse
         q = parse_qs(urlparse(au).query)
         state = q["state"][0]
 
-        # Try callback with different redirect_uri
+
         r = c.get("/api/v1/oauth/google/callback",
                   params={"code": "4/x", "state": state, "redirect_uri": "https://evil.com/cb"})
         assert r.status_code == 400
@@ -426,8 +425,7 @@ def test_tampered_redirect_uri(monkeypatch):
 
 
 def test_credential_fallback_never_crosses_tenant(monkeypatch):
-    """P0: credential resolvers must not borrow another tenant's stored
-    client_id/secret. Same-org members may share; outsiders fail closed."""
+
     from app.main import app
     from app.config import get_settings
     from app import models
@@ -439,7 +437,7 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
     monkeypatch.setattr(settings, "google_client_secret", "")
 
     with TestClient(app) as c:
-        # Victim org A with a stored connection (client_id victim-cid)
+
         hv, victim = _auth(c)
         db = SessionLocal()
         try:
@@ -459,8 +457,8 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
         finally:
             db.close()
 
-        # Attacker in org B, no credentials anywhere -> fail closed (400),
-        # must NOT silently use victim-cid.
+
+
         ha, attacker = _auth(c)
         db = SessionLocal()
         try:
@@ -477,7 +475,7 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
         assert r.status_code == 400, r.text
         assert "victim-cid" not in r.text
 
-        # Same-org member with no explicit credentials MAY reuse org conn.
+
         hm, member = _auth(c)
         db = SessionLocal()
         try:
@@ -491,7 +489,7 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
         assert r.status_code == 200, r.text
         assert "victim-cid" in r.json()["auth_url"]
 
-        # Cleanup: drop fixture rows + orgs.
+
         db = SessionLocal()
         try:
             db.query(models.MailboxConnection).filter_by(account_email="victim@gmail.com").delete()
@@ -502,8 +500,7 @@ def test_credential_fallback_never_crosses_tenant(monkeypatch):
 
 
 def test_cross_org_mailbox_hijack_blocked(monkeypatch):
-    """P0: completing OAuth for an address owned by another org/user 403s —
-    including org-less vs org-less (None==None must not pass)."""
+
     from app.main import app
     from app.config import get_settings
     import app.modules.ingestion.connectors as conn
@@ -537,7 +534,7 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
                      params={"code": "4/x", "state": st}, follow_redirects=False)
 
     with TestClient(app) as c:
-        # Victim org A connects shared address (mock profile is fixed).
+
         hv, _u = _auth(c)
         _org_for(c, hv, f"hijack-victim-{hv['Authorization'][-6:]}")
         assert _flow(c, hv).status_code == 302
@@ -548,7 +545,7 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
         finally:
             db.close()
 
-        # Attacker org B attempts same address -> 403, no reassignment.
+
         ha, _u = _auth(c)
         _org_for(c, ha, f"hijack-attacker-{ha['Authorization'][-6:]}")
         r = _flow(c, ha)
@@ -563,16 +560,16 @@ def test_cross_org_mailbox_hijack_blocked(monkeypatch):
         finally:
             db.close()
 
-        # Org-less victim vs org-less attacker: also 403.
+
         db = SessionLocal()
         try:
             db.query(models.MailboxConnection).filter_by(account_email="owner@gmail.com").delete()
             db.commit()
         finally:
             db.close()
-        hv2, _u = _auth(c)  # org-less
+        hv2, _u = _auth(c)
         assert _flow(c, hv2).status_code == 302
-        ha2, _u = _auth(c)  # org-less attacker, same fixed address
+        ha2, _u = _auth(c)
         assert _flow(c, ha2).status_code == 403
 
         db = SessionLocal()
@@ -607,4 +604,3 @@ def test_callback_redirects_to_production_origin(monkeypatch):
         assert r.status_code == 302, r.text
         assert r.headers["location"].startswith("https://email-scanner-chi.vercel.app/mailboxes?connected=google:")
         assert "localhost" not in r.headers["location"]
-

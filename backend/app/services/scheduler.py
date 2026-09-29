@@ -1,9 +1,4 @@
-"""Scheduled jobs (F9): daily data-retention enforcement with an audit trail.
 
-Runs in-process via APScheduler so SQLite-first local dev needs no extra
-infrastructure. Every run appends a JSONL line to retention_audit.log and
-emits a structured log record: {timestamp, purged_body, deleted}.
-"""
 import json
 import logging
 import os
@@ -40,18 +35,14 @@ def run_retention_job() -> dict:
 
 
 def start_scheduler():
-    """Daily 03:00 retention job + periodic mailbox poll. Returns the started scheduler.
 
-    Uses AsyncIOScheduler so async mailbox polling runs in the event loop.
-    Retention job remains synchronous (runs in thread pool).
-    """
     import asyncio
     from ..config import get_settings
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
-    # Get or create event loop for AsyncIOScheduler
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

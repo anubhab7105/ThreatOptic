@@ -1,17 +1,4 @@
-"""PII masking (GDPR/CCPA). Exactly what is masked:
 
-- payment card numbers: 13–19 digits (spaces/dashes allowed) that pass the
-  Luhn checksum — bare digit runs that fail Luhn are left alone.
-- US SSNs: NNN-NN-NNNN.
-- phone numbers: E.164 (`+` followed by 7–15 digits, separators allowed) and
-  NANP 10-digit numbers only when written with separators/parentheses.
-- email local-parts (`***@domain`); domains are kept for forensics.
-
-Names, street addresses and IPs are NOT masked by this module.
-
-Masking is unconditional — there is no unmask bypass anywhere in the
-request path (Step 3).
-"""
 import re
 
 CARD_CANDIDATE_RE = re.compile(r"\b(?:\d[ \-.]*?){13,19}\b")
@@ -54,6 +41,6 @@ def mask_text(text: str) -> str:
     t = SSN_RE.sub("[SSN-REDACTED]", t)
     t = E164_RE.sub(_mask_e164, t)
     t = NANP_RE.sub("[PHONE-REDACTED]", t)
-    # mask local part of emails, keep domain for forensics
+
     t = EMAIL_RE.sub(r"***@\2", t)
     return t

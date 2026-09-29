@@ -1,10 +1,4 @@
-"""Elasticsearch mirror for full-text forensic search (F10).
 
-- `index_email()` is called after each pipeline run (best-effort; skipped
-  when ELASTICSEARCH_URL is unset, so SQLite-first dev is unaffected).
-- `search_emails()` uses ES when configured, else falls back to the same
-  SQLite ilike search as GET /emails so the endpoint always works.
-"""
 import logging
 from typing import Any
 
@@ -35,7 +29,7 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
     if es is None:
         return {"indexed": False, "skipped": True}
     try:
-        # Store organization_id both nested and top-level for filtering robustness
+
         org = email_doc.get("organization_id")
         doc = {"email": email_doc, "analysis": analysis_doc, "organization_id": org}
         es.index(
@@ -50,12 +44,12 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
 
 
 def _escape_like(raw: str) -> str:
-    """Escape LIKE wildcards so user input can't trigger full scans (Step 3)."""
+
     return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def delete_email(email_id: str) -> dict:
-    """Best-effort ES doc deletion (retention cascade)."""
+
     es = _client()
     if es is None:
         return {"deleted": False, "skipped": True}
@@ -80,8 +74,8 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
                            "email.recipient_address", "email.body_text_masked"],
             }}
             if organization_id != "__all__":
-                # Tenant filter inside ES; docs without org match NULL-org tenants.
-                # Legacy docs may only have email.organization_id, so check both.
+
+
                 if organization_id is None:
                     es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]}}
                 else:
@@ -99,7 +93,7 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
             return {"backend": "elasticsearch", "hits": hits}
         except Exception as e:
             log.warning("elastic search failed, falling back to sqlite: %s", e)
-    # SQLite fallback (mirrors list_emails filtering)
+
     from sqlalchemy import desc, or_
     from ... import models
     if db is None:

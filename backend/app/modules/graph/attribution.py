@@ -1,17 +1,4 @@
-"""Attribution: confidence-based assessment linking email to known campaigns.
 
-Step 4 rewrite:
-- case-insensitive everywhere (was: mixed-case domains silently missed);
-- no `c['ip']` KeyError (was: crashed on malformed campaign dicts);
-- no last-wins overwrite (was: final loop iteration won regardless of fit);
-- confidence is a documented weighted sum, not hardcoded 0.4/0.3/0.05.
-
-Weights (sum to 1.0 across evidence, scaled to a 0..0.99 score):
-  shared infrastructure (domain overlap with a campaign) .. 0.45
-  exact known-malicious IP match .......................... 0.30
-  graph neighbourhood density ............................. 0.25
-Each term is proportional (overlap/size, 0/1, neighbours/cap).
-"""
 from typing import Any
 from .store import related_entities, find_campaigns
 

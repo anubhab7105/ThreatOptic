@@ -1,13 +1,4 @@
-"""Robust MIME parser: headers, body (text/html), attachments metadata, .eml hash.
 
-Step 4 (C9) hardening:
-- hard caps: max .eml bytes, max attachment count/size (ValueError over).
-- HTML is sanitized with bleach: <script>/<style> elements removed
-  entirely, then all remaining tags stripped. The stored/returned
-  body_html is the SANITIZED version — never raw markup — so downstream
-  rendering cannot execute stored scripts.
-- malformed MIME raises ValueError (API maps to 400), never a raw traceback.
-"""
 import email
 import email.policy
 import hashlib
@@ -23,7 +14,7 @@ _SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | r
 
 
 def sanitize_html(html_text: str) -> str:
-    """Remove script/style elements, then strip all tags. Returns text."""
+
     no_scripts = _SCRIPT_STYLE_RE.sub(" ", html_text or "")
     try:
         import bleach
@@ -46,7 +37,7 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
 
     raw_headers: dict[str, str] = {}
     for k, v in msg.raw_items():
-        # keep first occurrence + join duplicates for Received chains
+
         if k in raw_headers:
             raw_headers[k] = raw_headers[k] + "\n" + str(v)
         else:
@@ -103,8 +94,8 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
                     "content_type": ctype,
                     "size": len(payload),
                     "sha256": hashlib.sha256(payload).hexdigest(),
-                    # first bytes only: enough for magic-byte checks without
-                    # retaining the (possibly malicious) full payload.
+
+
                     "magic": payload[:8].hex(),
                 })
                 if len(attachments) > MAX_ATTACHMENTS:
@@ -132,7 +123,7 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
             body_text = payload.decode("utf-8", errors="ignore") if payload else str(msg.get_payload())
 
     if not body_text and body_html:
-        # body_html is already bleach-sanitized text at this point.
+
         body_text = re.sub(r"\s+", " ", body_html).strip()
 
     return {

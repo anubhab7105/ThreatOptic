@@ -1,12 +1,4 @@
-"""Lookalike / homograph domain detection (shared by URL + header analysis).
 
-- `KNOWN_LEGIT_DOMAINS`: built-in high-value targets, extendable via the
-  `known_legit_domains` config value (comma-separated).
-- `normalize_homoglyphs()`: fold common confusables (0→o, 1→l, rn→m …).
-- `decode_punycode()`: stdlib idna decode for xn-- labels.
-- `levenshtein()`: dependency-free edit distance.
-- `lookalike_of()`: returns the impersonated legit domain + evidence, or None.
-"""
 import os
 
 BUILTIN_LEGIT = (
@@ -16,7 +8,7 @@ BUILTIN_LEGIT = (
     "ebay.com", "outlook.com", "office365.com", "dhl.com", "fedex.com",
 )
 
-# single-char confusables -> ascii
+
 HOMOGLYPHS = {
     "0": "o", "1": "l", "3": "e", "5": "s", "6": "b", "8": "b",
     "à": "a", "á": "a", "â": "a", "ä": "a", "ç": "c", "è": "e",
@@ -28,7 +20,7 @@ HOMOGLYPHS = {
     "р": "p", "с": "c", "х": "x", "у": "y", "к": "k", "м": "m",
     "н": "h", "т": "t",
 }
-# multi-char visual pairs, applied first
+
 DIGRAPHS = (("rn", "m"), ("vv", "w"), ("cl", "d"), ("ii", "u"))
 
 
@@ -49,11 +41,7 @@ def known_legit_domains() -> list[str]:
 
 
 def registrable(domain: str) -> str:
-    """PSL-aware registrable domain (shared helper; kept here for compat).
 
-    evil.co.uk vs bank.co.uk stay DISTINCT (naive last-two-labels
-    collapsed both to co.uk and missed cross-org spoofs).
-    """
     from ..forensics.psl import registrable_domain
     return registrable_domain(domain)
 
@@ -66,7 +54,7 @@ def normalize_homoglyphs(domain: str) -> str:
 
 
 def decode_punycode(domain: str) -> str:
-    """Decode xn-- labels via stdlib idna; returns input unchanged on failure."""
+
     try:
         return ".".join(
             part.encode("ascii").decode("idna") if part.startswith("xn--") else part
@@ -93,12 +81,7 @@ def levenshtein(a: str, b: str) -> int:
 
 
 def lookalike_of(domain: str) -> dict | None:
-    """Return impersonation evidence vs known-legit domains, else None.
 
-    Shape: {"impersonates": <legit>, "distance": int, "via": [...]} where via
-    may contain "homograph" (punycode/confusable fold matched) and/or
-    "typosquat" (small edit distance).
-    """
     dom = (domain or "").lower().strip(".")
     if not dom or "." not in dom:
         return None
@@ -107,7 +90,7 @@ def lookalike_of(domain: str) -> dict | None:
     folded = normalize_homoglyphs(decoded)
     for legit in known_legit_domains():
         if reg == legit:
-            return None  # the real thing
+            return None
         via: list[str] = []
         folded_reg = registrable(folded)
         if folded_reg == legit and folded != dom.lower():
@@ -116,11 +99,11 @@ def lookalike_of(domain: str) -> dict | None:
         threshold = 1 if len(legit) <= 10 else 2
         if 0 < dist <= threshold:
             via.append("typosquat")
-        # decoded-punycode exact hit counts as homograph even at distance 0
+
         if not via and registrable(decoded) == legit and decoded != dom:
             via.append("homograph")
-        # combo-squat: brand SLD embedded with extra words
-        # (paypa1-secure.top, paypal-login.com) — checked on folded form
+
+
         sld = legit.split(".")[0]
         squashed = folded_reg.replace(".", "")
         if not via and len(sld) >= 4 and sld in squashed:

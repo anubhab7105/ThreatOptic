@@ -1,10 +1,4 @@
-"""Retention: clean 7d metadata-only, malicious 90d then full delete (Rules.md).
 
-Step 3: real batch deletion with per-batch commit/rollback across email
-rows, analysis, traceability, ES docs, and graph nodes. Legacy rows that
-still carry a raw body_text get it blanked; new rows never store raw
-bodies at all (see pipeline).
-"""
 import logging
 from datetime import timedelta
 from sqlalchemy.orm import Session
@@ -19,16 +13,16 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
     from ...database import as_utc, utcnow
     now = utcnow()
     mal_cut = now - timedelta(days=malicious_days)
-    # SQLite stores datetimes as naive ISO strings: bind a naive cutoff so
-    # lexicographic comparison stays correct across naive/aware mixes.
+
+
     clean_cut_db = (now - timedelta(days=clean_days)).replace(tzinfo=None)
     purged_body = 0
     deleted = 0
     from ..search.elastic_sync import delete_email
     from ..graph.store import remove_email_graph
 
-    # Keyset pagination (no offset) — offset + delete caused row skips.
-    # We page by (timestamp, id) cursor so deletions never cause gaps.
+
+
     last_ts = None
     last_id = ""
     while True:
@@ -44,7 +38,7 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
         email_ids = [e.id for e in batch]
         analyses = {a.email_id: a for a in
                     db.query(AnalysisResult).filter(AnalysisResult.email_id.in_(email_ids)).all()}
-        # Track cursor before mutations
+
         last_ts = batch[-1].timestamp
         last_id = batch[-1].id
         try:

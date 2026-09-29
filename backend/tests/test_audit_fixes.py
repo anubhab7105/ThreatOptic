@@ -1,4 +1,4 @@
-"""Tests verifying the Phase 1 audit remediation fixes."""
+
 from fastapi.testclient import TestClient
 from helpers import login
 from app.main import app
@@ -11,7 +11,7 @@ def _auth(client: TestClient) -> dict:
 
 
 def test_pdf_report_with_xml_special_characters():
-    """Ensure email headers with <, >, and & do not crash ReportLab XML parser."""
+
     email = {
         "subject": "<Urgent> Wire Transfer & Account Verification",
         "sender_address": '"Security Team" <security@bank.test>',
@@ -44,7 +44,7 @@ def test_pdf_report_with_xml_special_characters():
 
 
 def test_message_id_subdomain_not_flagged():
-    """Valid organizational subdomains should not trigger message-id-mismatch."""
+
     headers = {
         "From": "Finance <billing@paypal.com>",
         "Message-ID": "<20260920.12345@mail.paypal.com>",
@@ -53,7 +53,7 @@ def test_message_id_subdomain_not_flagged():
     flags = detect_routing_anomalies([{"from_host": "mail.paypal.com", "by_host": "mx.google.com", "ips": []}, {"from_host": "relay", "by_host": "mx", "ips": []}], headers)
     assert "message-id-mismatch" not in flags
 
-    # Genuinely spoofed Message-ID domain SHOULD trigger flag
+
     spoofed = {
         "From": "Finance <billing@paypal.com>",
         "Message-ID": "<20260920.12345@evil-attacker.com>",
@@ -64,10 +64,10 @@ def test_message_id_subdomain_not_flagged():
 
 
 def test_list_emails_batch_includes_scores():
-    """GET /api/v1/emails should return fraud_score and threat_classification directly."""
+
     with TestClient(app) as c:
         headers = _auth(c)
-        # Ingest a sample email
+
         raw = "From: hr@legit.test\nTo: user@corp.test\nSubject: Standup tomorrow\n\nSee you at 10am."
         ingest_res = c.post("/api/v1/emails/ingest", headers=headers, json={"raw": raw}).json()
         eid = ingest_res["email_id"]
@@ -83,17 +83,17 @@ def test_list_emails_batch_includes_scores():
 
 
 def test_case_status_validation():
-    """PATCH /api/v1/cases/{id} should reject invalid statuses."""
+
     with TestClient(app) as c:
         headers = _auth(c)
         case_res = c.post("/api/v1/cases", headers=headers, json={"title": "Test Investigation"}).json()
         cid = case_res["id"]
 
-        # Valid status
+
         r1 = c.patch(f"/api/v1/cases/{cid}", headers=headers, json={"status": "InProgress"})
         assert r1.status_code == 200
         assert r1.json()["status"] == "InProgress"
 
-        # Invalid status (validated enum -> 422)
+
         r2 = c.patch(f"/api/v1/cases/{cid}", headers=headers, json={"status": "Exploded"})
         assert r2.status_code == 422

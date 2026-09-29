@@ -1,4 +1,4 @@
-"""Forensic report generator: PDF (reportlab) + JSON, with PII masking + custody manifest."""
+
 import io
 import json
 from ..privacy.masking import mask_text
@@ -9,7 +9,7 @@ def build_report_json(email: dict, analysis: dict, trace: dict, attribution: dic
     mail_masked = dict(email)
     if "body_text" in mail_masked:
         mail_masked["body_text"] = mask_text(mail_masked.get("body_text", ""))
-    # Step 3: subjects/addresses can carry PII — mask them as well.
+
     for key in ("subject", "sender_address", "recipient_address"):
         if key in mail_masked:
             mail_masked[key] = mask_text(mail_masked.get(key, "") or "")
@@ -67,17 +67,17 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     threat_class = str(analysis.get("threat_classification") or "Unclassified")
     action_taken = str(analysis.get("action_taken") or "Review")
 
-    # Determine risk level palette
+
     if fraud_score >= 70 or "high" in threat_class.lower() or "critical" in threat_class.lower():
-        risk_color = colors.HexColor("#DC2626")  # Red
+        risk_color = colors.HexColor("#DC2626")
         risk_bg = colors.HexColor("#FEE2E2")
         risk_label = "HIGH RISK"
     elif fraud_score >= 35 or "medium" in threat_class.lower() or "suspicious" in threat_class.lower():
-        risk_color = colors.HexColor("#D97706")  # Amber
+        risk_color = colors.HexColor("#D97706")
         risk_bg = colors.HexColor("#FEF3C7")
         risk_label = "SUSPICIOUS"
     else:
-        risk_color = colors.HexColor("#16A34A")  # Green
+        risk_color = colors.HexColor("#16A34A")
         risk_bg = colors.HexColor("#DCFCE7")
         risk_label = "LOW RISK"
 
@@ -93,7 +93,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
 
     styles = getSampleStyleSheet()
 
-    # Custom typography styles
+
     title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Normal"],
@@ -147,7 +147,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
 
     story = []
 
-    # 1. Header Banner
+
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     header_data = [
         [
@@ -164,7 +164,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story.append(Spacer(1, 6))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#0F172A"), spaceBefore=2, spaceAfter=8))
 
-    # 2. Executive Summary Card
+
     exec_summary_text = (
         f"<b>Executive Summary:</b> Email evaluated with a fraud score of <b>{fraud_score:.1f}/100</b> "
         f"and classified as <b>{_esc(threat_class)}</b>. "
@@ -203,7 +203,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story.append(kpi_table)
     story.append(Spacer(1, 10))
 
-    # 3. Core Email Identification Table
+
     story.append(Paragraph("1. Email Identity & Metadata", section_head))
     
     subject_val = _esc(mask_text(email.get("subject", "(no subject)"))[:120])
@@ -233,7 +233,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story.append(meta_table)
     story.append(Spacer(1, 10))
 
-    # 4. Authentication & Security Signals Overview
+
     story.append(Paragraph("2. Authentication & Threat Indicators", section_head))
     auth_data = analysis.get("authentication_results") or {}
     spf_res = _auth_val(auth_data, "spf")
@@ -270,7 +270,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story.append(auth_table)
     story.append(Spacer(1, 6))
 
-    # Cues & Forensic Signals
+
     cues = analysis.get("nlp_cues_detected") or []
     if cues:
         cues_formatted = [_format_cue(c) for c in cues]
@@ -280,7 +280,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
         story.append(Paragraph("<b>Detected Threat Cues:</b> None (no NLP deception patterns identified)", body_style))
     story.append(Spacer(1, 10))
 
-    # 5. Geolocation & Infrastructure Attribution
+
     story.append(Paragraph("3. Origin Geolocation & Infrastructure Trace", section_head))
     geo_data = trace.get("geolocation") or {}
     geo_loc = _geo_str(geo_data)
@@ -308,7 +308,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
     story.append(trace_table)
     story.append(Spacer(1, 10))
 
-    # 6. Relay Hop Chain (Compact summary table)
+
     relays = trace.get("relay_chain") or []
     if relays:
         story.append(Paragraph("4. Server Routing & Relay Chain Hops", section_head))
@@ -340,7 +340,7 @@ def build_report_pdf(email: dict, analysis: dict, trace: dict, attribution: dict
         story.append(relay_table)
         story.append(Spacer(1, 12))
 
-    # 7. Chain of Custody & Forensic Seal Footer
+
     footer_text = (
         f"<b>Chain of Custody Notice:</b> This forensic intelligence report was generated automatically by the "
         f"SOC Threat Detection Platform. Evidence integrity verified via SHA-256 custody tree ({hash_val[:24]}...). "
@@ -360,11 +360,11 @@ def build_full_report(email: dict, analysis: dict, trace: dict, attribution: dic
     j = build_report_json(email, analysis, trace, attribution)
     j_bytes = json.dumps(j, indent=2, default=str).encode()
     pdf = build_report_pdf(email, analysis, trace, attribution)
-    # Sign both artifacts: manifest binds eml_hash + pdf_hash + json_hash together
+
     import hashlib
     pdf_hash = hashlib.sha256(pdf).hexdigest()
     json_hash = hashlib.sha256(j_bytes).hexdigest()
-    # Use custody_manifest for pdf, then extend with json hash and combined signature
+
     manifest = custody_manifest(email.get("raw_eml_hash", ""), pdf + j_bytes)
     manifest["pdf_sha256"] = pdf_hash
     manifest["json_sha256"] = json_hash

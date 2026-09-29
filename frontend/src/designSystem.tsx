@@ -7,8 +7,8 @@ import {
 import { useTheme } from './theme';
 import { useChartTheme } from './useChartTheme';
 
-/* Dev-only showcase (import.meta.env.DEV gate in main.tsx). Use the header
-   ThemeToggle to review every primitive in both themes and all states. */
+
+
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

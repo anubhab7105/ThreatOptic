@@ -1,10 +1,4 @@
-"""Celery async ingestion (Phase 3, item 10).
 
-Optional path only: when CELERY_BROKER_URL is set, /emails/ingest and
-/emails/upload accept async_mode=1 and return a task id the frontend
-polls via GET /tasks/{id}. The synchronous pipeline stays the default
-for local/offline dev (no broker needed).
-"""
 import asyncio
 import base64
 import logging
@@ -37,7 +31,7 @@ def broker_configured() -> bool:
 @celery_app.task(name="soc.analyze_email", bind=True, max_retries=2)
 def analyze_email_task(self, raw_b64: str, source: str = "api",
                        envelope_from: str = "", organization_id: str | None = None) -> dict:
-    """Run the forensic pipeline in a worker. Returns the pipeline summary."""
+
     try:
         res = _run_pipeline(raw_b64, source, envelope_from, organization_id)
     except Exception as e:
@@ -53,12 +47,7 @@ def analyze_email_task(self, raw_b64: str, source: str = "api",
 
 
 def _run_pipeline(raw_b64: str, source: str, envelope_from: str, organization_id: str | None) -> dict:
-    """Drive the async pipeline with a session owned by the executing thread.
 
-    Real workers have no running loop (plain asyncio.run). Eager inline
-    execution inside an async endpoint DOES — so run in a helper thread
-    with a fresh loop instead of deadlocking.
-    """
     from ..database import SessionLocal
     from .pipeline import process_raw_email
 

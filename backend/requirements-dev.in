@@ -1,7 +1,7 @@
-# P0: exact pins for dev/test tooling (kept OUT of the production image).
-# Regenerate with:
-#   backend/.venv/bin/pip-compile --generate-hashes \
-#     --output-file=backend/requirements-dev.txt backend/requirements-dev.in
+
+
+
+
 -r requirements.txt
 pytest==9.1.1
 pytest-asyncio==1.4.0

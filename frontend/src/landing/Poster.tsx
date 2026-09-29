@@ -1,10 +1,10 @@
 import React from 'react';
 
-/**
- * Themed static SVG poster for the hero viewport well.
- * Also the LCP element and the no-WebGL fallback (M2 tiers).
- * Colors come only from app tokens + scene tokens — no hardcoded landing colors.
- */
+
+
+
+
+
 export function HeroPoster({ id = 'hero-poster' }: { id?: string }) {
   return (
     <svg
@@ -16,7 +16,7 @@ export function HeroPoster({ id = 'hero-poster' }: { id?: string }) {
     >
       <title>Inspection chamber preview</title>
       <rect x="0" y="0" width="640" height="480" rx="16" fill="var(--scene-bg)" />
-      {/* chamber hairlines */}
+      {}
       <g stroke="var(--scene-line)" strokeWidth="1" opacity="0.6">
         <line x1="40" y1="420" x2="240" y2="140" />
         <line x1="40" y1="420" x2="360" y2="90" />
@@ -25,20 +25,20 @@ export function HeroPoster({ id = 'hero-poster' }: { id?: string }) {
         <circle cx="320" cy="230" r="112" fill="none" strokeDasharray="3 7" />
         <circle cx="320" cy="230" r="76" fill="none" strokeDasharray="2 6" />
       </g>
-      {/* contact shadow */}
+      {}
       <ellipse cx="320" cy="392" rx="130" ry="18" fill="var(--scene-clay-shade)" opacity="0.85" />
-      {/* envelope body */}
+      {}
       <g>
         <rect x="215" y="180" width="210" height="140" rx="14" fill="var(--scene-clay)" stroke="var(--scene-line)" strokeWidth="1.5" />
         <polygon points="215,194 320,272 425,194 425,180 215,180" fill="var(--scene-clay-shade)" stroke="var(--scene-line)" strokeWidth="1.5" />
         <rect x="248" y="300" width="144" height="10" rx="5" fill="var(--scene-line)" opacity="0.55" />
-        {/* scan plane */}
+        {}
         <rect x="215" y="236" width="210" height="10" fill="var(--scene-accent)" opacity="0.55" />
         <rect x="215" y="236" width="210" height="2" fill="var(--scene-accent)" />
       </g>
-      {/* orbit ring accents */}
+      {}
       <ellipse cx="320" cy="250" rx="150" ry="44" fill="none" stroke="var(--scene-accent)" strokeWidth="2" opacity="0.7" />
-      {/* nodes */}
+      {}
       <g fill="var(--scene-accent)">
         <circle cx="170" cy="150" r="7" />
         <circle cx="480" cy="130" r="6" />
@@ -51,7 +51,7 @@ export function HeroPoster({ id = 'hero-poster' }: { id?: string }) {
         <line x1="480" y1="130" x2="510" y2="300" />
         <line x1="140" y1="320" x2="215" y2="250" />
       </g>
-      {/* score chip drawn as plate (real text lives in DOM overlay, this is decorative) */}
+      {}
       <g>
         <rect x="392" y="120" width="168" height="44" rx="10" fill="var(--surface-raised)" stroke="var(--border-subtle)" />
         <circle cx="412" cy="142" r="7" fill="var(--scene-risk)" />

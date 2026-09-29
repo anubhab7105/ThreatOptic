@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import createGlobe from 'cobe';
 import { SCENE_TOKEN_FALLBACKS } from './sceneTokens';
 
-/** M4 globe visual. Mounts a `cobe` canvas only when visible; SVG fallback stays behind in the DOM. */
+
 export function GeoGlobe() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -53,7 +53,7 @@ export function GeoGlobe() {
             try {
               globe.update({ phi });
             } catch {
-              /* noop */
+
             }
           }
           raf = window.requestAnimationFrame(tick);
@@ -72,8 +72,8 @@ export function GeoGlobe() {
         ? new IntersectionObserver(
             (entries) => {
               const inView = entries.some((e) => e.isIntersecting);
-              // Never run alongside the main WebGL canvas: only render when the
-              // hero well is off-screen.
+
+
               const hero = document.getElementById('hero-viewport-well');
               const heroVisible = hero ? hero.getBoundingClientRect().top < window.innerHeight && hero.getBoundingClientRect().bottom > 0 : false;
               visible = inView && !document.hidden && !heroVisible;
@@ -83,14 +83,14 @@ export function GeoGlobe() {
         : null;
     if (io) io.observe(canvas);
     document.addEventListener('visibilitychange', onVis);
-    // Defer creation until near viewport to avoid a second context upfront.
+
     const t = window.setTimeout(start, 400);
 
     const onTheme = () => {
       try {
         globe?.destroy();
       } catch {
-        /* noop */
+
       }
       globe = null;
       start();
@@ -107,7 +107,7 @@ export function GeoGlobe() {
       try {
         globe?.destroy();
       } catch {
-        /* noop */
+
       }
     };
   }, []);

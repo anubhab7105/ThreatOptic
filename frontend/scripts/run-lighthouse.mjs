@@ -1,5 +1,5 @@
-// One-off Lighthouse run against the production preview.
-// Launches Playwright's Chromium with a remote-debugging port for Lighthouse.
+
+
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { readdirSync, existsSync } from 'node:fs';

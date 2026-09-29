@@ -1,8 +1,4 @@
-"""Train TF-IDF + LogisticRegression on curated samples + cache held-out metrics.
 
-Run:  python backend/scripts/train_nlp.py
-Saves: backend/ml_models/phishing_clf.joblib + backend/ml_models/metrics.json
-"""
 import json
 import os
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -155,7 +151,7 @@ def dataset_csv_path() -> str:
 
 
 def load_training_data() -> tuple[list[str], list[str], str]:
-    """Real corpus (fetch_datasets.py) when present, else curated fallback."""
+
     path = dataset_csv_path()
     if os.path.exists(path):
         import csv
@@ -180,8 +176,7 @@ def build_pipeline() -> Pipeline:
 
 
 def out_paths(out_dir: str | None = None) -> tuple[str, str]:
-    """Artifact paths. `out_dir` overrides the repo's ml_models/ so callers
-    (notably the test suite) never rewrite the shipped, checksum-pinned model."""
+
     if out_dir is None:
         out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ml_models")
     out_dir = os.path.abspath(out_dir)
@@ -225,8 +220,8 @@ def main(out_dir: str | None = None) -> dict:
         "classes": [str(c) for c in pipe.classes_],
     }
     model_path, metrics_path = out_paths(out_dir)
-    # Atomic write: tmp file + rename, then a pinned checksum sidecar that
-    # the engine verifies before unpickling (Step 4, C10).
+
+
     import hashlib as _hashlib
     tmp_path = model_path + ".tmp"
     joblib.dump(pipe, tmp_path)
@@ -237,10 +232,10 @@ def main(out_dir: str | None = None) -> dict:
             h.update(chunk)
     with open(model_path + ".sha256", "w", encoding="utf-8") as f:
         f.write(h.hexdigest())
-    # P0: optional offline Ed25519 signing. When MODEL_SIGN_KEY (build
-    # machine only) is set, also emit <model>.sig so production loaders
-    # with MODEL_VERIFY_KEY can verify before unpickling. See
-    # scripts/sign_model.py for the full ceremony.
+
+
+
+
     sign_seed = (os.environ.get("MODEL_SIGN_KEY", "") or "").strip()
     if sign_seed:
         try:

@@ -12,7 +12,7 @@ type AuthCtx = {
   logout: () => Promise<void>;
 };
 
-// Seeded local dev tokens signed with backend dev secret
+
 const DEV_TOKENS: Record<string, string> = {
   admin: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4MjZlNTdjYi03OGIyLTQ5OWItYTQxMS0xMWVlMjdmMzYzMDgiLCJlbWFpbCI6ImFkbWluIiwicm9sZSI6IkFkbWluIiwiYXVkIjoiYXV0aGVudGljYXRlZCIsImV4cCI6MTgyMjAxNjYwNX0.0Ji48Z_BIaUIMx749qp2yxQiW8C4h8QzPQXoOGQwZ8o',
   analyst: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzNTU0YmQxZC01MDQ2LTQ0NjctOWU5Zi1lOWIxNDQxODJkOGIiLCJlbWFpbCI6ImFuYWx5c3QiLCJyb2xlIjoiQW5hbHlzdCIsImF1ZCI6ImF1dGhlbnRpY2F0ZWQiLCJleHAiOjE4MjIwMTY2Mzd9.YQnR806pYZUR6nMaCBP95MbzjwJqpi8CQtQhsXKRXPQ',
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) { setUser(null); setLoading(false); return; }
         try {
-          // Fetch app-level role + org from our public users table via the backend
+
           const profile = await jget('/auth/me');
           setUser(profile);
         } catch {
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const trimmed = email.trim();
-    // Allow seeded demo logins (admin / admin123 or analyst / analyst123) in dev or unconfigured mode
+
     if (!isSupabaseConfigured || trimmed.toLowerCase() === 'admin' || trimmed.toLowerCase() === 'analyst') {
       const roleKey = trimmed.toLowerCase().includes('admin') ? 'admin' : 'analyst';
       const token = DEV_TOKENS[roleKey];
@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) throw new Error(error.message);
-    return { needsConfirmation: true }; // User must verify email before logging in
+    return { needsConfirmation: true };
   };
 
   const logout = async () => {
@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
       }
     } catch {
-      /* ignore */
+
     }
     setUser(null);
   };

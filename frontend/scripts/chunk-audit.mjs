@@ -1,4 +1,4 @@
-// One-off chunk audit: prints cross-chunk imports and marker hits per chunk.
+
 import { readFileSync, readdirSync } from 'node:fs';
 
 const dir = new URL('../dist/assets/', import.meta.url);

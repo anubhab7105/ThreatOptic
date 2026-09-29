@@ -55,8 +55,8 @@ export function ThreatGauge({ dist }: { dist: { critical: number; high: number; 
   const total = Math.max(1, c + h + m + l);
   const highRisk = c + h;
   const pct = Math.round((100 * highRisk) / total);
-  // Resolved (not var()) colors: SVG presentation attributes do not resolve
-  // CSS var(), and the hook re-renders the gauge on theme change (§8).
+
+
   const ct = useChartTheme();
   const segs = [
     { v: c, color: ct.risk.critical },
@@ -191,7 +191,7 @@ export function CopyButton({ text, label = 'Copy', successLabel = 'Copied!' }: {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
+
       const ta = document.createElement('textarea');
       ta.value = text;
       document.body.appendChild(ta);

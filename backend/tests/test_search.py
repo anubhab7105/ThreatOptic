@@ -1,4 +1,4 @@
-"""Elastic mirror + search endpoint tests (F10)."""
+
 import uuid
 
 from fastapi.testclient import TestClient
@@ -26,7 +26,7 @@ def test_search_falls_back_to_sqlite():
         body = r.json()
         assert body["backend"] == "sqlite"
         assert any("zebra" in (hit.get("email") or {}).get("subject", "") for hit in body["hits"])
-        assert c.get("/api/v1/search", headers=h).status_code == 422  # q required
+        assert c.get("/api/v1/search", headers=h).status_code == 422
         assert c.get("/api/v1/search").status_code == 401
 
 

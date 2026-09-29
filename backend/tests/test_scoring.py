@@ -1,9 +1,9 @@
-"""Explainable scoring tests: signal schema, contributions sum to fraud_score."""
+
 import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
-from app import models  # noqa
+from app import models
 from app.modules.correlation.scoring import compute_scores
 from app.services.pipeline import process_raw_email
 
@@ -29,10 +29,10 @@ def test_signals_sum_to_score():
         assert REQUIRED_KEYS <= set(s), s
     total = round(sum(s["contribution_to_score"] for s in res["signals"]), 2)
     assert abs(total - res["fraud_score"]) < 0.1, (total, res["fraud_score"])
-    # new-domain + payment bonus fired
+
     bonus = next(s for s in res["signals"] if s["signal_name"] == "new_domain_payment_rule")
     assert bonus["contribution_to_score"] == 30.0
-    assert res["fraud_score"] >= 75  # exec-spoof floor also fires here
+    assert res["fraud_score"] >= 75
 
 
 def test_clean_email_zero_breakdown():

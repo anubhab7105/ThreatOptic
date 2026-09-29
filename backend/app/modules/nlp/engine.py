@@ -1,11 +1,4 @@
-"""NLP engine: urgency cues, impersonation language, BEC patterns + sklearn classifier.
 
-Design (per Techspec):
-- rule-based cue extractors (fast, explainable, used in fraud score)
-- TF-IDF + LogisticRegression classifier trained on curated phishing/BEC/clean samples
-  (scripts/train_nlp.py). Falls back to rules if model file missing.
-- Optional HuggingFace transformer if TRANSFORMERS_MODEL env set and libs installed.
-"""
 import os
 import re
 from typing import Any
@@ -32,8 +25,8 @@ BEC_PATTERNS = [
 CREDENTIAL_PATTERNS = [r"\blogin\b", r"\bpassword\b", r"\bverify\b.*\baccount\b", r"\bclick (here|below)\b.*\blogin\b"]
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml_models")
-# Pinned artifact path (Step 4, C10). The NLP_MODEL_PATH env override is
-# honored in development ONLY — prod never loads an env-controlled path.
+
+
 PINNED_MODEL_PATH = os.path.abspath(os.path.join(MODEL_DIR, "phishing_clf.joblib"))
 PINNED_SHA_PATH = PINNED_MODEL_PATH + ".sha256"
 
@@ -53,14 +46,7 @@ def _model_path() -> str:
 
 
 def _verify_checksum(path: str) -> bool:
-    """Trust gate before unpickling (P0, fail closed).
 
-    Delegates to the shared model_trust helper: Ed25519 signature when
-    MODEL_VERIFY_KEY is provisioned, else the .sha256 sidecar. Missing or
-    mismatched trust metadata => False (refuse to load) in every
-    environment except an explicit, logged MODEL_TRUST_INSECURE=1 dev
-    bypass. Previously a missing sidecar returned True — fail-open.
-    """
     import logging
     from ..model_trust import verify_model_artifact, ModelTrustError
     try:
@@ -76,7 +62,7 @@ _transformer_pipe = None
 
 
 def warmup() -> None:
-    """Load + verify the model once at startup (called from lifespan)."""
+
     _get_classifier()
     _get_transformer()
 
@@ -86,7 +72,7 @@ def _get_classifier():
     if _classifier is not None:
         return _classifier
     path = _model_path()
-    # P0: EVERY path (pinned or dev override) passes the trust gate first.
+
     if not _verify_checksum(path):
         return None
     try:
@@ -124,7 +110,7 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
     if cred:
         cues.append("credential-harvest")
 
-    # ML score
+
     ml_score = 0.0
     ml_label = "clean"
     clf = _get_classifier()
@@ -132,7 +118,7 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
         try:
             proba = clf.predict_proba([text])[0]
             classes = list(clf.classes_)
-            # assume classes contain 'phishing'/'malicious'
+
             best_i = int(proba.argmax())
             ml_label = str(classes[best_i])
             if "phish" in ml_label.lower() or "malic" in ml_label.lower() or "bec" in ml_label.lower():
@@ -142,10 +128,10 @@ def analyze_text(subject: str, body: str) -> dict[str, Any]:
         except Exception:
             pass
     else:
-        # rule fallback score
+
         ml_score = min(0.95, 0.15 * len(urgency) + 0.25 * len(bec) + 0.2 * len(imperson) + 0.15 * len(cred))
 
-    # Optional transformer rerank (cached object, dev-only model names)
+
     ml_score = _apply_transformer_rerank(text, ml_score)
 
     return {
@@ -163,11 +149,7 @@ _REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _get_transformer():
-    """Cached transformer rerank. Env model names honored in dev only (C10);
-    built once, never per-request. P0: the model revision MUST be pinned
-    by commit hash (TRANSFORMERS_REVISION) — unpinned pulls silently move.
-    Production refuses unpinned/badly-pinned transformers (falls back to
-    the sklearn classifier); development warns and proceeds."""
+
     global _transformer_pipe
     if _transformer_pipe is not None:
         return _transformer_pipe

@@ -1,15 +1,4 @@
-"""Policy evaluation (Rules.md) + dispatch to Slack/PagerDuty hooks.
 
-Step 4 honesty + robustness fixes:
-- No hardcoded "dashboard" delivery claim: dashboard visibility comes from
-  the persisted AnalysisResult row, not from here. `sent` lists only
-  channels actually attempted; `channel` is derived, never hardcoded.
-- Per-(email, severity) dedup window (15 min) so re-analysis doesn't re-page.
-- Per-channel rate limits (Slack 10/min, PagerDuty 5/min, in-process).
-- Retry with backoff (3 attempts) instead of single-shot fire-and-forget.
-- email_id sanitized before interpolation; failures log a short class
-  name, never raw exception internals.
-"""
 import logging
 import re
 import time
@@ -29,7 +18,7 @@ _id_ok = re.compile(r"^[A-Za-z0-9\-]{1,64}$")
 
 
 def evaluate_policy(score: float) -> tuple[str, str, str]:
-    """Returns (severity, action, channel)."""
+
     if score >= 90:
         return ("Critical", "Quarantine", "pagerduty+slack+dashboard")
     if score >= 75:

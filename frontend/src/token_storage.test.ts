@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import apiSrc from './api.ts?raw';
 
-// Supabase migration: the SDK (supabaseClient.ts) owns session persistence
-// (localStorage, auto-refresh) — api.ts must never manage tokens itself.
+
+
 describe('auth token storage hygiene (Supabase)', () => {
   const api: string = apiSrc as unknown as string;
 

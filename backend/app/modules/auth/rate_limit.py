@@ -1,9 +1,4 @@
-"""Rate limiting (slowapi) and security audit logging.
 
-Login lockout was removed in the Supabase migration (Supabase handles
-sign-in throttling server-side). The slowapi limiter still rate-limits
-all API endpoints, and `audit()` is still used by pipeline code.
-"""
 import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -19,7 +14,7 @@ def audit(event: str, **fields: object) -> None:
 
 
 def apply_limiter_setting() -> None:
-    """Sync slowapi's kill-switch with settings (called from lifespan)."""
+
     from ...config import get_settings
 
     limiter.enabled = str(get_settings().rate_limit_enabled).lower() not in ("", "0", "false", "no")

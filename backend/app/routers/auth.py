@@ -1,4 +1,4 @@
-"""Auth: /me profile endpoint. All sign-up/sign-in is handled by Supabase client-side."""
+
 from fastapi import APIRouter, Depends
 from .. import models, schemas
 from .deps import get_current_user

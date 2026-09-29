@@ -1,4 +1,4 @@
-"""Phase 3 tests: Celery optional path, shared cache, WebSocket alerts."""
+
 import uuid
 
 from fastapi.testclient import TestClient
@@ -40,7 +40,7 @@ def test_async_ingest_eager_roundtrip(monkeypatch):
             st = c.get(f"/api/v1/tasks/{tid}", headers=h).json()
             assert st["state"] == "SUCCESS"
             assert st["result"]["email_id"]
-            # queued mail is analyzable like sync mail
+
             assert c.get(f"/api/v1/emails/{st['result']['email_id']}", headers=h).status_code == 200
             assert c.get("/api/v1/tasks/not-a-task!!", headers=h).status_code == 400
     finally:
@@ -61,12 +61,12 @@ def test_cache_backends_and_dashboard_invalidation(monkeypatch):
     with TestClient(app) as c:
         h = _auth(c)
         before = c.get("/api/v1/dashboard", headers=h).json()["total_emails"]
-        # second read is served from cache (same value even as scope allows)
+
         assert c.get("/api/v1/dashboard", headers=h).json()["total_emails"] == before
         c.post("/api/v1/emails/ingest", headers=h,
                json={"raw": "From: a@b.test\nSubject: cache probe\n\nhello"})
         after = c.get("/api/v1/dashboard", headers=h).json()["total_emails"]
-        assert after == before + 1  # ingest invalidated the cached scope
+        assert after == before + 1
 
 
 def test_cache_geo_and_dns_wrappers(monkeypatch):
@@ -76,9 +76,9 @@ def test_cache_geo_and_dns_wrappers(monkeypatch):
     cache.cache_clear()
     geoip._geolocate_cached.cache_clear()
     g1 = geoip.geolocate("45.148.10.88")
-    geoip._geolocate_cached.cache_clear()  # compute path gone, shared cache remains
+    geoip._geolocate_cached.cache_clear()
     assert geoip.geolocate("45.148.10.88") == g1
-    whois_dns.dns_lookup("example.com")  # offline shape, cached without crash
+    whois_dns.dns_lookup("example.com")
     assert whois_dns.dns_lookup("example.com")["domain"] == "example.com"
 
 
@@ -97,7 +97,7 @@ def test_websocket_push_on_high_risk(monkeypatch):
     monkeypatch.setattr(pipe, "compute_scores", _hot)
     with TestClient(app) as c:
         h = _auth(c)
-        # P0: sockets need a short-lived ticket, not the access token.
+
         ticket = c.post("/api/v1/ws/ticket", headers=h).json()["ticket"]
         assert c.post("/api/v1/ws/ticket").status_code == 401
         with c.websocket_connect(f"/api/v1/ws/alerts?ticket={ticket}") as ws:
@@ -111,7 +111,7 @@ def test_websocket_push_on_high_risk(monkeypatch):
             msg = ws.receive_json()
             assert msg["event"] == "high-risk-alert"
             assert msg["fraud_score"] >= 75 and msg["email_id"]
-        # bad ticket closes; long-lived access tokens are NOT valid tickets
+
         try:
             with c.websocket_connect("/api/v1/ws/alerts?ticket=junk"):
                 raise SystemExit("should have closed")
@@ -144,7 +144,7 @@ def test_websocket_org_isolation():
         try:
             n = await manager.broadcast_alert({"event": "x"}, "org-a")
             assert n == 1 and len(received) == 1
-            # dead sockets pruned
+
             manager.disconnect(a)
             manager.disconnect(b)
             assert manager.count() == 0
@@ -156,7 +156,7 @@ def test_websocket_org_isolation():
 
 
 def test_task_polling_requires_ownership(monkeypatch):
-    """P0: task results are tenant-isolated — 401 anon, 404 foreign/unknown."""
+
     from app.main import app
     from app.services import tasks
     from app.config import get_settings

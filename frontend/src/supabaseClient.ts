@@ -10,7 +10,7 @@ export const isSupabaseConfigured = Boolean(
   !rawUrl.includes('placeholder')
 );
 
-// Fallback to a placeholder project so createClient does not throw 'supabaseUrl is required'
+
 const supabaseUrl = isSupabaseConfigured && rawUrl ? rawUrl : 'https://placeholder-project.supabase.co';
 const supabaseAnonKey = isSupabaseConfigured && rawKey ? rawKey : 'placeholder-anon-key';
 

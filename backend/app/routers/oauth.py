@@ -1,18 +1,4 @@
-"""Organization mailbox OAuth2 (C3/C4): Google + Microsoft consent flow.
 
-Security properties (P0):
-- `state` is an opaque, single-use, server-side-stored token (OAuthState
-  row): 10-minute expiry, bound to the initiating user. The browser holds
-  only this opaque identifier — never client secrets or PKCE verifiers.
-- Client secrets are NEVER accepted from the client (body or query);
-  they resolve server-side only (stored connection or env).
-- PKCE (S256) on both providers; verifier stored server-side with state.
-- redirect_uri must be allowlisted: checked at authorize time AND at
-  callback time (fail closed if the allowlist changed in between).
-- status/disconnect/sync are scoped to the caller's organization (C4);
-  users without an org are scoped to their own connections.
-- Rotated provider refresh tokens are persisted (service layer).
-"""
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -43,7 +29,7 @@ def _utcnow():
 
 
 def _expires_at(dt: datetime | None) -> datetime | None:
-    """Normalize a possibly-naive DB datetime to aware UTC for comparison."""
+
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -53,11 +39,7 @@ def _expires_at(dt: datetime | None) -> datetime | None:
 
 def create_oauth_state(db: Session, *, user_id: str, provider: str,
                        redirect_uri: str, client_id: str = "", client_secret: str = "") -> tuple[str, str]:
-    """Mint an opaque single-use state token + PKCE verifier, stored server-side.
 
-    Returns (state, code_verifier). The state is a random token with no
-    embedded data — it only indexes the OAuthState row.
-    """
     opaque = secrets.token_urlsafe(32)
     verifier = connectors._new_verifier()
     encrypted_secret = encrypt_secret(client_secret.strip()) if client_secret and client_secret.strip() else ""
@@ -76,20 +58,15 @@ def create_oauth_state(db: Session, *, user_id: str, provider: str,
 
 
 def consume_oauth_state(db: Session, *, state: str, provider: str) -> models.OAuthState:
-    """Validate an opaque state token and consume it single-use (fail closed).
 
-    Checks: row exists, provider matches, not already used, not expired.
-    Marks used=True before returning so replays fail. Raises HTTPException
-    400 on any mismatch — never returns a partial/ambiguous result.
-    """
     row = db.query(models.OAuthState).filter(
         models.OAuthState.state == (state or ""),
         models.OAuthState.provider == provider,
-        models.OAuthState.used == False,  # noqa: E712
+        models.OAuthState.used == False,
     ).first()
     if row is None:
         raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
-    if _expires_at(row.expires_at) is None or _expires_at(row.expires_at) < _utcnow():  # type: ignore[operator]
+    if _expires_at(row.expires_at) is None or _expires_at(row.expires_at) < _utcnow():
         raise HTTPException(400, "OAuth state expired — restart the connect flow")
     row.used = True
     db.commit()
@@ -104,12 +81,7 @@ def _provider_or_400(provider: str) -> str:
 
 
 def _tenant_scope_conn(query, user: models.User | None):
-    """Scope a MailboxConnection query to the caller's tenant (P0).
 
-    Org members share the org's connections; org-less users see only
-    their own rows. user=None (background jobs) means no fallback —
-    callers must pass an explicit row instead.
-    """
     if user is None:
         return query.filter(models.MailboxConnection.id == "__none__")
     if user.organization_id:
@@ -119,8 +91,7 @@ def _tenant_scope_conn(query, user: models.User | None):
 
 def _resolve_client_id(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None,
                        db: Session | None = None, user: models.User | None = None) -> str:
-    """Return client_id from: explicit > conn > TENANT-SCOPED connections >
-    own GmailAccount > env fallback (P0: never another tenant's credentials)."""
+
     if explicit and explicit.strip():
         return explicit.strip()
     if conn and conn.encrypted_client_id:
@@ -147,7 +118,7 @@ def _resolve_client_id(provider: str, explicit: str | None, conn: models.Mailbox
                 models.GmailAccount.encrypted_client_id != ""
             )
             if user is not None:
-                # GmailAccount is per-user: never borrow another user's row.
+
                 acct_q = acct_q.filter(models.GmailAccount.user_id == user.id)
             else:
                 acct_q = acct_q.filter(models.GmailAccount.id == "__none__")
@@ -168,8 +139,7 @@ def _resolve_client_id(provider: str, explicit: str | None, conn: models.Mailbox
 
 def _resolve_client_secret(provider: str, explicit: str | None, conn: models.MailboxConnection | None = None,
                            db: Session | None = None, user: models.User | None = None) -> str:
-    """Return client_secret from: explicit > conn > TENANT-SCOPED connections >
-    own GmailAccount > env fallback (P0: never another tenant's credentials)."""
+
     if explicit and explicit.strip():
         return explicit.strip()
     if conn and conn.encrypted_client_secret:
@@ -196,7 +166,7 @@ def _resolve_client_secret(provider: str, explicit: str | None, conn: models.Mai
                 models.GmailAccount.encrypted_client_secret != ""
             )
             if user is not None:
-                # GmailAccount is per-user: never borrow another user's row.
+
                 acct_q = acct_q.filter(models.GmailAccount.user_id == user.id)
             else:
                 acct_q = acct_q.filter(models.GmailAccount.id == "__none__")
@@ -222,7 +192,7 @@ def _redirect_or_400(uri: str | None) -> str:
 
 
 def _scope(query, user: models.User):
-    """Tenant scope (C4): caller's org, or own connections when org-less."""
+
     if user.organization_id:
         return query.filter(models.MailboxConnection.organization_id == user.organization_id)
     return query.filter(models.MailboxConnection.user_id == user.id)
@@ -250,7 +220,7 @@ def authorize(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create an opaque server-side state + PKCE pair, return the consent URL."""
+
     p = _provider_or_400(provider)
     uri = _redirect_or_400(payload.redirect_uri)
     cid = _resolve_client_id(p, payload.client_id, db=db, user=user)
@@ -276,9 +246,7 @@ async def callback(
     state: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Provider redirects here (no auth header possible): consume opaque
-    server-side state, exchange the code with PKCE, store credentials.
-    """
+
     p = _provider_or_400(provider)
     if not state:
         raise HTTPException(400, "invalid or expired OAuth state — restart the connect flow")
@@ -286,22 +254,22 @@ async def callback(
 
     owner = db.query(models.User).filter(models.User.id == row.user_id).first()
     if not owner:
-        # Fail closed: never attach a mailbox to a substitute user.
+
         raise HTTPException(400, "state owner no longer exists")
 
     verifier = row.code_verifier or ""
     if not verifier:
         raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
 
-    # redirect_uri must match the stored value AND be allowlisted now
-    # (fail closed if the allowlist changed since authorize time).
+
+
     if redirect_uri and redirect_uri != (row.redirect_uri or ""):
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     r_uri = row.redirect_uri or ""
     if not r_uri or not get_settings().oauth_redirect_allowed(r_uri):
         raise HTTPException(400, "redirect_uri is not allowlisted (check FRONTEND_URL / OAUTH_REDIRECT_ALLOWLIST)")
 
-    # client_id resolves from the stored row, then server-side fallbacks.
+
     cid = (row.client_id or "").strip() or _resolve_client_id(p, None, db=db, user=owner)
     sec = ""
     if getattr(row, "encrypted_client_secret", ""):
@@ -339,9 +307,9 @@ async def callback(
         models.MailboxConnection.account_email == address,
     ).first()
     if conn:
-        # P0: reassigning an existing mailbox requires same owner or same
-        # (non-empty) org — everything else is a cross-tenant hijack.
-        # None==None org equality must NOT pass (org-less takeover).
+
+
+
         same_owner = conn.user_id == owner.id
         same_org = bool(owner.organization_id and conn.organization_id) \
             and conn.organization_id == owner.organization_id
@@ -385,7 +353,7 @@ async def callback(
     db.commit()
     audit("oauth.callback", provider=p, account=address)
 
-    # URL-encode the redirect address
+
     from urllib.parse import quote, urlsplit
     base = None
     if r_uri:
@@ -424,9 +392,9 @@ def disconnect(provider: str, user: models.User = Depends(require_roles("Admin",
     n = query.delete(synchronize_session=False)
     gmail_cleared = False
     if p == "google":
-        # P0 mirror of /gmail/disconnect: also clear the caller's Gmail
-        # credential row so /gmail/status and /gmail/sync stop, not just
-        # the org-level mailbox row.
+
+
+
         gmail_acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
         if gmail_acct:
             db.delete(gmail_acct)

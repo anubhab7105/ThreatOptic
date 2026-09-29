@@ -1,22 +1,4 @@
-"""SPF / DKIM / DMARC validation. Real checks via pyspf/dkimpy/dnspython, graceful fallback.
 
-Trust model (P0, fail closed):
-- Upstream Authentication-Results / Received-SPF headers are UNTRUSTED by
-  default — anyone's MTA (including the attacker's) can stamp them.
-- They are honored ONLY when attributable to a configured trusted relay
-  boundary: the header's authserv-id must suffix-match TRUSTED_RELAY_HOSTS
-  (env or settings, same source as origin-IP extraction).
-- Even then, a trusted upstream "pass" NEVER overrides a locally computed
-  hard failure. Local and upstream verdicts are reported separately
-  (result["upstream"]) with provenance, so analysts see both.
-- No envelope sender (Return-Path) means SPF has no identity to check:
-  status "none" — never silently checked against the display From domain.
-- No global DNS resolver mutation: per-lookup isolated resolvers only.
-
-Live DNS checks only run when ENABLE_LIVE_LOOKUPS=1; otherwise every check
-reports an explicit "unverifiable" status unless trusted upstream headers
-exist (reported with "trusted-upstream:" provenance).
-"""
 import os
 import re
 from typing import Any
@@ -29,7 +11,7 @@ def _live() -> bool:
 
 
 def _trusted_relay_hosts() -> set[str]:
-    """Host suffixes identifying our own stamping infrastructure."""
+
     hosts = {h.strip().lower() for h in os.environ.get("TRUSTED_RELAY_HOSTS", "").split(",") if h.strip()}
     try:
         from ...config import get_settings
@@ -41,7 +23,7 @@ def _trusted_relay_hosts() -> set[str]:
 
 
 def _authserv_id(raw_headers: dict) -> str:
-    """Hostname of the MTA that stamped Authentication-Results ("" if none)."""
+
     if not isinstance(raw_headers, dict):
         return ""
     for k, v in raw_headers.items():
@@ -54,13 +36,11 @@ def _authserv_id(raw_headers: dict) -> str:
 
 
 def _upstream_trusted(raw_headers: dict) -> tuple[bool, str]:
-    """(trusted, authserv_id): upstream headers count ONLY when the stamping
-    host belongs to the configured trusted relay boundary. Fail closed:
-    unconfigured boundary or unknown stamper => untrusted."""
+
     sid = _authserv_id(raw_headers)
     if not sid:
-        # Received-SPF alone carries no authserv-id; without attribution it
-        # cannot be tied to our boundary either.
+
+
         return False, ""
     for suffix in _trusted_relay_hosts():
         from .psl import is_subdomain_of
@@ -70,7 +50,7 @@ def _upstream_trusted(raw_headers: dict) -> tuple[bool, str]:
 
 
 def _clean_domain(raw: str) -> str:
-    """Extract a bare domain from an address/header without lstrip() bugs."""
+
     s = (raw or "").strip().lower()
     if not s:
         return ""
@@ -84,7 +64,7 @@ def _clean_domain(raw: str) -> str:
 
 
 def _get_header(raw_headers: dict, name: str) -> str:
-    """Case-insensitive header retrieval from raw headers dictionary."""
+
     if not isinstance(raw_headers, dict):
         return ""
     if name in raw_headers:
@@ -101,17 +81,12 @@ def _return_path_domain(raw_headers: dict) -> str:
 
 
 def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
-    """Extract SPF, DKIM, and DMARC claims from upstream Authentication-Results / Received-SPF headers.
 
-    NOTE: the returned claims are UNTRUSTED until the caller checks them
-    against _upstream_trusted(). Treat status values here as "some MTA
-    claimed X", never as a verdict.
-    """
     results: dict[str, dict[str, str]] = {}
     if not isinstance(raw_headers, dict):
         return results
 
-    # 1. Received-SPF header
+
     recv_spf = _get_header(raw_headers, "Received-SPF")
     if recv_spf:
         m = re.search(r"\b(pass|fail|softfail|neutral|none|temperror|permerror)\b", recv_spf, re.IGNORECASE)
@@ -119,7 +94,7 @@ def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
             st = m.group(1).lower()
             results["spf"] = {"status": st, "detail": f"upstream-received-spf: {recv_spf[:120].strip()}"}
 
-    # 2. Authentication-Results / ARC-Authentication-Results headers
+
     auth_lines: list[str] = []
     for k, v in raw_headers.items():
         k_lower = str(k).lower()
@@ -151,8 +126,7 @@ def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
 
 
 def _with_upstream(result: dict[str, Any], upstream_claim: dict[str, Any] | None) -> dict[str, Any]:
-    """Attach the (un)trusted upstream claim for analyst provenance without
-    letting it change the local verdict."""
+
     if upstream_claim:
         result = dict(result)
         result["upstream"] = dict(upstream_claim)
@@ -178,15 +152,15 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
         return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}, upstream_spf)
 
     if not envelope_from:
-        # No envelope identity => SPF has nothing to check. "none", never
-        # the display From domain and never an upstream override.
+
+
         return _with_upstream({"status": "none", "detail": "no envelope sender; SPF not checked"}, upstream_spf)
 
     try:
         import spf
         result, comment = spf.check2(i=sender_ip, s=envelope_from, h=helo or None)
         if result == "fail":
-            # Hard failure stands even against a trusted upstream pass.
+
             return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
         if result in ("none", "temperror") and trust_upstream and upstream_spf:
             return {"status": upstream_spf.get("status", result),
@@ -220,8 +194,8 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
         res = dkim.verify(raw_bytes)
         if res:
             return _with_upstream({"status": "pass", "detail": "dkimpy-verify"}, upstream_dkim)
-        # Local cryptographic failure stands — a trusted upstream pass is
-        # attached for provenance but never overrides the fail.
+
+
         return _with_upstream({"status": "fail", "detail": "dkimpy-verify-failed"}, upstream_dkim)
     except Exception as e:
         if trust_upstream and upstream_dkim:
@@ -232,7 +206,7 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
 
 
 def dkim_signing_domain(raw_headers: dict) -> str:
-    """The d= domain from DKIM-Signature ("" when absent/unparseable)."""
+
     m = re.search(r"\bd\s*=\s*([\w.\-]+)", _get_header(raw_headers, "DKIM-Signature"), re.IGNORECASE)
     return (m.group(1).lower().rstrip(".") if m else "")
 
@@ -282,7 +256,7 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}, upstream_dmarc)
 
     recs = _txt_records(f"_dmarc.{from_domain}")
-    # Also check parent domain if subdomain (e.g., mail.example.com -> example.com)
+
     if not recs and "." in from_domain:
         parent_domain = from_domain.split(".", 1)[-1]
         if "." in parent_domain:
@@ -293,14 +267,14 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         pol_m = re.search(r"\bp\s*=\s*([a-zA-Z]+)", dmarc[0], re.IGNORECASE)
         pol = pol_m.group(1).lower() if pol_m else "none"
 
-        # Check alignment
+
         spf_status = (spf_res or {}).get("status", "").lower()
         dkim_status = (dkim_res or {}).get("status", "").lower()
 
         from .psl import same_organization
-        # PSL-aware organizational alignment (DMARC relaxed): same
-        # registrable domain in either direction — never raw endswith,
-        # which equated evil.co.uk with bank.co.uk via "co.uk".
+
+
+
         spf_match = same_organization(spf_domain, from_domain)
         dkim_match = same_organization(dkim_domain, from_domain)
 
@@ -321,13 +295,13 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
 
 def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_from: str = "") -> dict[str, Any]:
     from_domain = _clean_domain(_get_header(raw_headers, "From"))
-    # SPF authenticates the ENVELOPE sender (Return-Path), never the display
-    # From. Missing envelope => SPF "none", not a From-domain check.
+
+
     return_path = _get_header(raw_headers, "Return-Path")
     has_envelope = bool((envelope_from or "").strip() or return_path.strip())
     env_from = (envelope_from or "").strip() or return_path.strip()
 
-    # Upstream claims + trust gate: honored only when stamped by our boundary.
+
     upstream_auth = parse_auth_headers(raw_headers)
     trust_upstream, authserv_id = _upstream_trusted(raw_headers)
 
@@ -353,10 +327,10 @@ def validate_all(raw_bytes: bytes, raw_headers: dict, sender_ip: str, envelope_f
         trust_upstream=trust_upstream,
     )
     
-    # DMARC-style alignment requires an actual domain match, not just a pass.
+
     from .psl import same_organization
-    # DMARC-style alignment requires same registrable domain (PSL-aware),
-    # not just a pass and not raw endswith.
+
+
     spf_match = same_organization(spf_domain, from_domain)
     dkim_match = same_organization(dkim_domain, from_domain)
 

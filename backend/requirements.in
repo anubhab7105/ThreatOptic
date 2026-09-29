@@ -1,6 +1,6 @@
-# P0: exact pins (tested set, backend/.venv). Regenerate the hash lock with:
-#   backend/.venv/bin/pip-compile --generate-hashes --python-version 311 \
-#     --output-file=backend/requirements.txt backend/requirements.in
+
+
+
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
 SQLAlchemy==2.0.54
@@ -10,7 +10,7 @@ pydantic-settings==2.15.0
 python-multipart==0.0.32
 email-validator==2.3.0
 passlib[bcrypt]==1.7.4
-# Pinned: passlib 1.7.4 is incompatible with bcrypt>=4.1 (no __about__ attr).
+
 bcrypt==4.0.1
 PyJWT==2.14.0
 slowapi==0.1.10

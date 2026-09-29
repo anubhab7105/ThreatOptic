@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { useTheme } from './theme';
 
-/* Theme-aware tokens for canvas/SVG surfaces (Design.md §8). Charts, the map and
-   the graph canvas read colors through this hook so they re-render on theme
-   change instead of keeping old-theme colors. Phase 2 migrates remaining pages. */
+
+
+
 
 export type ChartTokens = {
   theme: 'light' | 'dark';
@@ -35,8 +35,8 @@ export function readChartTokens(theme: 'light' | 'dark'): ChartTokens {
     readVar('--chart-3', '#6D28D9'), readVar('--chart-4', '#0F766E'),
     readVar('--chart-5', '#B45309'), readVar('--chart-6', '#BE123C'),
   ];
-  // Entity colors stay fixed by type (Design.md §7.2) but resolve through
-  // tokens so both themes use the sanctioned hues.
+
+
   const entity: Record<string, string> = {
     IP_Address: readVar('--teal', charts[3]),
     Domain: readVar('--correlation', charts[2]),
@@ -67,8 +67,8 @@ export function readChartTokens(theme: 'light' | 'dark'): ChartTokens {
 
 export function useChartTheme(): ChartTokens {
   const { theme } = useTheme();
-  // DOM read (no write) memoized on theme: re-resolves tokens on theme change
-  // without a setState-in-effect cycle.
+
+
   return useMemo(() => {
     try {
       return readChartTokens(theme);

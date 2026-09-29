@@ -1,53 +1,4 @@
-"""add_rls_policies
 
-Row Level Security policies for tenant isolation (defense-in-depth).
-
-IMPORTANT — what this migration does and does not buy you
----------------------------------------------------------
-Application-level tenant checks (`_org_filter` / `_scope` in the routers)
-remain the ONLY enforced isolation for the backend's own connection: the
-app authenticates to Postgres with a single service connection string, not
-as a per-user Postgres role, so `auth.uid()` is NULL for every query it
-issues. A table owner also bypasses RLS by default.
-
-So these policies are inert unless queries run under a Postgres role that
-carries a Supabase JWT (`TO authenticated`). They are kept because they
-become real enforcement the moment that is true, and because they fail
-*closed* (zero rows) rather than open in the meantime. Do not treat them
-as a substitute for the application-layer checks.
-
-Two correctness rules this revision must keep:
-1. Dialect-guarded. `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` is
-   PostgreSQL-only; without the guard a SQLite dev/CI database fails the
-   whole upgrade chain with a syntax error.
-2. Never wider than the application. The application treats
-   `organization_id IS NULL` as *private org-less scope* visible only to
-   the owning user; a policy that says `organization_id IS NULL OR ...`
-   would hand every authenticated user all org-less rows — strictly
-   wider than the app allows. Org-less rows are therefore Admin-only here.
-
-A third, added after this revision broke a plain-Postgres dev setup: being
-PostgreSQL is not sufficient. Every policy here is written against Supabase's
-`auth.uid()` and granted `TO authenticated` — a role that exists only inside a
-Supabase project. On any other Postgres server the statement fails outright
-with `role "authenticated" does not exist`, which aborts the upgrade chain and
-takes the whole application down at boot. Since the policies are inert without
-those constructs anyway (see above), skipping them off-Supabase loses nothing
-and is strictly better than an unbootable database.
-
-A fourth, added when the same revision turned out to be broken on Supabase
-itself: every `auth.uid()` comparison below is cast with `::text`. The
-application stores identifiers as `String(36)` — `users.id`, `organization_id`,
-`user_id` are all `varchar` — while `auth.uid()` returns `uuid`. Postgres has
-no `varchar = uuid` operator, so the uncast form died at CREATE POLICY with
-
-    UndefinedFunction: operator does not exist: character varying = uuid
-
-which is just as fatal as the missing role: init_db() turns a failed upgrade
-into a hard boot failure. Cast the function, never the column — `uuid::text`
-cannot fail, whereas `users.id::uuid` would raise on any row whose id is not a
-well-formed UUID. Do not remove these casts; they are load-bearing.
-"""
 from typing import Sequence, Union
 
 from alembic import op
@@ -68,9 +19,9 @@ TABLES = [
     "oauth_states",
 ]
 
-# Same visibility rule as the application, minus the org-less clause:
-# same org, or Admin. `auth.uid() IS NOT NULL` keeps a NULL uid
-# (service-role / unauthenticated connection) from matching anything.
+
+
+
 _ORG_RULE = """
     USING (
         auth.uid() IS NOT NULL
@@ -94,7 +45,7 @@ _ORG_RULE = """
     )
 """
 
-# Child tables inherit visibility from their parent email row.
+
 _EMAIL_RULE = """
     USING (
         auth.uid() IS NOT NULL
@@ -120,7 +71,7 @@ _EMAIL_RULE = """
     )
 """
 
-# Per-user tables have no organization_id.
+
 _USER_RULE = """
     USING (
         auth.uid() IS NOT NULL
@@ -152,13 +103,7 @@ def _is_postgres() -> bool:
 
 
 def _is_supabase() -> bool:
-    """True only on a Supabase-managed Postgres.
 
-    The policies reference `auth.uid()` and are granted to the `authenticated`
-    role. Both are installed by Supabase, not by PostgreSQL. Probe for the
-    function rather than the role so a project that renamed or dropped the role
-    is treated as non-Supabase too — the policies could not be created there.
-    """
     return bool(
         op.get_bind().execute(
             sa.text(
@@ -173,10 +118,10 @@ def _is_supabase() -> bool:
 
 
 def _should_apply() -> bool:
-    # SQLite (CI / pytest) has no RLS; plain Postgres (a local dev server, or
-    # any non-Supabase managed instance) has no auth.uid() and no
-    # `authenticated` role. In both cases the application-layer tenant checks
-    # are the enforcement, exactly as on Supabase.
+
+
+
+
     return _is_postgres() and _is_supabase()
 
 

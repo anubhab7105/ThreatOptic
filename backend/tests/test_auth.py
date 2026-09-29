@@ -1,12 +1,4 @@
-"""Auth + RBAC tests for the Supabase-token posture.
 
-Since the Supabase migration the backend owns no credentials at all:
-sign-up/sign-in/refresh live in Supabase, and the API only verifies
-Supabase-issued JWTs against the `users` mirror row. These tests pin that
-contract — including the parts that must *stay* gone (no password
-endpoint, no long-lived token in a URL) and the WebSocket ticket
-replacement for query-string tokens.
-"""
 import uuid
 from datetime import timedelta
 
@@ -20,7 +12,7 @@ from app.modules.auth.security import create_ws_ticket, decode_token
 
 
 def _session():
-    """Fresh session from the (possibly test-rebound) sessionmaker."""
+
     from app.database import SessionLocal
     return SessionLocal()
 
@@ -29,14 +21,10 @@ def _uname(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-# --- no credential endpoints -------------------------------------------------
+
 
 def test_no_local_credential_endpoints():
-    """The backend must not accept passwords or mint sessions (C1/C2).
 
-    A 404 here is the guarantee: there is no surface where a password
-    crosses the API, and no local refresh-token store to steal.
-    """
     from app.main import app
 
     with TestClient(app) as c:
@@ -49,7 +37,7 @@ def test_no_local_credential_endpoints():
         assert c.get("/api/v1/auth/users", headers=login()[0]).status_code == 404
 
 
-# --- token verification ------------------------------------------------------
+
 
 def test_me_returns_mirror_row():
     from app.main import app
@@ -72,18 +60,18 @@ def test_protected_routes_require_auth():
         assert c.post("/api/v1/emails/ingest", json={"raw": "hi"}).status_code == 401
         assert c.get("/api/v1/cases").status_code == 401
         assert c.get("/api/v1/graph/campaigns").status_code == 401
-        # public surface still open
+
         assert c.get("/health").status_code == 200
 
 
 @pytest.mark.parametrize(
     "headers",
     [
-        {},                                                   # no credential
-        {"Authorization": "Bearer "},                         # empty bearer
-        {"Authorization": "Bearer not-a-jwt"},                # garbage
-        {"Authorization": "Basic dXNlcjpwYXNz"},              # wrong scheme
-        {"Authorization": "Bearer eyJhbGciOiJub25lIn0.e30."},  # alg=none
+        {},
+        {"Authorization": "Bearer "},
+        {"Authorization": "Bearer not-a-jwt"},
+        {"Authorization": "Basic dXNlcjpwYXNz"},
+        {"Authorization": "Bearer eyJhbGciOiJub25lIn0.e30."},
     ],
 )
 def test_malformed_credentials_rejected(headers):
@@ -110,8 +98,7 @@ def test_token_signed_with_wrong_secret_rejected():
 
 
 def test_token_with_wrong_audience_rejected():
-    """Supabase issues aud=authenticated; a token minted for another service
-    must not authenticate against this API."""
+
     from app.main import app
 
     wrong_aud = mint_token("some-user", aud="some-other-service")
@@ -132,7 +119,7 @@ def test_token_without_sub_rejected():
 
 
 def test_valid_token_for_unknown_user_rejected():
-    """Signature valid but no mirror row: 401, never a 500 or a phantom user."""
+
     from app.main import app
 
     with TestClient(app) as c:
@@ -142,14 +129,13 @@ def test_valid_token_for_unknown_user_rejected():
 
 
 def test_role_claim_does_not_override_mirror_row():
-    """A token claiming role=Admin must not escalate: the DB row is the
-    single source of truth for authorization."""
+
     from app.main import app
 
     with TestClient(app) as c:
         headers, user = login(role="ReadOnly")
         assert user.role == "ReadOnly"
-        # Re-mint with an Admin role claim for the same (ReadOnly) user.
+
         escalated = mint_token(user.id, email=user.email, role="Admin")
         h = {"Authorization": f"Bearer {escalated}"}
         r = c.post("/api/v1/cases", headers=h, json={"title": "escalation probe"})
@@ -157,7 +143,7 @@ def test_role_claim_does_not_override_mirror_row():
         assert c.get("/api/v1/auth/me", headers=headers).json()["role"] == "ReadOnly"
 
 
-# --- RBAC --------------------------------------------------------------------
+
 
 def test_rbac_admin_only_delete():
     from app.main import app
@@ -172,21 +158,21 @@ def test_rbac_admin_only_delete():
     with TestClient(app) as c:
         analyst_h, _user = login(role="Analyst")
 
-        # analyst can ingest + create cases
+
         r = c.post("/api/v1/emails/ingest", headers=analyst_h, json={"raw": "From: a@b.com\nSubject: t\n\nhello"})
         assert r.status_code == 200, r.text
         r = c.post("/api/v1/cases", headers=analyst_h, json={"title": "rbac probe"})
         assert r.status_code == 200, r.text
         cid = r.json()["id"]
 
-        # analyst cannot delete or run retention; admin can
+
         assert c.delete(f"/api/v1/cases/{cid}", headers=analyst_h).status_code == 403
         assert c.post("/api/v1/admin/retention", headers=analyst_h).status_code == 403
         assert c.delete(f"/api/v1/cases/{cid}", headers=admin_h).status_code == 200
         assert c.post("/api/v1/admin/retention", headers=admin_h).status_code == 200
 
 
-# --- WebSocket tickets (P0: no long-lived credential in a URL) ----------------
+
 
 def test_ws_ticket_is_short_lived_and_single_claim():
     secret = get_settings().secret_key
@@ -195,9 +181,9 @@ def test_ws_ticket_is_short_lived_and_single_claim():
     assert claims["type"] == "ws-ticket"
     assert claims["sub"] == "u-1"
     assert claims["role"] == "Analyst"
-    # 60s window: theft from a proxy log buys ~a minute, not a session
+
     assert 0 < (claims["exp"] - claims["iat"]) <= 60
-    # an access token is not a ticket (different signing key entirely)
+
     with pytest.raises(jwt.PyJWTError):
         decode_token(mint_token("u-1"), secret)
 

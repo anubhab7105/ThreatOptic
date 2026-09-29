@@ -1,9 +1,4 @@
-"""Alembic environment: managed (non-SQLite) databases upgrade via revisions.
 
-SQLite dev keeps the fast create_all path in init_db; Postgres/Supabase
-deployments should run `alembic upgrade head` (or rely on init_db, which
-attempts it first and falls back).
-"""
 import os
 import sys
 
@@ -14,7 +9,7 @@ from sqlalchemy import create_engine
 
 from app.config import get_settings
 from app.database import Base
-from app import models  # noqa: F401 — register all tables
+from app import models
 
 config = context.config
 target_metadata = Base.metadata

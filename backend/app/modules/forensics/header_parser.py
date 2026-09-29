@@ -1,11 +1,11 @@
-"""Full header parsing: X-Mailer, Message-ID, auth headers, display-name spoof checks."""
+
 import re
 from typing import Any
 
 EMAIL_RE = re.compile(r"([\w.\-+]+@[\w.\-]+\.\w+)")
 DISPLAY_RE = re.compile(r'^\s*"?([^"<]+)"?\s*<([^>]+)>\s*$')
 
-# Display names trading on these identities while sending from elsewhere.
+
 SPOOFED_IDENTITY_HINTS = (
     "ceo", "cfo", "cto", "president", "chairman", "board of directors",
     "human resources", "hr department", "payroll", "it helpdesk", "helpdesk",
@@ -15,12 +15,12 @@ SPOOFED_IDENTITY_HINTS = (
 
 
 def _identity_spoof(disp_name: str, from_addr: str) -> bool:
-    """Display name trades on an identity the sender domain doesn't own."""
+
     name = (disp_name or "").lower()
     if not name or not from_addr:
         return False
     if "@" in name and name.strip() != from_addr.lower():
-        return True  # display name is itself a different address
+        return True
     domain = from_addr.lower().split("@")[-1] if "@" in from_addr else ""
     for hint in SPOOFED_IDENTITY_HINTS:
         if hint in name and hint.replace(" ", "") not in domain.replace(".", ""):
@@ -48,16 +48,16 @@ def parse_headers(raw_headers: dict[str, Any]) -> dict[str, Any]:
     _, rp_addr = extract(return_path) if return_path else ("", "")
 
     flags: list[str] = []
-    # multiple From headers/addresses: classic spoofing setup
+
     from_addrs = EMAIL_RE.findall(frm)
     if len(from_addrs) > 1 or "\n" in frm:
         flags.append("multiple-from")
-    # display-name spoof: name trades on an unowned identity
+
     if _identity_spoof(disp_name, from_addr):
         flags.append("display-name-spoof")
-    # reply-to mismatch (PSL-aware same-organization comparison so
-    # support@mail.company.com vs ceo@company.com is NOT flagged, while
-    # attacker@evil.co.uk vs ceo@bank.co.uk IS).
+
+
+
     if reply_addr and from_addr and reply_addr.lower() != from_addr.lower():
         try:
             from .psl import same_organization
@@ -67,7 +67,7 @@ def parse_headers(raw_headers: dict[str, Any]) -> dict[str, Any]:
                 flags.append("reply-to-mismatch")
         except IndexError:
             flags.append("reply-to-mismatch")
-    # lookalike: punycode, homoglyph folds, and typosquats (shared module)
+
     for val in [from_addr, reply_addr, rp_addr]:
         if "xn--" in val.lower():
             flags.append("punycode-domain")

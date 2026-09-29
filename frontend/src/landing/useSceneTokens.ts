@@ -16,7 +16,7 @@ function readTokens(): SceneTokens {
   };
 }
 
-/** Reads --scene-* CSS vars and updates on theme change without remounting the canvas. */
+
 export function useSceneTokens(): SceneTokens {
   const [tokens, setTokens] = useState<SceneTokens>(() => {
     try {
@@ -30,7 +30,7 @@ export function useSceneTokens(): SceneTokens {
       try {
         setTokens(readTokens());
       } catch {
-        /* keep last */
+
       }
     };
     const mo = new MutationObserver(update);

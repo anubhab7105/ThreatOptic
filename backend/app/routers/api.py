@@ -1,4 +1,4 @@
-"""REST API: ingest, analysis, cases, dashboard, reports (per Design.md + AppFlow.md)."""
+
 import enum
 import logging
 import re
@@ -20,16 +20,16 @@ from .deps import get_current_user, require_roles
 log = logging.getLogger("api")
 router = APIRouter()
 
-# P0 singleflight for expensive cached endpoints (dashboard): concurrent
-# cache misses for one scope compute once; waiters read the winner's
-# entry instead of stampeding the DB. Plain threading primitives — these
-# are sync (threadpool) endpoints.
+
+
+
+
 _sf_lock = threading.Lock()
 _sf_inflight: dict[str, threading.Event] = {}
 
 
 def _singleflight_begin(key: str) -> tuple[bool, threading.Event]:
-    """Returns (is_owner, event). Non-owners wait on the owner's event."""
+
     with _sf_lock:
         existing = _sf_inflight.get(key)
         if existing is not None:
@@ -47,13 +47,12 @@ def _singleflight_end(key: str, event: threading.Event) -> None:
 
 MAX_RAW_BYTES = 5 * 1024 * 1024
 
-# ReadOnly = read-only; Analyst = ingest + edit cases; Admin = all + delete/retention/provisioning.
+
 READ_WRITE = ("Admin", "Analyst")
 
 
 def _org_filter(query, model, user: models.User):
-    """Tenant isolation: Admins see all; everyone else sees their own org
-    (NULL org matches NULL org via IS NULL comparison)."""
+
     if user.role == "Admin":
         return query
     return query.filter(model.organization_id == user.organization_id)
@@ -63,9 +62,7 @@ TASK_OWNER_TTL_S = 3600
 
 
 def _record_task_owner(task_id: str, user: models.User) -> None:
-    """Bind a Celery task to its submitter (P0: task polling is otherwise
-    cross-tenant readable). Best-effort cache write; a missing record
-    fails closed as 404 on poll."""
+
     try:
         from ..modules.cache import cache_set
         cache_set(f"task-owner:{task_id}",
@@ -90,7 +87,7 @@ class CaseStatus(str, enum.Enum):
 
 
 class CaseUpdate(BaseModel):
-    """Whitelisted, validated case edits (no mass assignment)."""
+
     title: str | None = Field(default=None, min_length=1, max_length=512)
     status: CaseStatus | None = None
     assignee_id: str | None = None
@@ -106,13 +103,7 @@ class IngestBody(BaseModel):
 
 
 def _validate_case_emails(db: Session, user: models.User, email_ids: list[str] | None) -> list[str]:
-    """Validate linked mail belongs to the caller's tenant (P0).
 
-    Every ID must exist AND be tenant-visible (same org, or Admin);
-    anything else is 404 indistinguishable from missing — no
-    cross-tenant existence inference via linkage. Dedupes, preserves
-    order.
-    """
     ids = list(dict.fromkeys(email_ids or []))
     if not ids:
         return []
@@ -162,7 +153,7 @@ async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = 
 async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode: bool = Query(False),
                         db: Session = Depends(get_db),
                         user: models.User = Depends(require_roles(*READ_WRITE))):
-    # Validate file type - only allow email formats
+
     allowed_types = {'message/rfc822', 'application/octet-stream', 'text/plain', 'application/mime'}
     content_type = (f.content_type or '').lower()
     filename = (f.filename or '').lower()
@@ -202,12 +193,7 @@ async def ingest_upload(request: Request, f: UploadFile = File(...), async_mode:
 @router.get("/tasks/{task_id}", response_model=schemas.AsyncTaskStatus)
 def task_status(task_id: str, db: Session = Depends(get_db),
                 user: models.User = Depends(get_current_user)):
-    """Poll a Celery ingestion task (202 flow).
 
-    P0: requires auth and task ownership — same user, same org, or Admin.
-    Anything else is 404 (indistinguishable from missing: no existence
-    or tenant leak).
-    """
     from ..services.tasks import broker_configured, celery_app
     if not broker_configured():
         raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
@@ -265,13 +251,13 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
     if not e:
         raise HTTPException(404, "email not found")
     if user.role != "Admin" and e.organization_id != user.organization_id:
-        # Same 404 as missing: cross-tenant existence must not leak.
+
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
-    # P0: re-enrichment below issues system-resolver DNS (gethostbyname,
-    # no timeout) plus live lookups — the offline switch gates ALL of it.
-    # Offline returns the stored trace as-is (no network, no GET writes).
+
+
+
     from ..config import get_settings as _get_settings
     _detail_live = bool(_get_settings().live_lookups)
     if t and _detail_live:
@@ -298,12 +284,12 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
                     if has_coords(new_geo):
                         break
 
-            # Fallback to domain MX or A record
+
             domain = e.sender_address.split("@")[-1].strip(" <>") if e.sender_address else ""
             if not has_coords(new_geo) and domain:
                 try:
                     import socket
-                    # Try MX first
+
                     dns_mx = (t.dns_data or {}).get("mx", [])
                     for mx_host in dns_mx[:3]:
                         clean_mx = str(mx_host).strip().rstrip(".")
@@ -326,7 +312,7 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
                 except Exception:
                     pass
 
-            # Fallback to WHOIS country or TLD country centroid
+
             if not has_coords(new_geo):
                 whois_c = str((t.whois_data or {}).get("country", "") or "").strip().upper()
                 if whois_c and len(whois_c) == 2:
@@ -390,15 +376,15 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
     hit = cache_get(key)
     if isinstance(hit, dict):
         return hit
-    # P0 singleflight: concurrent cache misses for one scope compute once;
-    # waiters read the winner's cache entry instead of stampeding the DB.
+
+
     owner, event = _singleflight_begin(key)
     if not owner:
         event.wait(timeout=30)
         hit = cache_get(key)
         if isinstance(hit, dict):
             return hit
-        # Winner failed: fall through and compute (never propagate its error).
+
     try:
         stats = _compute_dashboard(db, user)
         cache_set(key, stats, 300)
@@ -408,8 +394,7 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(get_cur
 
 
 def _compute_dashboard(db: Session, user: models.User) -> dict:
-    """Dashboard stats via SQL aggregates (P0): COUNT/GROUP BY only — the
-    full analysis set is never loaded into Python."""
+
     from sqlalchemy import case, func
     from ..services.campaigns import _ensure_graph
     _ensure_graph(db)
@@ -465,7 +450,7 @@ def _compute_dashboard(db: Session, user: models.User) -> dict:
 @router.get("/search")
 def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query(50, ge=1, le=100),
            db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Full-text forensic search: Elasticsearch when configured, SQLite fallback (F10)."""
+
     from ..modules.search.elastic_sync import search_emails
     return search_emails(q, limit=limit, db=db, organization_id=None if user.role == "Admin" else user.organization_id)
 
@@ -478,21 +463,15 @@ def graph_related(value: str = Query(..., min_length=1, max_length=320),
     graph = related_entities(value, db=db, email_id=email_id)
     if user.role == "Admin":
         return graph
-    # P0: traversal runs on the shared global graph — strip foreign email
-    # nodes (addresses are tenant PII); infra nodes stay as shared intel.
+
+
     return _filter_graph_emails(
         graph, _tenant_email_addresses(db, user.organization_id))
 
 
 @router.get("/graph/campaigns")
 def graph_campaigns(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Shared infrastructure clusters (P0 documented access control).
 
-    Returns IP/domain clusters only — no email addresses, subjects, or
-    other tenant-attributable metadata. Cluster membership derives from
-    the global graph (shared threat intel); email-level detail stays
-    tenant-scoped behind /campaigns and /graph/related.
-    """
     return find_campaigns()
 
 
@@ -613,7 +592,7 @@ def report_pdf(email_id: str, db: Session = Depends(get_db), user: models.User =
     from ..modules.reporting.generator import build_report_pdf
     from ..modules.graph.attribution import attribute
     if not re.match(r"^[A-Za-z0-9\-]{1,64}$", email_id or ""):
-        # email_id lands in Content-Disposition: reject anything else.
+
         raise HTTPException(400, "invalid report id")
     e, a, t = _report_context(email_id, db, user)
     email_d = {"subject": e.subject, "sender_address": e.sender_address, "recipient_address": e.recipient_address,
@@ -643,10 +622,7 @@ def run_retention(
 
 @router.get("/model/metrics")
 def model_metrics():
-    """NLP classifier transparency: held-out precision/recall/F1/confusion matrix.
 
-    Metrics are computed and cached by backend/scripts/train_nlp.py.
-    """
     return _load_model_metrics()
 
 

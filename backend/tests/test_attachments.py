@@ -1,9 +1,9 @@
-"""Attachment/malware analysis tests (F6)."""
+
 import asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
-from app import models  # noqa
+from app import models
 from app.modules.threat_intel.attachment_analyzer import (
     analyze_attachments,
     lookup_hash_virustotal,

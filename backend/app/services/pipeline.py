@@ -1,10 +1,4 @@
-"""End-to-end pipeline: AppFlow.md Ingest -> Process -> Correlate/Score -> Alert -> Store.
 
-Robustness contract: a single enrichment failing (DNS down, lib missing, weird
-MIME) must NEVER fail the whole ingestion. Each stage is guarded; blocking
-network lookups run in threads with tight timeouts and are disabled by default
-(ENABLE_LIVE_LOOKUPS=1 to opt in).
-"""
 import asyncio
 from datetime import datetime, timezone
 import logging
@@ -39,14 +33,7 @@ def _sender_domain(from_addr: str) -> str:
 
 def _geo_fallbacks(path: list, dnsd: dict, domain: str, whois: dict,
                    geo: dict, live_lookups: bool) -> dict:
-    """Synchronous geo fallback chain (relay hops -> MX/A -> country).
 
-    P0: runs in a worker thread under a timeout — NEVER on the event loop.
-    System-resolver DNS (socket.gethostbyname, no per-call timeout and
-    outside every library timeout) runs ONLY when live lookups are enabled,
-    so the offline switch covers every network path. Pure-local country
-    fallbacks always run.
-    """
     import socket
     from ..modules.traceability.geoip import geolocate, geolocate_country, has_coords
 
@@ -96,7 +83,7 @@ def _geo_fallbacks(path: list, dnsd: dict, domain: str, whois: dict,
             except Exception:
                 pass
 
-    # Country fallback from whois or domain TLD (local data only)
+
     if not has_coords(geo):
         whois_country = str((whois or {}).get("country", "") or "").strip().upper()
         if whois_country and len(whois_country) == 2:
@@ -140,8 +127,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     import hashlib
     eml_hash = hashlib.sha256(bytes(raw)).hexdigest()
-    # Idempotent ingest: same bytes + same tenant returns the stored verdict
-    # instead of duplicating rows (unique raw_eml_hash backing).
+
+
     dup = db.query(EmailRecord).filter(
         EmailRecord.raw_eml_hash == eml_hash,
         EmailRecord.organization_id == organization_id).first()
@@ -185,7 +172,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception:
         origin_ip = ""
 
-    # Blocking enrichment concurrently in threads (each is internally guarded).
+
     geo, whois, dnsd, infra, auth = await asyncio.gather(
         _to_thread(geolocate, origin_ip),
         _to_thread(whois_lookup, _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))),
@@ -201,9 +188,9 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     domain = _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))
 
-    # P0: sync geo fallbacks (incl. system-resolver DNS) run in a worker
-    # thread with a timeout — never blocking the event loop — and the
-    # offline switch gates every resolver network path.
+
+
+
     from ..config import get_settings as _get_settings
     try:
         geo_fb = await _to_thread(
@@ -214,8 +201,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("geo fallbacks failed: %s", e)
 
-    # geo may lack isp/asn when offline — refresh infra flags with what we
-    # have (off the event loop: may issue DNS blocklist lookups when live).
+
+
     try:
         infra_fb = await _to_thread(
             flag_infrastructure, origin_ip, str(geo.get("isp", "")), str(geo.get("asn", "")),
@@ -240,8 +227,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
 
     nlp_res, url_res, attach_res = await asyncio.gather(
         _to_thread(analyze_text, parsed.get("subject", ""), parsed.get("body_text", ""), timeout=5.0),
-        # P0: VT submit+poll is async with a shared per-mail deadline — never
-        # blocking sleeps in the request path.
+
+
         analyze_urls_async(urls, vt_key),
         _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key, timeout=3.0),
         return_exceptions=True,
@@ -276,8 +263,8 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     email_row = EmailRecord(
         message_id=parsed.get("message_id", ""), sender_address=parsed.get("sender_address", ""),
         recipient_address=parsed.get("recipient_address", ""), subject=parsed.get("subject", ""),
-        # Step 3: raw body_text is NEVER persisted — only the masked version.
-        # The raw body lives in memory for this run (scoring/masking) and is dropped.
+
+
         raw_headers=headers, body_text="", body_text_masked=masked_body,
         attachments_metadata=parsed.get("attachments_metadata", []), raw_eml_hash=parsed.get("raw_eml_hash", ""),
         timestamp=parsed.get("timestamp") or datetime.now(timezone.utc),
@@ -312,7 +299,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         attribution = {"campaign": "unknown", "confidence": 0.0, "signals": []}
     try:
         from ..modules.search.elastic_sync import index_email
-        # Step 3: index masked/minimal fields only — never raw PII.
+
         index_email(email_row.id,
                     {"subject": mask_text(email_row.subject),
                      "sender_address": mask_text(email_row.sender_address),
@@ -338,7 +325,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
     except Exception as e:
         log.warning("alert dispatch failed: %s", e)
         alert = {"severity": "Low", "action": scoring.get("action", "Deliver"), "sent": ["dashboard"]}
-    # Real-time push for high-risk mail (best-effort; never fails ingestion).
+
     try:
         if scoring["fraud_score"] >= 75:
             from ..routers.ws import manager as _ws_manager

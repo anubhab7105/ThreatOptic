@@ -19,8 +19,7 @@ router = APIRouter(prefix="/gmail", tags=["gmail"])
 
 def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = None,
                        db: Session | None = None, user: models.User | None = None) -> str:
-    """Return client_id from: explicit param > own acct > TENANT-SCOPED
-    MailboxConnection > env fallback (P0: never another tenant's credentials)."""
+
     if explicit and explicit.strip():
         return explicit.strip()
     if acct and acct.encrypted_client_id:
@@ -52,8 +51,7 @@ def _resolve_client_id(explicit: str | None, acct: models.GmailAccount | None = 
 
 def _resolve_client_secret(explicit: str | None, acct: models.GmailAccount | None = None,
                            db: Session | None = None, user: models.User | None = None) -> str:
-    """Return client_secret from: explicit param > own acct > TENANT-SCOPED
-    MailboxConnection > env fallback (P0: never another tenant's credentials)."""
+
     if explicit and explicit.strip():
         return explicit.strip()
     if acct and acct.encrypted_client_secret:
@@ -91,12 +89,7 @@ def _client_secret() -> str:
 
 
 def _redirect_uri(explicit: str | None) -> str:
-    """Resolve + enforce the redirect URI allowlist (P0).
 
-    Fail closed: any supplied or defaulted URI must be allowlisted via
-    FRONTEND_URL / GOOGLE_REDIRECT_URI / OAUTH_REDIRECT_ALLOWLIST —
-    never passed through unchecked (open-redirect / code-leak risk).
-    """
     from .oauth import _redirect_or_400
     uri = (explicit or "").strip() or get_settings().google_redirect_uri or "http://localhost:5173/"
     return _redirect_or_400(uri)
@@ -112,7 +105,7 @@ def _status_payload(user: models.User, db: Session) -> dict:
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     has_stored = bool(acct and acct.encrypted_client_id)
     if not has_stored:
-        # P0: tenant-scoped only — never infer other tenants' connections.
+
         has_stored = bool(_tenant_scope_conn(db.query(models.MailboxConnection).filter(
             models.MailboxConnection.provider == "google",
             models.MailboxConnection.encrypted_client_id != ""
@@ -151,8 +144,8 @@ async def callback(
     db: Session = Depends(get_db),
 ):
     from .oauth import consume_oauth_state
-    # P0: verify the opaque state belongs to THIS caller (CSRF binding),
-    # then consume it single-use. No state → no exchange.
+
+
     row = consume_oauth_state(db, state=payload.state, provider="google")
     if row.user_id != user.id:
         raise HTTPException(400, "OAuth state does not belong to this session — restart the connect flow")
@@ -209,8 +202,8 @@ async def callback(
         models.MailboxConnection.account_email == address,
     ).first()
     if conn:
-        # P0: same hijack gate as org OAuth — same owner or same
-        # (non-empty) org only; None==None org equality must NOT pass.
+
+
         same_owner = conn.user_id == user.id
         same_org = bool(user.organization_id and conn.organization_id) \
             and conn.organization_id == user.organization_id
@@ -255,13 +248,13 @@ async def sync(
     db.commit()
 
     try:
-        # No plaintext fallback: undecryptable rows are pre-vault legacy
-        # values — the owner must reconnect (C5 forced re-auth).
+
+
         raw_token = vault.decrypt_secret(acct.refresh_token)
     except Exception:
         raise HTTPException(400, "stored Gmail credentials are invalid — please disconnect and reconnect the mailbox")
-    # Reuse the client_id pinned at connect time; fail loudly (with a log)
-    # instead of passing an empty string when OAuth is unconfigured.
+
+
     cid = (acct.client_id or "").strip() or get_settings().google_client_id
     if not cid:
         log.error("gmail sync for user %s has no client_id (connect-time or settings)", user.id)
@@ -320,14 +313,7 @@ async def sync(
 
 @router.delete("/disconnect")
 def disconnect(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Fully disconnect the caller's Gmail mailbox (P0).
 
-    Deletes BOTH the Gmail credential row and the caller's own
-    google MailboxConnection rows so background polling actually stops.
-    Rows owned by other org members are left alone (still legitimately
-    connected for the org). Best-effort revokes the refresh token at
-    Google; revoke failure never fails the local disconnect.
-    """
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
     raw_refresh: str | None = None
     if acct:

@@ -1,4 +1,4 @@
-"""Auth dependencies: Supabase JWT verification + RBAC."""
+
 import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, HTTPException, status
@@ -10,19 +10,14 @@ from ..config import get_settings
 
 bearer_scheme = HTTPBearer()
 
-# Cache the JWKS client so it's not recreated on every request.
-# PyJWKClient fetches Supabase's public keys and supports both
-# the new ECC P-256 (ES256) and legacy HS256 signing algorithms.
+
+
+
 _jwks_client: PyJWKClient | None = None
 
 
 def _get_jwks_client() -> PyJWKClient | None:
-    """JWKS client, or None when Supabase Auth is not configured.
 
-    Returning None (instead of a client pointed at a relative URI) keeps
-    the HS256 fallback path from paying a doomed network round-trip on
-    every request in deployments/tests without SUPABASE_URL.
-    """
     global _jwks_client
     if _jwks_client is None:
         settings = get_settings()
@@ -41,8 +36,8 @@ def get_current_user(
     settings = get_settings()
     token = credentials.credentials
     try:
-        # Try JWKS first (supports both new ECC/ES256 and legacy HS256).
-        # Falls back to the shared secret if JWKS lookup fails (e.g. offline).
+
+
         try:
             jwks_client = _get_jwks_client()
             if jwks_client is None:

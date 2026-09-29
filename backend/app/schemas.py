@@ -1,4 +1,4 @@
-"""Pydantic schemas for API."""
+
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, field_serializer
 
@@ -147,8 +147,8 @@ class GmailAuthUrlOut(BaseModel):
 
 
 class GmailAuthUrlIn(BaseModel):
-    # P0: client_id/redirect_uri travel in POST body over TLS, never as
-    # query params (query strings leak to proxy/access logs).
+
+
     redirect_uri: str = Field(min_length=1, max_length=1024)
     client_id: str | None = Field(default=None, max_length=320)
     client_secret: str | None = Field(default=None, max_length=320)
@@ -156,8 +156,8 @@ class GmailAuthUrlIn(BaseModel):
 
 class GmailCallbackIn(BaseModel):
     code: str = Field(min_length=1)
-    # P0: opaque server-side state token (CSRF + PKCE binding). Required —
-    # the callback verifies it belongs to the caller before exchanging.
+
+
     state: str = Field(min_length=1, max_length=256)
     redirect_uri: str | None = None
     client_id: str | None = None

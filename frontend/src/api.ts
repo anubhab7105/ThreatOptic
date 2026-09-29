@@ -1,4 +1,4 @@
-/** API client — base URL configurable via VITE_API_URL (dev proxy falls back to ''). */
+
 import { supabase } from './supabaseClient';
 
 export const BASE: string =
@@ -15,13 +15,13 @@ async function authHeaders(extra: Record<string, string> = {}): Promise<Record<s
     const { data: { session } } = await supabase.auth.getSession();
     token = session?.access_token;
   } catch {
-    /* ignore */
+
   }
   if (!token) {
     try {
       token = localStorage.getItem('soc-dev-token') || undefined;
     } catch {
-      /* ignore */
+
     }
   }
   return token
@@ -37,25 +37,25 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Hosts the browser is ever allowed to be handed off to for OAuth consent.
- * Mirrors the fixed endpoints in backend/app/modules/ingestion/connectors.py
- * (GOOGLE_AUTH_URL / MS_AUTH_URL) — no wildcards, https only.
- */
+
+
+
+
+
 const IDP_ORIGINS: Record<string, readonly string[]> = {
   google: ['https://accounts.google.com'],
   microsoft: ['https://login.microsoftonline.com'],
 };
 
-/**
- * Validate a server-supplied `auth_url` before navigating to it (P1).
- *
- * The API builds this URL from fixed constants, so a host that is not the
- * real IdP means something upstream is wrong or compromised. Refusing here
- * keeps a "log in to connect your mailbox" flow from becoming a phishing
- * hop off a domain analysts are trained to trust. Fails closed: the caller
- * must handle the throw and must not navigate anyway.
- */
+
+
+
+
+
+
+
+
+
 export function assertIdpUrl(url: unknown, provider: string): string {
   const raw = typeof url === 'string' ? url.trim() : '';
   let parsed: URL;
@@ -83,7 +83,7 @@ async function handle(r: Response) {
   const ct = r.headers.get('content-type') || '';
   if (ct.includes('application/pdf')) return r.blob();
   if (!ct.includes('application/json')) {
-    // Non-JSON 2xx (plain text, empty): return text, never throw SyntaxError.
+
     return r.text().catch(() => '');
   }
   try {
@@ -93,25 +93,25 @@ async function handle(r: Response) {
   }
 }
 
-/**
- * Build the message shown when fetch() itself is rejected.
- *
- * The browser reports "Failed to fetch" for every one of these, and — this
- * is the trap — it never reveals a cross-origin response body. So the two
- * commonest causes are indistinguishable from inside the page:
- *
- *   a) VITE_API_URL points at a host that does not exist. A one-character
- *      typo in a deploy-time-baked URL lands on a *different* app that
- *      answers 404 with no CORS headers, which the browser surfaces as the
- *      exact same "no Access-Control-Allow-Origin header" message as (b).
- *      Hosts like Railway return `{"message":"Application not found"}`.
- *   b) The host is fine but its CORS allowlist omits this page's origin.
- *
- * They are separated by a single curl the user can run themselves, so hand
- * them the exact command and say which side of it to look at. When VITE_API_URL
- * is unset the calls are same-origin and CORS cannot be involved at all, so
- * that branch drops the allowlist theory entirely.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export function networkFailureMessage(
   path: string,
   base: string = BASE,
@@ -143,8 +143,8 @@ export function networkFailureMessage(
   );
 }
 
-/** Core request: Supabase SDK owns session refresh — on 401 we surface
- * `soc:unauthorized` so AuthProvider can drop to signed-out state. */
+
+
 async function request(path: string, init: RequestInit, opts: { auth?: boolean } = {}): Promise<any> {
   const headers = { ...(init.headers as Record<string, string> || {}) };
   let r: Response;
@@ -154,9 +154,9 @@ async function request(path: string, init: RequestInit, opts: { auth?: boolean }
       headers: opts.auth === false ? headers : await authHeaders(headers),
     });
   } catch (e) {
-    // A rejected fetch() means the browser never got a response at all. The
-    // console says only "Failed to fetch", which conflates two causes the
-    // user must distinguish, so name the branch they are actually in.
+
+
+
     if (e instanceof TypeError) {
       throw new ApiError(0, networkFailureMessage(path));
     }
@@ -208,7 +208,7 @@ export async function uploadEmFile(file: File) {
   return request('/emails/upload', { method: 'POST', body: fd });
 }
 
-/** Poll a Celery ingestion task until terminal state (Phase 3 item 10). */
+
 export async function pollTask(taskId: string, tries = 30, delayMs = 2000): Promise<any> {
   for (let i = 0; i < tries; i++) {
     const st = await jget(`/tasks/${taskId}`);
@@ -219,7 +219,7 @@ export async function pollTask(taskId: string, tries = 30, delayMs = 2000): Prom
   throw new ApiError(504, `background task ${taskId} still running`);
 }
 
-/** Authenticated download (report links can't carry a bearer token as plain anchors). */
+
 export async function downloadReport(id: string, kind: 'pdf' | 'json') {
   const blob = (await request(`/reports/${id}.${kind}`, { method: 'GET' })) as Blob;
   const url = URL.createObjectURL(blob instanceof Blob ? blob : new Blob([JSON.stringify(blob, null, 2)], { type: 'application/json' }));

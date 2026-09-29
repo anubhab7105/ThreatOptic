@@ -1,8 +1,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { severityOf } from './components';
 
-/* Shared neumorphic primitives (Design.md §5). All colors via semantic tokens only.
-   Existing pages keep working: these are additive; components.tsx is untouched. */
+
+
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
   return <span className="neu-spinner" role="status" aria-label={label} />;
@@ -286,7 +286,7 @@ export function Drawer({ title, onClose, children }: {
   );
 }
 
-/** Distinct icon per severity (never color alone): Critical octagon, High triangle, Medium circle, Low shield. */
+
 export function SeverityIcon({ severity }: { severity: string }) {
   const s = severity.toLowerCase();
   const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;

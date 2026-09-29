@@ -1,4 +1,4 @@
-"""Weighted fraud-score ensemble (0-100) + Rules.md thresholds & behavioral rules."""
+
 from typing import Any
 
 WEIGHTS = {"nlp": 0.30, "auth": 0.25, "intel": 0.20, "routing": 0.15, "attachment": 0.10}
@@ -9,19 +9,18 @@ def _clamp(x: float) -> float:
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
-    """float() that never raises on None/str garbage (Step 4)."""
+
     try:
         out = float(value)
     except (TypeError, ValueError):
         return default
-    if out != out or out in (float("inf"), float("-inf")):  # NaN / inf
+    if out != out or out in (float("inf"), float("-inf")):
         return default
     return out
 
 
 def _auth_part(status: str, detail: str) -> float:
-    """Per-mechanism risk. 'unverifiable' (not checked) scores near-zero —
-    it must never count the same as a real failure (Step 4)."""
+
     s = (status or "").lower()
     d = (detail or "").lower()
     if s == "pass":
@@ -32,14 +31,14 @@ def _auth_part(status: str, detail: str) -> float:
         return 5.0
     if s == "none":
         return 30.0
-    return 15.0  # temperror / unknown: checked, but inconclusive
+    return 15.0
 
 
 def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str], header_flags: list[str],
                     domain_age_days: int | None, contains_payment: bool,
                     attachment: dict | None = None) -> dict[str, Any]:
     nlp_score = _safe_float(nlp.get("ml_score", 0.0)) * 100.0
-    # auth: pass=0 risk; real failures hurt; unverifiable (offline) barely counts
+
     spf = auth.get("spf", {}).get("status", "")
     dkim = auth.get("dkim", {}).get("status", "")
     dmarc = auth.get("dmarc", {}).get("status", "")
@@ -58,8 +57,8 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
             + WEIGHTS["attachment"] * attachment_score)
 
     extras: list[str] = []
-    # Behavioral rule: new domain (<30d) + payment instructions => +30.
-    # Negative/future ages are clock garbage, not youth — ignore them.
+
+
     try:
         age = None if domain_age_days is None else float(domain_age_days)
         if age is not None and age < 0:
@@ -70,9 +69,9 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
     if age is not None and age < 30 and contains_payment:
         bonus = 30.0
         extras.append("new-domain+payment:+30")
-    # SPF/DKIM fail + C-level claim => auto-escalate High. A missing DKIM
-    # signature ("none") must NOT let spoofed mail slip past — most spoofed
-    # mail has no signature at all rather than a failing one.
+
+
+
     c_level = any(k in str(nlp.get("impersonation_cues", [])).lower() for k in ["ceo", "cfo", "chief", "president"])
     force_high = False
     if spf in ("fail", "softfail") and dkim in ("fail", "softfail", "none") and (
@@ -99,14 +98,14 @@ def compute_scores(nlp: dict, auth: dict, intel: dict, routing_flags: list[str],
     else:
         classification, action = ("Clean", "Deliver")
 
-    # map to schema threat_classification vocabulary
+
     threat_label = classification
     if "bec" in str(nlp.get("nlp_cues_detected", [])).lower():
         threat_label = f"BEC-{classification}"
     elif nlp.get("ml_label", "") not in ("", "clean"):
         threat_label = f"{nlp.get('ml_label')}-{classification}"
 
-    # --- Explainable breakdown: per-signal contributions sum to fraud_score ---
+
     contrib = {
         "nlp": round(WEIGHTS["nlp"] * nlp_score, 2),
         "auth": round(WEIGHTS["auth"] * auth_score, 2),

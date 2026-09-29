@@ -1,4 +1,4 @@
-"""Step 3 privacy: no raw bodies persisted, masked reports, safe search, real deletion."""
+
 import uuid
 from datetime import datetime, timedelta
 
@@ -10,7 +10,7 @@ from app import models
 
 
 def _session():
-    """Fresh session from the (possibly test-rebound) sessionmaker."""
+
     from app.database import SessionLocal
     return SessionLocal()
 
@@ -49,7 +49,7 @@ def test_report_returns_masked_only():
         dumped = __import__("json").dumps(body)
         assert "4111" not in dumped
         assert "[CARD-REDACTED]" in dumped
-        # PDF builds with markup subject (no ReportLab crash)
+
         pdf = c.get(f"/api/v1/reports/{eid}.pdf", headers=h)
         assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
 
@@ -67,7 +67,7 @@ def test_search_none_db_and_wildcard_escape():
                json={"raw": f"From: a@b.test\nSubject: {marker} 100% coverage\n\nplain"})
         hits = c.get("/api/v1/search", headers=h, params={"q": "100%"}).json()["hits"]
         assert any(marker in (hit.get("email") or {}).get("subject", "") for hit in hits)
-        # a lone wildcard must not become a full scan: only literal-% rows match
+
         wild = c.get("/api/v1/search", headers=h, params={"q": "%"}).json()["hits"]
         assert all("%" in (hit.get("email") or {}).get("subject", "") for hit in wild)
 

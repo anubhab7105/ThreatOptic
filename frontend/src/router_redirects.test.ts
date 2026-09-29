@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import manifest from '../package.json';
 
-// assertIdpUrl is pure, but api.ts constructs the Supabase client on import.
+
 vi.mock('./supabaseClient', () => ({
   supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
 }));
@@ -11,11 +11,11 @@ const { ApiError, assertIdpUrl } = await import('./api');
 import mainSrc from './main.tsx?raw';
 import pagesSrc from './pages.tsx?raw';
 
-// Open redirect via <Link to> / useNavigate (GHSA-wrjc-x8rr-h8h6,
-// CVE-2025-68470): a target that is protocol-relative ("//evil.test") or
-// backslash-escaped ("/\evil.test") is resolved by the browser as a
-// different origin, so a crafted value turns this dashboard — a SOC tool
-// users are trained to trust — into a launchpad for phishing.
+
+
+
+
+
 describe('no open redirect via router targets (P1)', () => {
   const files: Array<[string, string]> = [
     ['main.tsx', mainSrc as unknown as string],
@@ -23,11 +23,11 @@ describe('no open redirect via router targets (P1)', () => {
   ];
 
   it('pins a react-router range whose floor is past the open-redirect fix', () => {
-    // The advisory (GHSA-wrjc-x8rr-h8h6) covers react-router < 7.18.4. A
-    // caret range on 7.x can only ever resolve to >= its floor, so pinning
-    // the floor is a sound guarantee that `npm ci` cannot install a
-    // vulnerable build. Read the declared range rather than the installed
-    // tree so a stale node_modules cannot mask a downgrade.
+
+
+
+
+
     const range = manifest.dependencies['react-router-dom'];
     expect(range, 'react-router-dom must stay a declared dependency').toBeTruthy();
     const floor = /^([~^]|\s)*(\d+)\.(\d+)\.(\d+)/.exec(range!);
@@ -47,7 +47,7 @@ describe('no open redirect via router targets (P1)', () => {
       expect(to.startsWith('/'), `"${to}" is not an absolute path`).toBe(true);
       expect(to.startsWith('//'), `"${to}" is protocol-relative (open redirect)`).toBe(false);
       expect(/^\/\\/.test(to) || to.startsWith('/\\'), `"${to}" uses a backslash (open redirect)`).toBe(false);
-      expect(to).not.toMatch(/^[a-z][a-z0-9+.-]*:/i); // no scheme
+      expect(to).not.toMatch(/^[a-z][a-z0-9+.-]*:/i);
     }
   });
 
@@ -70,18 +70,18 @@ describe('no open redirect via router targets (P1)', () => {
   });
 
   it.each(files)('%s: does not assign window.location from a location-derived value', (_name, text) => {
-    // Every full-page navigation must be one of exactly three shapes:
-    //   - the OAuth return hop, to a same-origin /api path we build
-    //   - the IdP consent hop, through assertIdpUrl()
-    //   - a named local holding one of the above
+
+
+
+
     const assignments = [...text.matchAll(/window\.location\.(?:href|assign|replace)\s*=\s*([^;\n]+)/g)]
       .map((m) => m[1].trim());
     for (const expr of assignments) {
       const allowed =
-        expr.includes('/api/v1/oauth/') ||                    // return hop, inline
-        expr.startsWith('assertIdpUrl(') ||                   // consent hop, guarded
-        /^[A-Za-z_$][\w$]*$/.test(expr) ||                    // a named local
-        /^window\.location\.\w+\s*=\s*\w+$/.test(expr);       // the assign() fallback
+        expr.includes('/api/v1/oauth/') ||
+        expr.startsWith('assertIdpUrl(') ||
+        /^[A-Za-z_$][\w$]*$/.test(expr) ||
+        /^window\.location\.\w+\s*=\s*\w+$/.test(expr);
       expect(allowed, `window.location assigned from unexpected expression: ${expr}`).toBe(true);
     }
   });
@@ -94,7 +94,7 @@ describe('no open redirect via router targets (P1)', () => {
 
   it('both OAuth consent hops in pages.tsx are gated by assertIdpUrl', () => {
     const pages: string = pagesSrc as unknown as string;
-    // /gmail/auth-url and /oauth/{provider}/authorize each need one guard.
+
     const guards = pages.match(/assertIdpUrl\(/g) ?? [];
     expect(guards.length, 'both consent flows must verify the IdP origin').toBe(2);
     expect(pages).toMatch(/jpost\('\/gmail\/auth-url'[\s\S]{0,400}assertIdpUrl\(/);

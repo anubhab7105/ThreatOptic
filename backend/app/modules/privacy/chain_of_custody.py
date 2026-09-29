@@ -1,15 +1,4 @@
-"""Chain of custody: SHA-256 of .eml + signed report manifest.
 
-Key policy: CUSTODY_KEY must be provisioned (secrets manager in any
-non-local deployment). There is NO hardcoded fallback value. In
-APP_ENV=development only, an ephemeral per-process key is generated so
-local dev works; it cannot verify anything across restarts by design.
-
-Manifest v1 binds purpose + version + timestamp into the HMAC payload.
-Key rotation: set CUSTODY_KEY to the new key and CUSTODY_KEY_PREVIOUS to
-the old one; verify_manifest() accepts either during the window.
-See SECURITY.md for the rotation procedure.
-"""
 import hashlib
 import hmac
 import os
@@ -29,7 +18,7 @@ _dev_key: bytes | None = None
 
 
 def _dev_ephemeral_key() -> bytes:
-    """Per-process random key for local development only (never persisted)."""
+
     global _dev_key
     import logging
 
@@ -68,7 +57,7 @@ def signing_key() -> bytes:
 
 
 def require_custody_key() -> None:
-    """Fail fast at startup (called from lifespan) when misconfigured."""
+
     signing_key()
 
 
@@ -92,10 +81,7 @@ def custody_manifest(eml_hash: str, report_bytes: bytes) -> dict:
 
 
 def verify_manifest(manifest: dict, report_bytes: bytes) -> bool:
-    """True iff the manifest signature validates under a current/previous key.
 
-    Returns a bare boolean — never raises, never leaks key details.
-    """
     try:
         eml_hash = manifest.get("eml_sha256", "")
         generated_at = manifest.get("generated_at", "")

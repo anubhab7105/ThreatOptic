@@ -1,4 +1,4 @@
-"""Live-demo checklist tests (Phase 3): env auditing is pure and predictable."""
+
 import os
 import sys
 

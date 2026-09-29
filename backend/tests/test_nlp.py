@@ -1,6 +1,6 @@
-"""NLP engine unit tests (F11): cue extraction + classifier sanity."""
+
 import os
-os.environ.setdefault("MODEL_TRUST_INSECURE", "1")  # Allow model loading in test environment
+os.environ.setdefault("MODEL_TRUST_INSECURE", "1")
 from app.modules.nlp.engine import analyze_text
 
 
@@ -12,8 +12,8 @@ def test_phish_cues_and_score():
     assert any(c.startswith("urgency") for c in r["nlp_cues_detected"])
     assert "credential-harvest" in r["nlp_cues_detected"]
     assert 0.0 <= r["ml_score"] <= 1.0
-    # Note: ml_score may be 0.0 if model has version compatibility issues;
-    # the rule-based cues (urgency, credential-harvest) are the primary signal
+
+
 
 
 def test_clean_text_scores_low():

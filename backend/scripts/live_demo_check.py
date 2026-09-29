@@ -1,16 +1,4 @@
-"""Live-demo rehearsal checklist (Phase 3).
 
-Verifies everything a judge will touch, in order:
-  1. environment/keys (offline; unit-testable via check_env())
-  2. API liveness + detailed health (needs the backend running)
-  3. authenticated end-to-end: login -> ingest -> breakdown -> campaigns ->
-     model metrics (needs seeded admin/admin123 or --username/--password)
-
-Usage:
-    python backend/scripts/live_demo_check.py [--api http://localhost:8000]
-    python backend/scripts/live_demo_check.py --api http://localhost:8000 -u admin -p admin123
-Exit code 0 = demo-ready, 1 = something needs attention (all findings printed).
-"""
 import argparse
 import os
 import sys

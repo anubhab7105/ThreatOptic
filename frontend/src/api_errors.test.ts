@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-// The API client is where "blocked by CORS" surfaces in the UI, and the
-// browser's own message is only "TypeError: Failed to fetch". These tests
-// pin that the app explains the real cause instead of showing that.
+
+
+
 vi.mock('./supabaseClient', () => ({
   supabase: { auth: { getSession: async () => ({ data: { session: null } }) } },
 }));
@@ -25,7 +25,7 @@ describe('api network-failure diagnostics', () => {
     const err = await jget('/emails').catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(0);
-    // The console-only symptom is replaced with the real target.
+
     expect(err.message).toContain(API);
     expect(err.message).toContain('/emails');
   });
@@ -58,13 +58,13 @@ describe('api network-failure diagnostics', () => {
     vi.mocked(fetch).mockImplementation(rejects);
     const err = await jget('/emails').catch((e) => e);
     expect(err.message).not.toMatch(/Bearer /i);
-    expect(err.message).not.toMatch(/eyJ/); // JWT prefix
+    expect(err.message).not.toMatch(/eyJ/);
   });
 });
 
-// A rejected fetch() is the browser's only signal for *both* a wrong host and
-// a wrong allowlist, and it never exposes the cross-origin response body — so
-// the message has to branch on which of the two the deployment is actually in.
+
+
+
 describe('networkFailureMessage separates a VITE_API_URL typo from a CORS misconfiguration', () => {
   const PAGE = 'https://email-scanner-chi.vercel.app';
   const API_HOST = 'https://api.example.test';
@@ -76,15 +76,15 @@ describe('networkFailureMessage separates a VITE_API_URL typo from a CORS miscon
     expect(text).toContain(API_HOST);
     expect(text).toMatch(/VITE_API_URL is wrong/);
     expect(text).toMatch(/CORS allowlist omits/);
-    // The actionable bit: one command, and how to read each outcome.
+
     expect(text).toContain(`curl -s ${API_HOST}/health`);
     expect(text).toMatch(/cors_origins/);
     expect(text).toMatch(/Application not found/);
   });
 
   it('cross-origin: warns that VITE_API_URL is baked at build time', () => {
-    // Editing the Vercel variable without rebuilding changes nothing, which
-    // is the other half of most "I changed it and it did not help" reports.
+
+
     expect(networkFailureMessage('/x', API_HOST, PAGE)).toMatch(/baked in at build time/i);
   });
 
@@ -93,7 +93,7 @@ describe('networkFailureMessage separates a VITE_API_URL typo from a CORS miscon
 
     expect(text).toMatch(/same-origin/);
     expect(text).toMatch(/CORS is not involved/);
-    // No point sending the user to an allowlist that was never consulted.
+
     expect(text).not.toMatch(/CORS_ORIGINS|CORS allowlist omits/);
     expect(text).toMatch(/rewrite|proxy/);
   });

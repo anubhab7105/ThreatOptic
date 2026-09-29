@@ -1,16 +1,9 @@
-"""Attachment / malware analysis (F6).
 
-Two layers, both offline-safe:
-  1. Static heuristics from parser metadata (filename, content-type, magic
-     bytes) — always run, no network needed.
-  2. VirusTotal file-hash lookup — same "skip if no API key" pattern as
-     check_virustotal() in url_analyzer.py.
-"""
 import os
 from functools import lru_cache
 from typing import Any
 
-# Cap VT hash lookups per email: heuristics always run, network doesn't scale.
+
 VT_MAX_ATTACHMENTS = 5
 
 MACRO_EXTS = {".docm", ".xlsm", ".pptm", ".dotm", ".xltm", ".potm", ".xlam", ".docb"}
@@ -18,12 +11,12 @@ EXEC_EXTS = {".exe", ".scr", ".com", ".bat", ".cmd", ".msi", ".ps1", ".vbs", ".v
              ".js", ".jse", ".wsf", ".wsh", ".jar", ".dll", ".cpl", ".gadget", ".hta"}
 ARCHIVE_EXTS = {".zip", ".rar", ".7z", ".cab", ".iso", ".img"}
 
-# magic prefix (hex) -> description
+
 MAGIC = {
-    "4d5a": "mz-executable",      # MZ
-    "25504446": "pdf",            # %PDF
-    "504b0304": "zip-ooxml",      # PK..
-    "d0cf11e0": "ole-cfb",        # legacy Office / macro container
+    "4d5a": "mz-executable",
+    "25504446": "pdf",
+    "504b0304": "zip-ooxml",
+    "d0cf11e0": "ole-cfb",
     "7f454c46": "elf",
     "52617221": "rar",
     "377abcaf271c": "7z",
@@ -53,11 +46,11 @@ def static_heuristics(filename: str, content_type: str = "", magic: str = "") ->
         flags.append("macro-enabled-document")
     if ext in EXEC_EXTS:
         flags.append("executable-attachment")
-    # double extension trick: innocent inner name, dangerous outer suffix
-    # (e.g. report.pdf.exe, invoice.doc.scr)
+
+
     if ext in EXEC_EXTS | MACRO_EXTS and "." in base:
         flags.append("double-extension")
-    # executable magic regardless of declared name/type
+
     kind = _magic_desc(magic)
     if kind in ("mz-executable", "elf") and ext not in EXEC_EXTS:
         flags.append(f"magic-mismatch:{kind}-as-{ext or 'noext'}")
@@ -70,7 +63,7 @@ def static_heuristics(filename: str, content_type: str = "", magic: str = "") ->
 
 @lru_cache(maxsize=4096)
 def _lookup_hash_cached(sha256: str, api_key: str) -> tuple:
-    """Cached VT file lookup (Step 4: no repeat network hits for one hash)."""
+
     import requests
     r = requests.get(
         f"https://www.virustotal.com/api/v3/files/{sha256}",
@@ -101,11 +94,7 @@ def lookup_hash_virustotal(sha256: str, api_key: str = "") -> dict[str, Any]:
 
 
 def analyze_attachments(attachments: list[dict] | None, vt_key: str = "") -> dict[str, Any]:
-    """Returns {findings, risk (0-100), malicious_count}.
 
-    Heuristics run for every attachment; VT hash lookups are capped
-    (VT_MAX_ATTACHMENTS) and cached per hash.
-    """
     vt_key = vt_key or os.environ.get("VIRUSTOTAL_API_KEY", "")
     findings: list[dict] = []
     risk = 0.0

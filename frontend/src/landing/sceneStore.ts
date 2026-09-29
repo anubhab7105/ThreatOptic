@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-/** Scroll progress 0..1 driving the pinned pipeline scene (M3). */
+
 type SceneState = {
   progress: number;
   setProgress: (p: number) => void;

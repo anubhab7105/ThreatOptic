@@ -38,7 +38,7 @@ function isCoarsePointer(): boolean {
   }
 }
 
-/* ---------- scene contents (no drei; hand-rolled helpers keep the chunk small) ---------- */
+
 
 function Envelope({ clay, shade, line }: { clay: string; shade: string; line: string }) {
   const body = useRef<THREE.Mesh>(null);
@@ -180,14 +180,14 @@ function ScanPlane({ accent }: { accent: string }) {
   useEffect(() => {
     matRef.current = mat;
   }, [mat]);
-  // eslint-disable-next-line react-hooks/immutability -- three.js per-frame material mutation is idiomatic R3F; no React state involved
+
   useFrame(({ clock }) => {
     const m = mesh.current;
     const mt = matRef.current;
     if (!m || !mt) return;
-    const cycle = 7; // seconds per sweep
-    const t = (clock.elapsedTime % cycle) / cycle; // 0..1
-    // sweep down across the envelope, ease-out
+    const cycle = 7;
+    const t = (clock.elapsedTime % cycle) / cycle;
+
     m.position.y = 0.9 - t * 1.8;
     const edge = Math.min(1, Math.min(t, 1 - t) * 6);
     mt.opacity = 0.12 + 0.3 * edge;
@@ -208,7 +208,7 @@ function Rig({ children }: { children: React.ReactNode }) {
     const onMove = (e: PointerEvent) => {
       const nx = (e.clientX / window.innerWidth) * 2 - 1;
       const ny = (e.clientY / window.innerHeight) * 2 - 1;
-      // max ~6 degrees (0.105 rad)
+
       target.current.x = THREE.MathUtils.clamp(ny * 0.105, -0.105, 0.105);
       target.current.y = THREE.MathUtils.clamp(nx * 0.105, -0.105, 0.105);
     };
@@ -218,7 +218,7 @@ function Rig({ children }: { children: React.ReactNode }) {
   useFrame(({ clock }, dt) => {
     const g = group.current;
     if (!g) return;
-    // idle float: amplitude 0.12, period ~6s
+
     g.position.y = Math.sin((clock.elapsedTime * Math.PI * 2) / 6) * 0.12;
     if (allowParallax) {
       easing.dampE(g.rotation, [target.current.x, target.current.y, 0], 0.35, dt);
@@ -250,7 +250,7 @@ function AdaptiveDpr() {
         try {
           setDpr(1);
         } catch {
-          /* noop */
+
         }
       }
       acc.current.frames = 0;
@@ -329,7 +329,7 @@ function HeroCanvas({ onFailed }: { onFailed: () => void }) {
         <NodeCluster accent={tokens.accent} line={tokens.line} />
         <ScanPlane accent={tokens.accent} />
       </Rig>
-      {/* fake contact shadow: flat dark ellipse, no shadow maps */}
+      {}
       <mesh position={[0, -1.35, -0.4]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[1.35, 40]} />
         <meshBasicMaterial color={tokens.shade} transparent opacity={0.85} depthWrite={false} />
@@ -367,7 +367,7 @@ export function HeroScene() {
       return false;
     }
   }, []);
-  if (!eligible || failed) return null; // poster tier stays visible underneath
+  if (!eligible || failed) return null;
   return (
     <HeroBoundary fallback={() => setFailed(true)}>
       <HeroCanvas onFailed={() => setFailed(true)} />

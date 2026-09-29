@@ -24,7 +24,7 @@ function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
 }
 
-// Lazy 3D hero — loaded only after first paint (M2). Static poster stays until then.
+
 const HeroScene = React.lazy(() => import('./HeroScene').then((m) => ({ default: m.HeroScene })));
 const PipelineScene = React.lazy(() => import('./PipelineScene').then((m) => ({ default: m.PipelineScene })));
 const GeoGlobe = React.lazy(() => import('./GeoGlobe').then((m) => ({ default: m.GeoGlobe })));
@@ -362,7 +362,7 @@ export function LandingPage() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Load 3D only after first paint + idle, never blocking LCP (poster is LCP).
+
   useEffect(() => {
     let cancelled = false;
     const enable = () => {
@@ -390,14 +390,14 @@ export function LandingPage() {
         window.clearTimeout(t);
       };
     } catch {
-      /* poster stays */
+
     }
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // M3: drive the zustand scene store from native scroll progress (no hijack lib).
+
   useEffect(() => {
     let raf = 0;
     const update = () => {
@@ -414,7 +414,7 @@ export function LandingPage() {
         const done = -r.top + window.innerHeight * 0.25;
         useSceneStore.getState().setProgress(total > 0 ? done / total : 0);
       } catch {
-        /* static content stays */
+
       }
     };
     const onScroll = () => {
@@ -491,7 +491,7 @@ export function LandingPage() {
       </header>
 
       <main id="main-content" className="landing-new__main">
-        {/* Hero */}
+        {}
         <section className="landing-new__hero" aria-labelledby="landing-h1">
           <div className="landing-new__hero-grid">
             <div className="landing-reveal">
@@ -537,7 +537,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Pipeline */}
+        {}
         <section id="how-it-works" className="landing-new__section" aria-labelledby="how-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="how-title" className="landing-new__section-title landing-reveal">From raw email to explainable case</h2>
@@ -562,7 +562,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Showcase */}
+        {}
         <section id="features" className="landing-new__section" aria-labelledby="features-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="features-title" className="landing-new__section-title landing-reveal">One workspace, five lenses</h2>
@@ -590,7 +590,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Explainability */}
+        {}
         <section className="landing-new__section" aria-labelledby="explain-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="explain-title" className="landing-new__section-title landing-reveal">Every score comes with its reasons</h2>
@@ -623,7 +623,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Demo */}
+        {}
         <section id="demo" className="landing-new__section" aria-labelledby="demo-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="demo-title" className="landing-new__section-title landing-reveal">Try a sample analysis</h2>
@@ -632,7 +632,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Integrations */}
+        {}
         <section className="landing-new__section" aria-labelledby="integrations-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="integrations-title" className="landing-new__section-title landing-reveal">Connect a mailbox, work the case, export the proof</h2>
@@ -662,7 +662,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Security */}
+        {}
         <section id="security" className="landing-new__section" aria-labelledby="security-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <h2 id="security-title" className="landing-new__section-title landing-reveal">Access control you can describe honestly</h2>
@@ -690,7 +690,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Final CTA */}
+        {}
         <section className="landing-new__section" aria-labelledby="cta-title" style={{ paddingTop: 0 }}>
           <div className="landing-new__wrap">
             <Card title="Start investigating in minutes">

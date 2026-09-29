@@ -1,4 +1,4 @@
-"""P0 mailbox fan-out bounds: paged IDs, capped concurrency, clamped counts."""
+
 import asyncio
 import uuid
 
@@ -19,7 +19,7 @@ def _mk_user_with_conn(db, tag, provider="google", email=None):
 
 
 def test_fetch_clamps_counts_and_pages(monkeypatch):
-    """P0: unbounded client counts cannot page Gmail/Graph forever."""
+
     import httpx
     import app.modules.ingestion.connectors as conn_mod
 
@@ -49,7 +49,7 @@ def test_fetch_clamps_counts_and_pages(monkeypatch):
         async def get(self, url, headers=None, params=None):
             if "messages" in url and "/messages/" not in url and "graph" not in url:
                 list_calls.append(params)
-                # endless next pages with 500 ids each
+
                 return Resp({"messages": [{"id": f"m{n}"} for n in range(500)],
                              "nextPageToken": "tok"})
             if "graph.microsoft.com" in url and "$value" not in url and "messages" in url:
@@ -60,7 +60,7 @@ def test_fetch_clamps_counts_and_pages(monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
     out = asyncio.run(conn_mod.fetch_gmail_messages("tok", max_results=1000000))
-    # clamped to server max (not a million), list paging bounded
+
     assert len(out) == conn_mod.SERVER_MAX_RESULTS, len(out)
     assert len(list_calls) <= conn_mod.MAX_LIST_PAGES, list_calls
     out2 = asyncio.run(conn_mod.fetch_o365_messages("tok", top=1000000))
@@ -68,7 +68,7 @@ def test_fetch_clamps_counts_and_pages(monkeypatch):
 
 
 def test_poll_all_bounded_fanout_and_clamped_results(monkeypatch):
-    """P0: ID paging + semaphore cap + max_results clamp on fan-out."""
+
     from app.database import SessionLocal
     from app import models
     import app.services.mailbox_poll as mp
@@ -99,7 +99,7 @@ def test_poll_all_bounded_fanout_and_clamped_results(monkeypatch):
         out = asyncio.run(mp.poll_all_mailboxes(max_results=1000000))
         assert out["polled"] == 12
         assert current["max"] <= mp.MAX_MAILBOX_FANOUT, current
-        assert current["max"] > 1  # actually concurrent, not serial
+        assert current["max"] > 1
         assert all(m <= mp.POLL_MAX_RESULTS for m in seen_max_results)
     finally:
         db = SessionLocal()
@@ -114,7 +114,7 @@ def test_poll_all_bounded_fanout_and_clamped_results(monkeypatch):
 
 
 def test_gmail_sync_rejects_huge_max_results():
-    """P0: schema caps Gmail max_results server-side."""
+
     from fastapi.testclient import TestClient
     from app.main import app
 

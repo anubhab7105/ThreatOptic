@@ -1,4 +1,4 @@
-/* Landing sample data — all fictional, clearly labeled Sample. Never calls backend. */
+
 
 export const SAMPLE_SCORE = 87;
 export const SAMPLE_SEVERITY = 'Critical' as const;

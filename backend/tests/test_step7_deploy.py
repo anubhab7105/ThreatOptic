@@ -1,4 +1,4 @@
-"""Step 7 deploy/infra tests: k8s hardening, compose secrets, nginx, vercel, Dockerfile."""
+
 import json
 import os
 import subprocess
@@ -26,14 +26,14 @@ def test_k8s_hardening():
     assert c["readinessProbe"]["httpGet"]["path"] == "/health/detailed"
     assert c["resources"]["requests"] and c["resources"]["limits"]
     env = {e["name"]: e for e in c["env"]}
-    # secrets via secretKeyRef, never plaintext values
+
     for name in ("DATABASE_URL", "SECRET_KEY", "CUSTODY_KEY", "NEO4J_PASSWORD"):
         assert "secretKeyRef" in env[name].get("valueFrom", {}), name
     assert "value" not in env["SECRET_KEY"]
-    # F8 constraint documented + Neo4j wired for the 2 replicas
+
     assert "NEO4J_URI" in env and env["EXPECTED_REPLICAS"]["value"] == "2"
     assert "do not scale past 1 without it" in _load("k8s/backend.yaml")
-    # release pinning documented (digest substituted at release; see Tracker)
+
     assert "sha256" in _load("k8s/backend.yaml")
     ing = next(d for d in docs if d["kind"] == "Ingress")
     assert ing["spec"]["tls"] and ing["spec"]["rules"]
@@ -51,19 +51,19 @@ def test_secret_template_has_no_values():
 def test_compose_secrets_and_ports():
     doc = yaml.safe_load(_load("docker-compose.yml"))
     svcs = doc["services"]
-    # env-name consistency: backend + ES agree on ELASTICSEARCH_PASSWORD
+
     backend_env = svcs["backend"]["environment"]
     assert "ELASTICSEARCH_PASSWORD" in backend_env
     assert "ELASTIC_PASSWORD" not in backend_env
     assert svcs["elasticsearch"]["environment"]["ELASTIC_PASSWORD"] == \
         "${ELASTICSEARCH_PASSWORD:-}"
     dumped = yaml.safe_dump(doc)
-    assert "soc:soc@" not in dumped and "socsoc123" not in dumped  # no hardcoded creds
-    # data services not publicly exposed
+    assert "soc:soc@" not in dumped and "socsoc123" not in dumped
+
     for svc in ("neo4j", "elasticsearch", "kafka"):
         for port in svcs[svc].get("ports", []):
             assert str(port).startswith("127.0.0.1:"), (svc, port)
-    # ES memory limits + kafka persistence
+
     assert svcs["elasticsearch"]["environment"]["ES_JAVA_OPTS"] == "-Xms512m -Xmx512m"
     assert "kavolume" in doc["volumes"]
 
@@ -77,12 +77,12 @@ def test_nginx_syntax_and_headers():
     for needle in ("Content-Security-Policy", "Strict-Transport-Security",
                    "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy"):
         assert needle in conf, needle
-    # soft-404 scoped to location / only (assets keep real 404s)
+
     assert conf.count("error_page 404 /index.html;") == 1
     assert "location / {\n        try_files $uri $uri/ /index.html;\n        error_page 404 /index.html;" in conf
     import tempfile
-    # Syntax-check a copy with the compose-DNS upstream pointed at loopback
-    # (proxy_pass targets can't resolve outside compose; semantics unchanged).
+
+
     conf_text = _load("frontend/nginx.conf").replace("http://backend:8000", "http://127.0.0.1:8000")
     wrapper = ("pid /tmp/nginx-pytest.pid;\nerror_log /tmp/nginx-pytest-error.log;\n"
                "events {}\nhttp {\n"
@@ -115,13 +115,13 @@ def test_gitignore_covers_secrets():
     assert "k8s/secret.yaml" in text
     assert ".env.*" in text
     assert "*.log" in text
-    # the example template itself must stay committable
+
     assert "!k8s/secret.yaml.example" in text
 
 
 def test_backend_dockerfile_hardened():
     text = _load("backend/Dockerfile")
-    assert text.count("FROM python:") >= 2  # multi-stage
-    assert "\nUSER appuser" in text  # non-root
+    assert text.count("FROM python:") >= 2
+    assert "\nUSER appuser" in text
     assert "USER root" not in text
-    assert "backend/alembic" in text  # migration files ship in the image
+    assert "backend/alembic" in text

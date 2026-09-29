@@ -1,20 +1,4 @@
-"""Offline model signing (P0 model integrity).
 
-A checksum sidecar (.sha256) cannot stop an attacker who can rewrite both
-the model and the sidecar. Production deployments provision MODEL_VERIFY_KEY
-(Ed25519 public key, 64 hex chars); every model load then requires a valid
-detached signature (<artifact>.sig).
-
- ceremony (do this on a trusted build machine, never on the server):
-   1. Train:  python scripts/train_nlp.py
-   2. Keygen: python scripts/sign_model.py --keygen   # prints SIGN pubkey
-   3. Sign:   MODEL_SIGN_KEY=<64-hex-seed> python scripts/sign_model.py backend/ml_models/phishing_clf.joblib
-              MODEL_SIGN_KEY=<64-hex-seed> python scripts/sign_model.py backend/ml_models/url_phishing_model.pkl
-   4. Deploy: set MODEL_VERIFY_KEY=<pubkey> on the server alongside the
-              artifact + .sig + .sha256 files.
-
-Verify any time: python scripts/sign_model.py <artifact> --verify
-"""
 import os
 import sys
 

@@ -1,11 +1,4 @@
-"""Threat intel: blocklists, Spamhaus DROP, MISP/OTX, VirusTotal/URLhaus (offline-safe).
 
-Honesty rules (Step 4):
-- Hard-coded demo domains are DEV-ONLY fixtures, clearly labeled, and
-  disabled outside development.
-- `aggregate_threat_intel()` covers domains, IPs AND urls, and returns the
-  `malicious_count` field scoring.py actually reads.
-"""
 import os
 import time
 from functools import lru_cache
@@ -13,10 +6,10 @@ from typing import Any
 
 SUSPICIOUS_TLDS = {".tk", ".ml", ".ga", ".cf", ".gq", ".top", ".xyz", ".buzz"}
 
-# Demo-only fixtures for tests/demos without network. NEVER consulted in prod.
+
 DEMO_BLOCKLIST_DOMAINS = {"malicious-example.com", "phish-kit.test"}
 
-# Reasons that count as malicious (vs merely suspicious) for malicious_count.
+
 MALICIOUS_REASONS = ("local-blocklist", "demo-fixture", "urlhaus", "misp-hit",
                      "virustotal-malicious", "spamhaus-drop")
 MALICIOUS_PREFIXES = ("dnsbl:",)
@@ -38,12 +31,12 @@ def check_domain_blocklists(domain: str) -> list[str]:
     hits: list[str] = []
     d = (domain or "").lower().strip(".")
     if d in DEMO_BLOCKLIST_DOMAINS:
-        # Explicitly flagged demo fixture; disabled outside development.
+
         if _is_development():
             hits.append("demo-fixture")
     else:
-        # "local-blocklist" is reserved for operator-curated entries loaded
-        # from backend/data/local_blocklist.txt (one domain per line).
+
+
         if d in _operator_blocklist():
             hits.append("local-blocklist")
     if any(d.endswith(t) for t in SUSPICIOUS_TLDS):
@@ -55,7 +48,7 @@ def check_domain_blocklists(domain: str) -> list[str]:
 
 @lru_cache(maxsize=1)
 def _operator_blocklist() -> frozenset:
-    """Operator-curated domains; empty set when the file is absent."""
+
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                         "data", "local_blocklist.txt")
     try:
@@ -75,7 +68,7 @@ DROP_TTL_S = 24 * 3600
 
 
 def spamhaus_drop_networks() -> list:
-    """Real Spamhaus DROP/EDROP feed, 24h file cache. [] when offline/disabled."""
+
     import ipaddress
     now = time.time()
     if _DROP_CACHE["networks"] is not None and now - _DROP_CACHE["fetched_at"] < DROP_TTL_S:
@@ -133,7 +126,7 @@ def check_ip_blocklists(ip: str) -> list[str]:
 
 
 def query_misp(value: str) -> dict[str, Any]:
-    """Single-value MISP lookup (compat wrapper over the batched path)."""
+
     v = (value or "").strip()
     if not v:
         return {"source": "misp", "skipped": True}
@@ -157,8 +150,8 @@ def _misp_config() -> tuple[str, str]:
     return url, key
 
 
-# Batch MISP state (P0 reliability): per-value TTL cache + single batched
-# restSearch per mail instead of up to 90 sequential POSTs.
+
+
 _MISP_CACHE: dict[str, tuple[float, int]] = {}
 MISP_CACHE_TTL_S = 15 * 60
 MISP_VALUE_CAP = 30
@@ -175,13 +168,7 @@ def _misp_cache_get(value: str, now: float) -> int | None:
 
 
 def query_misp_batch(values: list[str]) -> dict[str, int]:
-    """One batched MISP restSearch for deduplicated values -> {value: hits}.
 
-    P0: replaces up to 90 sequential per-indicator POSTs (each with its own
-    5s timeout) with a single request over capped unique values, served
-    from a 15-minute TTL cache when warm. Transport failure yields zero
-    hits (same fail-open-per-mail as before); errors are NOT cached.
-    """
     seen: list[str] = []
     for v in values or []:
         v = (v or "").strip()
@@ -237,12 +224,7 @@ def _is_malicious_reason(reason: str) -> bool:
 
 
 def aggregate_threat_intel(domains: list[str], ips: list[str], urls: list[str]) -> dict[str, Any]:
-    """Aggregate over domains, IPs and URL domains (nothing is dropped).
 
-    Returns {"hits": [...], "count": N, "malicious_count": M} where M counts
-    hits with at least one malicious (not merely suspicious) reason — the
-    exact field scoring.py reads.
-    """
     from .url_analyzer import domain_of
 
     hits: list[dict] = []
@@ -251,8 +233,8 @@ def aggregate_threat_intel(domains: list[str], ips: list[str], urls: list[str]) 
     dom_list = [d for d in domains[:20] if d]
     ip_list = [ip for ip in ips[:20] if ip]
 
-    # P0: ONE batched, deduplicated, TTL-cached MISP query per mail instead
-    # of up to 90 sequential POSTs. Coverage identical, latency bounded.
+
+
     misp_hits = query_misp_batch([*dom_list, *ip_list, *url_doms])
 
     def _misp_entry(value: str) -> dict[str, Any] | None:

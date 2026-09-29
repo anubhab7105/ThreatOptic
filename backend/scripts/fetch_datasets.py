@@ -1,21 +1,4 @@
-"""Fetch real labeled corpora for the NLP classifier (F5).
 
-Sources (all public, no API key needed):
-  - SpamAssassin easy_ham  (~2.5k legitimate mails -> label "clean")
-  - SpamAssassin spam       (~500 spam mails        -> label "phishing")
-  - BEC rows are curated in train_nlp.py (no public BEC corpus is freely
-    downloadable); they are appended here so dataset.csv is self-contained.
-
-Usage:
-    python backend/scripts/fetch_datasets.py [--force]
-
-Output:
-    backend/ml_models/dataset.csv  (columns: text,label)
-    backend/ml_models/raw/         (downloaded tarballs + extracts, gitignored)
-
-train_nlp.py prefers dataset.csv when present and falls back to the small
-hand-written lists otherwise, so training works fully offline too.
-"""
 import argparse
 import csv
 import email
@@ -91,7 +74,7 @@ def fetch(force: bool = False) -> str:
                         rows.append((text, label))
                 except Exception:
                     continue
-    # curated BEC rows keep the third class alive (no public BEC corpus)
+
     sys.path.insert(0, HERE)
     from train_nlp import BEC
     rows.extend((t, "bec") for t in BEC)

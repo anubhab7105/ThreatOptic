@@ -1,25 +1,4 @@
-"""Model artifact trust verification (P0).
 
-Unpickling a pickle/joblib file is remote code execution for anyone with
-write access to it. Every model load in this codebase MUST pass through
-verify_model_artifact() first:
-
-1. Existence — missing file is an error (callers fall back gracefully).
-2. Permissions — world-writable model files are refused outright
-   (attacker-writable == RCE in any environment).
-3. Ed25519 signature (MODEL_VERIFY_KEY, hex pubkey) — when provisioned,
-   ``<artifact>.sig`` MUST exist and verify; anything else fails closed.
-   This is the production-grade path: a checksum sidecar alone cannot
-   stop an attacker who can rewrite both files.
-4. SHA256 sidecar (``<artifact>.sha256``) — verified when present and no
-   verify-key is provisioned; mismatch fails closed.
-5. Neither — production fails closed; development allows loading ONLY
-   with explicit MODEL_TRUST_INSECURE=1 plus a loud warning (logged dev
-   override). Anything else fails closed.
-
-"Fail closed" here means REFUSE TO UNPICKLE (callers use rule/heuristic
-fallbacks) — never crash the process, never load unverified bytes.
-"""
 
 import hashlib
 import logging
@@ -31,7 +10,7 @@ _CHUNK = 65536
 
 
 class ModelTrustError(RuntimeError):
-    """Model artifact failed trust verification — do not unpickle."""
+    pass
 
 
 def _is_production() -> bool:
@@ -67,7 +46,7 @@ def _sha256_of(path: str) -> str:
 
 
 def _verify_signature(path: str, pubkey_hex: str) -> None:
-    """Verify detached Ed25519 ``<path>.sig`` (hex, 64 bytes). Raises."""
+
     try:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -100,7 +79,7 @@ def _read_bytes(path: str) -> bytes:
 
 
 def verify_model_artifact(path: str, *, purpose: str = "model") -> None:
-    """Gate before joblib.load()/pickle.load(). Raises ModelTrustError."""
+
     if not path or not os.path.isfile(path):
         raise ModelTrustError(f"{purpose} model file not found: {path}")
     _check_permissions(path)
@@ -127,7 +106,7 @@ def verify_model_artifact(path: str, *, purpose: str = "model") -> None:
         log.info("%s checksum verified: %s", purpose, path)
         return
 
-    # No key, no sidecar: fail closed except explicit logged dev override.
+
     if _is_production():
         raise ModelTrustError(
             f"{purpose} has no signature (.sig + MODEL_VERIFY_KEY) and no "

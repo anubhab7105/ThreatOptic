@@ -1,15 +1,4 @@
-"""Mailbox polling service layer (Step 2).
 
-Owns all mailbox-sync DB work so routers and the scheduler stay thin:
-each mailbox gets an isolated session with commit/rollback, rotated
-provider refresh tokens are persisted back, and failures in one mailbox
-never abort the others.
-
-P0 fan-out bounds: mailbox IDs stream in pages (never .all()), at most
-MAX_MAILBOX_FANOUT connections poll concurrently, and per-mailbox
-max_results is clamped server-side — one sync-now cannot fan out
-unbounded work.
-"""
 import logging
 from datetime import datetime, timezone
 
@@ -25,7 +14,7 @@ def _utcnow():
 
 
 async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
-    """Poll one mailbox by id with an isolated session. Shared by sync-now + poller."""
+
     import httpx
     from ..config import get_settings
     from ..database import SessionLocal
@@ -93,7 +82,7 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
         except httpx.HTTPError as e:
             db.rollback()
             return {"synced": 0, "email_ids": [], "errors": [f"{conn.account_email}: {e}"[:200]]}
-        # Persist provider-side rotation so sync doesn't silently break (Step 2).
+
         try:
             if fresh.get("refresh_token") and fresh["refresh_token"] != refresh_token:
                 conn.encrypted_refresh_token = encrypt_secret(fresh["refresh_token"])
@@ -129,14 +118,7 @@ async def poll_connection_by_id(conn_id: str, max_results: int = 25) -> dict:
 async def poll_all_mailboxes(max_results: int = 25, provider: str | None = None,
                             organization_id: str | None | object = "__all__",
                             user_id: str | None = None) -> dict:
-    """Poll mailboxes on the SHARED event loop (no asyncio.run per mailbox).
 
-    organization_id="__all__" polls everything (scheduler); otherwise only
-    that org's connections — or, for org-less users, only their own rows.
-
-    P0: connection IDs stream in pages (never .all() unbounded) and at most
-    MAX_MAILBOX_FANOUT mailboxes poll concurrently.
-    """
     import asyncio
     from ..database import SessionLocal
     from .. import models

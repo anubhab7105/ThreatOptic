@@ -1,44 +1,18 @@
-"""Public-suffix-aware domain helpers (P0, shared).
 
-Why this exists: naive last-two-labels logic treats ``evil.co.uk`` and
-``bank.co.uk`` as the SAME domain (``co.uk``) — spoof/mismatch checks
-then miss real cross-organization spoofs, while exact-match checks
-false-positive on legitimate subdomains (``mail.company.com`` vs
-``company.com``).
 
-Single consolidated implementation used by forensics (header_parser,
-received_chain, auth_validator), threat intel (lookalikes) and
-traceability (ip_extractor) instead of six independent copies.
 
-Method: longest-match against a curated snapshot of multi-label public
-suffixes (common ccTLD second levels + well-known SaaS suffixes);
-anything unmatched falls back to last-two-labels. Dependency-free
-(stdlib only) so offline mode keeps working.
 
-Limitations (documented, not silent):
-- Snapshot, not the live Mozilla PSL: exotic/new suffixes fall back to
-  last-two-labels. Update _MULTI_SUFFIXES when adding coverage.
-- Wildcard PSL rules (e.g. ``*.kobe.jp``, ``*.ck``) are not modeled;
-  such hosts fall back to last-two-labels (fail toward mismatch, which
-  is the safe direction for spoof detection).
-- NOT used by url_ml feature extraction: that model was trained on
-  last-two-labels features, so changing its input would silently shift
-  inference. Deliberately out of scope.
-"""
-
-# Curated multi-label public suffixes (lowercase, no leading dot).
-# Covers the most-abused ccTLD second levels + major SaaS suffixes.
 _MULTI_SUFFIXES = frozenset({
-    # UK + Crown dependencies
+
     "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "sch.uk",
     "gov.uk", "ac.uk", "nhs.uk", "mod.uk", "mil.uk", "police.uk",
     "co.im", "co.je", "co.gg",
-    # Australia / NZ / Pacific
+
     "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
     "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz", "school.nz",
     "geek.nz", "gen.nz", "kiwi.nz", "maori.nz",
     "com.fj", "com.pg", "com.ws",
-    # Japan / Korea / Asia
+
     "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp", "ed.jp", "ad.jp",
     "gr.jp", "lg.jp",
     "co.kr", "ne.kr", "or.kr", "re.kr", "pe.kr", "go.kr", "mil.kr",
@@ -55,13 +29,13 @@ _MULTI_SUFFIXES = frozenset({
     "co.th", "ac.th", "go.th", "mil.th", "net.th", "in.th",
     "com.vn", "net.vn", "org.vn", "gov.vn", "edu.vn",
     "com.kh", "com.mm", "com.la",
-    # South Africa / Africa
+
     "co.za", "org.za", "net.za", "web.za", "gov.za", "ac.za",
     "school.za", "law.za", "mil.za", "ngo.za", "nom.za",
     "co.ke", "or.ke", "ne.ke", "go.ke", "ac.ke", "sc.ke",
     "com.ng", "org.ng", "gov.ng", "edu.ng", "net.ng",
     "com.gh", "com.eg", "com.tn", "com.ma", "co.ma",
-    # Brazil / Latin America (common second levels)
+
     "com.br", "net.br", "org.br", "gov.br", "edu.br", "mil.br",
     "ecn.br", "adm.br", "adv.br", "agr.br", "am.br", "arq.br",
     "art.br", "ato.br", "bio.br", "blog.br", "bmd.br", "cim.br",
@@ -85,7 +59,7 @@ _MULTI_SUFFIXES = frozenset({
     "com.uy", "net.uy", "org.uy", "gub.uy", "edu.uy", "mil.uy",
     "com.py", "net.py", "org.py", "gov.py", "edu.py",
     "com.bo", "net.bo", "org.bo", "tv.bo",
-    # Europe
+
     "co.at", "or.at", "gv.at", "ac.at",
     "com.de", "co.de",
     "com.fr", "asso.fr", "nom.fr", "prd.fr", "presse.fr",
@@ -109,11 +83,11 @@ _MULTI_SUFFIXES = frozenset({
     "com.sa", "net.sa", "org.sa", "gov.sa", "edu.sa", "med.sa",
     "com.ae", "net.ae", "org.ae", "gov.ae", "edu.ae",
     "com.qa", "com.kw", "com.bh", "com.om", "com.jo", "com.lb",
-    # North America extras
+
     "co.ca", "ab.ca", "bc.ca", "mb.ca", "nb.ca", "nf.ca", "nl.ca",
     "ns.ca", "nt.ca", "nu.ca", "on.ca", "pe.ca", "qc.ca", "sk.ca",
     "yk.ca",
-    # Well-known SaaS / cloud public suffixes
+
     "github.io", "herokuapp.com", "azurewebsites.net",
     "cloudfront.net", "s3.amazonaws.com", "blogspot.com",
     "blogspot.co.uk", "appspot.com", "gitlab.io", "pages.dev",
@@ -135,14 +109,11 @@ def _is_ip_literal(host: str) -> bool:
 
 
 def public_suffix(host: str) -> str:
-    """Longest matching multi-label suffix, else the last label.
 
-    Returns "" for empty/hostnames without a dot.
-    """
     parts = _labels(host)
     if len(parts) < 2 or _is_ip_literal(host):
         return ""
-    # Longest match: try 3-label, then 2-label suffixes.
+
     for width in (3, 2):
         if len(parts) >= width:
             cand = ".".join(parts[-width:])
@@ -152,12 +123,7 @@ def public_suffix(host: str) -> str:
 
 
 def registrable_domain(host: str) -> str:
-    """Effective second-level domain: one label + public suffix.
 
-    Examples: mail.google.com -> google.com; a.b.mail.co.uk -> mail.co.uk;
-    evil.co.uk vs bank.co.uk stay DISTINCT (the naive last-two-labels bug
-    collapsed both to co.uk). Single-label/IP-literal input echoes back.
-    """
     parts = _labels(host)
     if len(parts) < 2 or _is_ip_literal(host):
         return (host or "").lower().strip().strip(".")
@@ -166,22 +132,19 @@ def registrable_domain(host: str) -> str:
         return (host or "").lower().strip().strip(".")
     n_suffix = len(suffix.split("."))
     if len(parts) <= n_suffix:
-        # Host IS (or is under) a public suffix: nothing registrable.
+
         return ".".join(parts)
     return ".".join(parts[-(n_suffix + 1):])
 
 
 def same_organization(a: str, b: str) -> bool:
-    """True when both hosts share a non-empty registrable domain.
 
-    Fail closed: empty/unparseable inputs never compare equal.
-    """
     ra, rb = registrable_domain(a), registrable_domain(b)
     return bool(ra and rb) and ra == rb
 
 
 def is_subdomain_of(host: str, domain: str) -> bool:
-    """True when host == domain or host is a proper subdomain of it."""
+
     h, d = (host or "").lower().strip().strip("."), (domain or "").lower().strip().strip(".")
     if not h or not d:
         return False

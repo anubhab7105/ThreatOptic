@@ -1,29 +1,16 @@
-"""Graph store: Neo4j-first when NEO4J_URI is set, networkx local fallback.
 
-Writes mirror to both backends (best-effort). Reads use Neo4j as the source
-of truth whenever it is configured so attribution stays consistent across
-replicas; the in-memory graph is a single-replica/local-dev fallback (F8).
-
-Tenant model (P0): the graph itself is SHARED cross-tenant threat intel
-(infra-level IPs/domains/campaigns — no access control at this layer).
-Tenant isolation is enforced by CALLERS (routers/api.py, services/
-campaigns.py): Email_Address nodes not attributable to the caller's org
-are stripped from responses; Admins see all. Never expose raw
-related_entities()/find_campaigns() output for one tenant to another
-without that filtering.
-"""
 import os
 from typing import Any
 import networkx as nx
 
 G = nx.DiGraph()
 
-# Step 4: bound the ephemeral graph so one flood can't OOM the process.
-# Oldest nodes (insertion order) are evicted first.
+
+
 MAX_GRAPH_NODES = 20000
 
-# P0 reliability budgets: paginated hydration, clamped traversals, capped
-# read output — none of these paths may load or return unbounded data.
+
+
 HYDRATE_BATCH_ROWS = 1000
 HYDRATE_MAX_ROWS = 5000
 NX_MAX_DEPTH = 5
@@ -58,7 +45,7 @@ def _neo():
 
 
 def close_neo() -> None:
-    """Release the Neo4j driver (called from lifespan shutdown)."""
+
     global _neo_driver
     drv, _neo_driver = _neo_driver, None
     if drv is not None:
@@ -69,7 +56,7 @@ def close_neo() -> None:
 
 
 def graph_consistency_note() -> str | None:
-    """Warn when the ephemeral graph would diverge (multi-replica, no Neo4j)."""
+
     from ...config import get_settings
 
     settings = get_settings()
@@ -85,14 +72,7 @@ def _valid_ip(ip: str) -> bool:
 
 
 def _neo_mirror(email_addr: str, ip: str, domains: list[str], campaign: str) -> None:
-    """Mirror one mail to Neo4j in a few batched statements (P0).
 
-    Previously up to ~62 round trips per mail (per-domain/per-edge
-    MERGEs). Now: one statement for the email node, one for the IP edge,
-    and one UNWIND batch each for domains / HOSTS / campaign edges.
-    Best-effort: any failure is swallowed (local graph is authoritative
-    for single-replica writes).
-    """
     drv = _neo()
     if not drv:
         return
@@ -137,7 +117,7 @@ def _node_kind(labels: list) -> str:
 
 
 def _neo_related(value: str, depth: int) -> dict[str, Any] | None:
-    """Read the neighbourhood from Neo4j. None => fall back to networkx."""
+
     drv = _neo()
     if not drv:
         return None
@@ -202,7 +182,7 @@ def _neo_find_campaigns(min_shared: int) -> list[dict[str, Any]] | None:
 
 
 def remove_email_graph(email_addr: str) -> None:
-    """Best-effort removal of one email node (retention cascade)."""
+
     key = f"email:{(email_addr or '').lower()[:320]}"
     try:
         if key in G:
@@ -271,17 +251,14 @@ def upsert_email_graph(
             G.add_node(r_node, kind="Email_Address", address=rec_clean)
             G.add_edge(e_node, r_node, rel="SENT_TO")
 
-    # Neo4j mirror best-effort, batched (P0: ~5 round trips, not ~62).
+
     _neo_mirror(email_addr, ip, derived_domains, campaign)
     _touch()
     return {"nodes": G.number_of_nodes(), "edges": G.number_of_edges()}
 
 
 def ensure_graph_hydrated(db: Any) -> None:
-    """Hydrate in-memory graph from SQLite database if empty.
 
-    P0: paginated batches with a total cap — never .all() unbounded.
-    """
     if G.number_of_nodes() > 0 or db is None:
         return
     try:
@@ -321,11 +298,7 @@ def ensure_graph_hydrated(db: Any) -> None:
 
 
 def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str | None = None) -> dict[str, Any]:
-    """BFS neighbourhood for graph view. Neo4j-first when configured (F8).
 
-    P0: depth clamped (unbounded radius on a 20k-node graph hangs the
-    request) and networkx output capped — same shape, bounded size.
-    """
     try:
         depth = max(1, min(int(depth or 2), NX_MAX_DEPTH))
     except (TypeError, ValueError):
@@ -345,14 +318,14 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             key = cand
             break
     if key is None:
-        # try raw match or substring match
+
         for n in list(G.nodes):
             n_str = str(n).lower()
             if n_str.endswith(":" + clean_val) or clean_val in n_str:
                 key = n
                 break
 
-    # If still not found and DB is available, hydrate from specific email
+
     if key is None and db is not None:
         try:
             from ... import models
@@ -379,7 +352,7 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             upsert_email_graph(clean_val, "", [domain] if domain else [])
             key = f"email:{clean_val}"
     sub = nx.ego_graph(G.to_undirected(), key, radius=depth)
-    # P0: cap read output even if the capped radius still covers plenty.
+
     sub_nodes = list(sub.nodes)[:NX_MAX_NODES]
     keep = set(sub_nodes)
     edges = []
@@ -417,7 +390,7 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
 
 
 def find_campaigns(min_shared: int = 2) -> list[dict[str, Any]]:
-    """Cluster domains sharing IPs -> candidate campaigns. Neo4j-first (F8)."""
+
     neo = _neo_find_campaigns(min_shared)
     if neo is not None:
         return neo

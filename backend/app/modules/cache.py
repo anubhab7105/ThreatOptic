@@ -1,9 +1,4 @@
-"""Shared cache: Redis when REDIS_URL is set, in-process dict otherwise.
 
-Same API and TTL enforcement on both backends so SQLite-first local dev
-works with zero infrastructure. Values must be JSON-serializable; reads
-return deep copies so callers can never poison the store.
-"""
 import copy
 import json
 import logging
@@ -74,7 +69,7 @@ def cache_set(key: str, value: object, ttl: int) -> None:
 
 
 def cache_delete_prefix(prefix: str) -> int:
-    """Delete keys starting with prefix. Returns count removed."""
+
     r = _redis_client()
     if r is not None:
         try:
@@ -93,7 +88,7 @@ def cache_delete_prefix(prefix: str) -> int:
 
 
 def cache_clear() -> None:
-    """Test helper: drop the in-process store (Redis untouched)."""
+
     global _redis
     with _mem_lock:
         _mem.clear()

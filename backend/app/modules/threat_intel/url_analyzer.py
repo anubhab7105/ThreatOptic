@@ -1,4 +1,4 @@
-"""URL extraction, defanging, threat-feed checks (VirusTotal, URLhaus, local blocklists)."""
+
 from functools import lru_cache
 import os
 import re
@@ -18,7 +18,7 @@ def _live() -> bool:
 
 def extract_urls(text: str) -> list[str]:
     found = URL_RE.findall(text or "")
-    # strip trailing punctuation that is rarely part of the URL
+
     return [u.rstrip(".,;:!)]}'\"") for u in found]
 
 
@@ -37,15 +37,15 @@ def domain_of(url: str) -> str:
 VT_MAX_URLS = 5
 VT_MAX_POLLS = 3
 VT_POLL_SECONDS = 2.0
-# Async VT path (P0 reliability): shared per-mail deadline so VirusTotal can
-# never stall the request path; polling uses asyncio.sleep (cancellable),
-# never time.sleep in a thread. Sync helpers below stay for compat/tests.
+
+
+
 VT_MAIL_DEADLINE_S = 8.0
 VT_POLL_INTERVAL_S = 1.0
 
 
 def submit_url_virustotal(url: str, api_key: str) -> dict[str, Any]:
-    """Submit a URL for scanning. Returns {"analysis_id": ...} on success."""
+
     import requests
     r = requests.post(
         "https://www.virustotal.com/api/v3/urls",
@@ -58,7 +58,7 @@ def submit_url_virustotal(url: str, api_key: str) -> dict[str, Any]:
 
 def poll_analysis_virustotal(analysis_id: str, api_key: str,
                              max_polls: int = VT_MAX_POLLS) -> dict[str, Any]:
-    """Poll an analysis until completed; returns last_analysis_stats or {}."""
+
     import time
     import requests
     for _ in range(max(1, max_polls)):
@@ -79,11 +79,7 @@ def poll_analysis_virustotal(analysis_id: str, api_key: str,
 
 
 def check_virustotal(url: str, api_key: str = "") -> dict[str, Any]:
-    """Correct v3 flow: submit URL -> poll analysis -> read stats.
 
-    (Previously the code read last_analysis_stats straight off the
-    submission response, where it never exists — virustotal_hit never fired.)
-    """
     if not api_key:
         return {"source": "virustotal", "skipped": True}
     try:
@@ -101,14 +97,7 @@ def check_virustotal(url: str, api_key: str = "") -> dict[str, Any]:
 
 
 async def check_virustotal_async(url: str, api_key: str = "", *, deadline: float) -> dict[str, Any]:
-    """Async VirusTotal v3 flow bounded by an absolute monotonic deadline.
 
-    P0: submit + poll without blocking a thread (asyncio.sleep only, so
-    cancellation actually stops the wait). Past the deadline — or on any
-    transport error — returns pending/error instead of hanging the mail.
-    `deadline` is a time.monotonic() timestamp shared across all URLs of
-    one mail, so N URLs share one budget instead of N x timeout.
-    """
     import asyncio
     import time
     import httpx
@@ -174,7 +163,7 @@ def check_urlhaus(url: str) -> dict[str, Any]:
 
 
 def _demo_lists_on() -> bool:
-    """Hard-coded demo domains only apply in development (Step 4 honesty)."""
+
     try:
         from ...config import get_settings
         return get_settings().is_development()
@@ -200,7 +189,7 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
                 entry["blocklisted"] = False
         else:
             entry["blocklisted"] = False
-        # lookalike / homograph detection (suspicious, not standalone malicious)
+
         try:
             lk = lookalike_of(dom)
             if lk:
@@ -212,19 +201,19 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
             entry["reasons"] = reasons
             hits.append(entry)
             continue
-        # ML-based URL phishing detection (offline, no API key needed)
-        # Runs before live checks so zero-day phishing is caught even offline.
-        # NOTE: This model was trained with 48 features, many requiring page content.
-        # URL-only mode uses imputed medians for content features → lower accuracy.
-        # Thresholds tuned for URL-only mode (legit ~0.08, phishing ~0.25-0.45).
+
+
+
+
+
         try:
             from .url_ml import predict_url
             ml_result = predict_url(u)
             entry["ml_url_score"] = ml_result["risk_score"]
             entry["ml_url_confidence"] = ml_result["confidence"]
             entry["ml_url_label"] = "phishing" if ml_result["is_phishing"] else "legitimate"
-            # URL-only mode: top content features are imputed → max risk ~0.45.
-            # Use lower threshold than full-page mode (0.70 → 0.35).
+
+
             if ml_result["risk_score"] >= 0.35:
                 entry["ml_phishing"] = True
                 entry["reasons"] = [f"ml-phishing:{ml_result['confidence']}%"]
@@ -232,17 +221,17 @@ def analyze_urls(urls: list[str], vt_key: str = "") -> dict[str, Any]:
                 ml_phishing_count += 1
                 continue
             elif ml_result["risk_score"] >= 0.25:
-                # Suspicious range: keep signal but don't auto-count as malicious
+
                 entry["ml_suspicious"] = True
-                # Still add to hits as suspicious (not malicious_count) for UI visibility
-                # Don't count toward malicious_count but preserve for analyst review
+
+
                 entry["reasons"] = [f"ml-suspicious:{ml_result['confidence']}%"]
                 hits.append(entry)
                 continue
         except Exception:
-            # Model unavailable or scoring failed → graceful fallback, continue without ML
+
             pass
-        # live checks best-effort (capped to avoid rate limits / slow pipelines)
+
         if _live() and len(hits) < 3:
             uh = check_urlhaus(u)
             if uh.get("threat"):
@@ -266,14 +255,7 @@ def _is_malicious_hit(h: dict[str, Any]) -> bool:
 async def analyze_urls_async(urls: list[str], vt_key: str = "",
                              local_timeout_s: float = 5.0,
                              vt_deadline_s: float = VT_MAIL_DEADLINE_S) -> dict[str, Any]:
-    """Request-path URL analysis (P0 reliability).
 
-    Local signals (blocklist/lookalike/ML/urlhaus) run in a worker thread
-    bounded by local_timeout_s; VirusTotal submit+poll runs concurrently
-    on the event loop under ONE shared per-mail deadline. No time.sleep,
-    no unbounded per-URL blocking: worst case the mail carries pending
-    (not malicious) VT verdicts instead of stalling ingestion.
-    """
     import asyncio
     import time
     loop = asyncio.get_running_loop()

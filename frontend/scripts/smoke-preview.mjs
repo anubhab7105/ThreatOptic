@@ -1,7 +1,7 @@
-// Production-preview smoke test: fails on uncaught page errors or empty #root.
-// Usage: node scripts/smoke-preview.mjs [--port 4173] [--routes /, /login, /model]
-//        [--width 1440] [--theme light|dark] [--reduced-motion] [--block-webgl]
-// Exits non-zero on failure so CI catches whole-app blank-screen regressions.
+
+
+
+
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from '@playwright/test';
@@ -25,7 +25,7 @@ async function waitForServer(url, tries = 60) {
     try {
       const res = await fetch(url);
       if (res.ok) return;
-    } catch { /* not up yet */ }
+    } catch {  }
     await sleep(500);
   }
   throw new Error(`preview server did not start at ${url}`);
@@ -46,7 +46,7 @@ try {
     });
     if (theme) {
       await context.addInitScript((t) => {
-        try { localStorage.setItem('theme', t); } catch { /* ignore */ }
+        try { localStorage.setItem('theme', t); } catch {  }
       }, theme);
     }
     if (blockWebgl) {
@@ -61,8 +61,8 @@ try {
     for (const route of routes) {
       const page = await context.newPage();
       const errors = [];
-      // Preview runs without a backend: unreachable-API noise (CORS, refused
-      // connections, failed fetches) is environmental, not an app regression.
+
+
       const benign = /Failed to load resource|CORS policy|ERR_|Failed to fetch|NetworkError|fetch at /;
       page.on('console', (msg) => {
         if (msg.type() === 'error' && !benign.test(msg.text())) errors.push(`console.error: ${msg.text().slice(0, 300)}`);

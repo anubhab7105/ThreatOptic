@@ -1,5 +1,4 @@
-"""P0 model integrity: trust gate before unpickling, signature path,
-missing-sidecar fail-closed, transformer revision pinning."""
+
 import hashlib
 import os
 import stat
@@ -41,7 +40,7 @@ def test_valid_sidecar_loads(tmp_path, monkeypatch):
     _as_prod(monkeypatch)
     p = _write(str(tmp_path / "m.pkl"))
     _sidecar(p, b"model-bytes")
-    verify_model_artifact(p, purpose="test")  # no raise
+    verify_model_artifact(p, purpose="test")
 
 
 def test_tampered_file_fails_closed(tmp_path, monkeypatch):
@@ -69,17 +68,17 @@ def test_missing_sidecar_dev_needs_explicit_bypass(tmp_path, monkeypatch, caplog
     monkeypatch.setenv("MODEL_TRUST_INSECURE", "1")
     import logging
     with caplog.at_level(logging.WARNING, logger="model_trust"):
-        verify_model_artifact(p, purpose="test")  # explicit logged override
+        verify_model_artifact(p, purpose="test")
     assert any("UNVERIFIED" in r.message for r in caplog.records)
 
 
 def test_world_writable_always_refused(tmp_path, monkeypatch):
     _as_dev(monkeypatch)
-    monkeypatch.setenv("MODEL_TRUST_INSECURE", "1")  # even explicit bypass
+    monkeypatch.setenv("MODEL_TRUST_INSECURE", "1")
     p = _write(str(tmp_path / "m.pkl"))
     _sidecar(p, b"model-bytes")
     os.chmod(p, 0o666)
-    # Mock os.name to test world-writable check (normally skipped on Windows)
+
     monkeypatch.setattr("app.modules.model_trust.os.name", "posix")
     try:
         with pytest.raises(ModelTrustError, match="world-writable"):
@@ -98,8 +97,8 @@ def test_signature_path(tmp_path, monkeypatch):
     with open(p + ".sig", "w", encoding="utf-8") as f:
         f.write(priv.sign(data).hex())
     monkeypatch.setenv("MODEL_VERIFY_KEY", pub_hex)
-    verify_model_artifact(p, purpose="test")  # no raise
-    # tampered bytes fail even with sidecar present
+    verify_model_artifact(p, purpose="test")
+
     with open(p, "ab") as f:
         f.write(b"x")
     with pytest.raises(ModelTrustError, match="FAILED"):
@@ -117,7 +116,7 @@ def test_signature_missing_sidecar_fails_with_key_set(tmp_path, monkeypatch):
 
 
 def test_nlp_missing_sidecar_no_longer_verified(tmp_path, monkeypatch):
-    """The exact reported hole: missing sidecar used to return True."""
+
     import shutil
     import app.modules.nlp.engine as eng
     _as_prod(monkeypatch)
@@ -125,7 +124,7 @@ def test_nlp_missing_sidecar_no_longer_verified(tmp_path, monkeypatch):
     copy = str(tmp_path / "nlp-copy.joblib")
     shutil.copyfile(eng.PINNED_MODEL_PATH, copy)
     os.chmod(copy, 0o644 & ~stat.S_IWGRP & ~stat.S_IWOTH)
-    assert eng._verify_checksum(copy) is False  # no sidecar -> fail closed
+    assert eng._verify_checksum(copy) is False
 
 
 def test_url_ml_gate_runs_before_unpickle(tmp_path, monkeypatch):
@@ -147,15 +146,15 @@ def test_transformer_requires_pinned_revision(monkeypatch):
     from app.config import get_settings
     eng._transformer_pipe = None
     try:
-        # production + unpinned model -> refused without calling transformers
+
         monkeypatch.setattr(get_settings(), "app_env", "production")
         monkeypatch.setenv("TRANSFORMERS_MODEL", "some-model")
         monkeypatch.delenv("TRANSFORMERS_REVISION", raising=False)
         assert eng._get_transformer() is None
-        # production + malformed revision -> refused
+
         monkeypatch.setenv("TRANSFORMERS_REVISION", "not-a-hash")
         assert eng._get_transformer() is None
-        # production + pinned revision -> revision threaded through
+
         seen = {}
         fake_mod = types.ModuleType("transformers")
 
@@ -166,7 +165,7 @@ def test_transformer_requires_pinned_revision(monkeypatch):
         fake_mod.pipeline = _fake_pipeline
         monkeypatch.setitem(sys.modules, "transformers", fake_mod)
         monkeypatch.setenv("TRANSFORMERS_REVISION", "a" * 40)
-        assert eng._get_transformer() is None  # lib stub raised
+        assert eng._get_transformer() is None
         assert seen.get("revision") == "a" * 40
         assert seen.get("model") == "some-model"
     finally:

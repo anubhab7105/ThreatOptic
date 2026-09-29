@@ -1,4 +1,4 @@
-"""Model transparency tests: cached metrics file + endpoint."""
+
 import os
 import uuid
 
@@ -12,15 +12,15 @@ def _metrics_path() -> str:
 
 
 def test_metrics_file_schema(tmp_path):
-    # Train into a tmp dir: the suite must never rewrite the shipped,
-    # checksum-pinned model artifact in ml_models/.
+
+
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
     import train_nlp
     metrics = train_nlp.main(out_dir=str(tmp_path))
     assert os.path.exists(os.path.join(str(tmp_path), "metrics.json"))
     assert os.path.exists(os.path.join(str(tmp_path), "phishing_clf.joblib"))
-    # Sidecar is written next to the model so the trust gate can verify it.
+
     assert os.path.exists(os.path.join(str(tmp_path), "phishing_clf.joblib.sha256"))
     for key in ("accuracy", "macro_precision", "macro_recall", "macro_f1",
                 "per_class", "confusion_matrix", "confusion_labels", "n_train", "n_test"):
@@ -34,7 +34,7 @@ def test_metrics_file_schema(tmp_path):
     assert len(metrics["confusion_matrix"]) == n
     assert all(len(row) == n for row in metrics["confusion_matrix"])
     assert sum(sum(row) for row in metrics["confusion_matrix"]) == metrics["n_test"]
-    assert "dataset" in metrics  # records corpus vs curated fallback
+    assert "dataset" in metrics
 
 
 def test_training_data_loader_csv_and_fallback(tmp_path, monkeypatch):
@@ -64,17 +64,12 @@ def test_model_metrics_endpoint():
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["model_exists"] is True
-        assert body["accuracy"] == body["accuracy"]  # sanity: real float
+        assert body["accuracy"] == body["accuracy"]
         assert len(body["confusion_matrix"]) == len(body["confusion_labels"]) == 3
 
 
 def test_shipped_model_matches_its_sidecar():
-    """The committed artifact and its .sha256 sidecar must agree.
 
-    Training writes both atomically, so a mismatch means someone replaced
-    the model without re-signing it — the exact state the P0 trust gate
-    refuses to unpickle.
-    """
     import hashlib
     repo_models = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ml_models"))
     model = os.path.join(repo_models, "phishing_clf.joblib")
@@ -90,7 +85,7 @@ def test_shipped_model_matches_its_sidecar():
 
 
 def test_train_nlp_respects_out_dir(tmp_path):
-    """out_dir keeps training out of the repo (the suite's safety valve)."""
+
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
     import train_nlp

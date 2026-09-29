@@ -1,24 +1,11 @@
-"""Campaign cards built on graph clusters + SQLite forensic records.
 
-No graph rewrites: uses store.find_campaigns() for the domain cluster behind
-each shared IP, then joins EmailRecord/AnalysisResult/TraceabilityData to add
-email counts, shared ASN, confidence, and first/last seen timestamps.
-
-Tenant model (P0): the graph CLUSTERS are shared cross-tenant threat intel
-(infra-level IPs/domains — no addresses/subjects), but every piece of
-email-level metadata (cards' email lists/counts, embedded graph email
-nodes) is scoped to the caller's org. Admins (is_admin=True) see all;
-org-less non-admins see only null-org mail — never the global view.
-Pass is_admin explicitly: organization_id=None alone means "org-less
-user", NOT "admin".
-"""
 from collections import Counter
 from sqlalchemy.orm import Session
 from .. import models
 from ..modules.graph.store import find_campaigns, related_entities
 
-# Cap on addresses pulled for graph email-node filtering (fail closed
-# beyond: unlisted addresses are hidden, never leaked).
+
+
 GRAPH_EMAIL_ALLOWLIST_CAP = 20000
 
 
@@ -41,11 +28,7 @@ def _ensure_graph(db: Session) -> None:
 
 
 def _tenant_email_addresses(db: Session, organization_id: str | None) -> set[str]:
-    """Exact sender/recipient addresses for one org (None => null-org mail).
 
-    Used to hide foreign Email_Address nodes from graph output. Capped;
-    beyond the cap unlisted addresses are hidden (fail closed).
-    """
     from ..modules.graph.store import _clean_email
     rows = (db.query(models.EmailRecord.sender_address, models.EmailRecord.recipient_address)
             .filter(models.EmailRecord.organization_id == organization_id)
@@ -60,12 +43,7 @@ def _tenant_email_addresses(db: Session, organization_id: str | None) -> set[str
 
 
 def _filter_graph_emails(graph: dict, allowed: set[str] | None) -> dict:
-    """Drop Email_Address nodes not attributable to the caller.
 
-    allowed=None (Admin) returns the graph unchanged. IP/Domain/Campaign
-    nodes are shared threat intel and always stay; edges touching dropped
-    nodes are removed so no dangling references leak.
-    """
     if allowed is None or not isinstance(graph, dict):
         return graph
     nodes = []
@@ -90,8 +68,8 @@ def campaign_cards(db: Session, organization_id: str | None = None, *, is_admin:
     clusters = find_campaigns()
     if not clusters:
         return []
-    # Tenant isolation: Admin sees all; everyone else (including org-less
-    # users, whose organization_id is None) sees only their own org scope.
+
+
     if is_admin:
         emails = db.query(models.EmailRecord.id, models.EmailRecord.sender_address, models.EmailRecord.timestamp).all()
         traces = {t.email_id: t for t in db.query(models.TraceabilityData.email_id, models.TraceabilityData.origin_ip, models.TraceabilityData.isp_asn).all()}
@@ -120,9 +98,9 @@ def campaign_cards(db: Session, organization_id: str | None = None, *, is_admin:
         asns = Counter((traces[e.id].isp_asn or "").strip() for e in matched if traces.get(e.id) and (traces[e.id].isp_asn or "").strip())
         stamps = sorted(e.timestamp for e in matched if e.timestamp)
         email_count = len(matched)
-        # P0: cluster domains are global threat intel — only expose the ones
-        # this tenant actually observed in its own matched mail. Cards with
-        # neither tenant mail nor tenant domains are dropped entirely.
+
+
+
         seen_domains = set()
         for e in matched:
             sender = (e.sender_address or "").lower()
@@ -182,8 +160,8 @@ def campaign_detail(db: Session, cid: str, organization_id: str | None = None, *
     rows.sort(key=lambda r: r["timestamp"] or "", reverse=True)
     graph = related_entities(card["ip"])
     if not is_admin:
-        # P0: the embedded neighbourhood traverses the shared global graph —
-        # strip foreign email nodes before returning.
+
+
         graph = _filter_graph_emails(
             graph, _tenant_email_addresses(db, organization_id))
     return {"card": card, "graph": graph, "emails": rows}
