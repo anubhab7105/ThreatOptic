@@ -1,2 +1,0 @@
-# Operator-curated blocklist (one domain per line, lines starting with # ignored).
-# Empty by default. This file (not code) is where real local entries live.
