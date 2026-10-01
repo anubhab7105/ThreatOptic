@@ -26,7 +26,7 @@ def check_env(env: dict | None = None) -> dict:
     live = str(e.get("ENABLE_LIVE_LOOKUPS", "0")).lower() not in ("", "0", "false", "no")
     return {
         "app_env": e.get("APP_ENV", "development"),
-        "secret_changed": bool(e.get("SECRET_KEY")) and e.get("SECRET_KEY") != "change-me-in-prod",
+        "secret_changed": bool(e.get("SECRET_KEY")) and e.get("SECRET_KEY") != "change-me-in-prod" and len(e.get("SECRET_KEY", "")) >= 32,
         "custody_key_set": bool(e.get("CUSTODY_KEY")),
         "live_lookups": live,
         "virustotal_key": bool(e.get("VIRUSTOTAL_API_KEY")),
@@ -52,9 +52,9 @@ def main() -> int:
     checks: list[bool] = []
     env = check_env()
     _line(True, f"APP_ENV={env['app_env']}", checks)
-    _line(env["secret_changed"], "SECRET_KEY changed from default", checks)
+    _line(env["secret_changed"], "SECRET_KEY changed from default and length >= 32", checks)
     if env["app_env"] != "development":
-        _line(env["custody_key_set"], "CUSTODY_KEY provisioned (required outside development)", checks)
+        _line(env["custody_key_set"], "CUSTODY_KEY provisioned (min 32 chars, required outside development)", checks)
     else:
         print("[INFO] development mode: custody dev fallback active")
     _line(True, f"live lookups {'ON' if env['live_lookups'] else 'OFF'}; "

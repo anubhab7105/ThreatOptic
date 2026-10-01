@@ -14,7 +14,7 @@ request path (Step 3).
 """
 import re
 
-CARD_CANDIDATE_RE = re.compile(r"\b(?:\d[ \-.]*?){13,19}\b")
+CARD_CANDIDATE_RE = re.compile(r"\b(?:\d[ \-.]*){13,19}\b")
 SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 E164_RE = re.compile(r"\+\d(?:[\d.\s\-()]*\d)?")
 NANP_RE = re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}\b")

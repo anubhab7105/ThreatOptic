@@ -65,12 +65,8 @@ def get_current_user(
                 algorithms=["HS256"],
                 audience="authenticated",
             )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired")
-    except jwt.PyJWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
-    except Exception:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token")
+    except (jwt.PyJWTError, Exception):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired token")
 
     user_id = payload.get("sub")
     if not user_id:

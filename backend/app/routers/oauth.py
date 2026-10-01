@@ -293,9 +293,9 @@ async def callback(
     if not verifier:
         raise HTTPException(400, "invalid OAuth state: missing PKCE verifier")
 
-    # redirect_uri must match the stored value AND be allowlisted now
-    # (fail closed if the allowlist changed since authorize time).
-    if redirect_uri and redirect_uri != (row.redirect_uri or ""):
+    stored_uri = (row.redirect_uri or "").rstrip("/")
+    param_uri = (redirect_uri or "").rstrip("/")
+    if redirect_uri and param_uri != stored_uri:
         raise HTTPException(400, "redirect_uri mismatch — restart the connect flow")
     r_uri = row.redirect_uri or ""
     if not r_uri or not get_settings().oauth_redirect_allowed(r_uri):
@@ -319,7 +319,7 @@ async def callback(
         else:
             tokens = await connectors.exchange_microsoft_code(code, cid, sec, r_uri, code_verifier=verifier)
             address = await connectors.get_microsoft_profile_email(tokens["access_token"])
-    except httpx.HTTPError as e:
+    except (httpx.HTTPError, KeyError, ValueError) as e:
         raise HTTPException(400, f"{p} token exchange failed: {e}")
     if not tokens.get("refresh_token"):
         raise HTTPException(400, "provider did not return a refresh token")
@@ -380,9 +380,13 @@ async def callback(
     audit("oauth.callback", provider=p, account=address)
 
     # URL-encode the redirect address
-    from urllib.parse import quote
-    raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
-    base = raw_front or "http://localhost:5173"
+    from urllib.parse import quote, urlparse
+    if row.redirect_uri:
+        parsed_r = urlparse(row.redirect_uri)
+        base = f"{parsed_r.scheme}://{parsed_r.netloc}"
+    else:
+        raw_front = (get_settings().frontend_url or "").split(",")[0].strip().rstrip("/")
+        base = raw_front or "http://localhost:5173"
     encoded_address = quote(address, safe="")
     return RedirectResponse(f"{base}/mailboxes?connected={p}:{encoded_address}", status_code=302)
 

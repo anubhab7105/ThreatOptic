@@ -345,10 +345,10 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             key = cand
             break
     if key is None:
-        # try raw match or substring match
+        # try raw match or substring match (min length 3 to prevent false positive short matches)
         for n in list(G.nodes):
             n_str = str(n).lower()
-            if n_str.endswith(":" + clean_val) or clean_val in n_str:
+            if n_str.endswith(":" + clean_val) or (len(clean_val) >= 3 and clean_val in n_str):
                 key = n
                 break
 
@@ -359,7 +359,7 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             email_row = None
             if email_id:
                 email_row = db.query(models.EmailRecord).filter(models.EmailRecord.id == email_id).first()
-            if not email_row and clean_val:
+            if not email_row and len(clean_val) >= 3:
                 email_row = db.query(models.EmailRecord).filter(models.EmailRecord.sender_address.ilike(f"%{clean_val}%")).first()
             if email_row:
                 trace = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_row.id).first()

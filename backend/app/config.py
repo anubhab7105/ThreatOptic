@@ -48,6 +48,8 @@ _env_path = _env_files[0] if _env_files else os.path.join(_backend_dir, ".env")
 for _path in _env_files:
     load_dotenv(_path, override=False)
 
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_env_path, extra="ignore")
@@ -248,7 +250,7 @@ class Settings(BaseSettings):
 
     @property
     def smtp_on(self) -> bool:
-        return str(self.smtp_enabled).lower() not in ("", "0", "false", "no")
+        return str(self.smtp_enabled).strip().lower() in TRUTHY_VALUES
 
     def resolved_db_url(self) -> str:
         # TEST_DATABASE_URL wins when set (CI + pytest isolation); it is
@@ -282,7 +284,7 @@ class Settings(BaseSettings):
 
     @property
     def live_lookups(self) -> bool:
-        return str(self.enable_live_lookups).lower() not in ("", "0", "false", "no")
+        return str(self.enable_live_lookups).strip().lower() in TRUTHY_VALUES
 
     def is_development(self) -> bool:
         return self.app_env.strip().lower() == "development"
@@ -370,6 +372,29 @@ def require_secrets() -> None:
         raise RuntimeError(
             f"Refusing to boot: SECRET_KEY is only {len(secret)} chars; minimum is {MIN_SECRET_BYTES}."
         )
+
+    vault_key = os.environ.get("TOKEN_ENCRYPTION_KEY", "") or settings.token_encryption_key or ""
+    if not vault_key or vault_key.strip().lower() in FORGEABLE_SECRET_MARKERS:
+        raise RuntimeError(
+            "Refusing to boot: TOKEN_ENCRYPTION_KEY is unset or a well-known default. "
+            "Provision it from a secrets manager (32+ chars required)."
+        )
+    if len(vault_key.strip()) < MIN_SECRET_BYTES:
+        raise RuntimeError(
+            f"Refusing to boot: TOKEN_ENCRYPTION_KEY is only {len(vault_key.strip())} chars; minimum is {MIN_SECRET_BYTES}."
+        )
+
+    custody_key = os.environ.get("CUSTODY_KEY", "") or settings.custody_key or ""
+    if not custody_key or custody_key.strip().lower() in FORGEABLE_SECRET_MARKERS:
+        raise RuntimeError(
+            "Refusing to boot: CUSTODY_KEY is unset or a well-known default. "
+            "Provision it from a secrets manager (32+ chars required)."
+        )
+    if len(custody_key.strip()) < MIN_SECRET_BYTES:
+        raise RuntimeError(
+            f"Refusing to boot: CUSTODY_KEY is only {len(custody_key.strip())} chars; minimum is {MIN_SECRET_BYTES}."
+        )
+
     es_url = (settings.elasticsearch_url or "").strip()
     if es_url.lower().startswith("http://"):
         # Basic-auth credentials cross this connection — plaintext in a real

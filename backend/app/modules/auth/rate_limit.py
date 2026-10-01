@@ -20,6 +20,6 @@ def audit(event: str, **fields: object) -> None:
 
 def apply_limiter_setting() -> None:
     """Sync slowapi's kill-switch with settings (called from lifespan)."""
-    from ...config import get_settings
+    from ...config import get_settings, TRUTHY_VALUES
 
-    limiter.enabled = str(get_settings().rate_limit_enabled).lower() not in ("", "0", "false", "no")
+    limiter.enabled = str(get_settings().rate_limit_enabled).strip().lower() in TRUTHY_VALUES

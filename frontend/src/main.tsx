@@ -266,17 +266,16 @@ function Shell() {
   const location = useLocation();
   const navigate = useNavigate();
   const [health, setHealth] = useState<'ok' | 'down' | 'unknown'>('unknown');
-
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const code = params.get('code');
     const state = params.get('state');
     if (code) {
       const originPath = window.location.origin + window.location.pathname;
-      // P0: never read OAuth secrets from browser storage and never forward
-      // them as query params (proxy/access-log leak). Forward only the opaque
-      // code + state; server resolves credentials/redirect from its own store.
-      let target = `/api/v1/oauth/google/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
+      const iss = params.get('iss') || '';
+      const provider = iss.includes('microsoft') ? 'microsoft' : 'google';
+      const apiPrefix = BASE ? `${BASE}/api/v1` : '/api/v1';
+      let target = `${apiPrefix}/oauth/${provider}/callback?code=${encodeURIComponent(code)}&redirect_uri=${encodeURIComponent(originPath)}`;
       if (state) target += `&state=${encodeURIComponent(state)}`;
 
       window.history.replaceState({}, '', window.location.pathname);
@@ -284,6 +283,7 @@ function Shell() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   useEffect(() => {
     const ac = new AbortController();
@@ -416,6 +416,7 @@ useEffect(() => {
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
           <div id="main-content">
             <Routes>
+              <Route path="/" element={<Dashboard />} />
               <Route path="/email/:id" element={<EmailRoute />} />
               <Route path="/campaign/:id" element={<CampaignRoute />} />
               <Route path="/campaigns" element={<Campaigns />} />

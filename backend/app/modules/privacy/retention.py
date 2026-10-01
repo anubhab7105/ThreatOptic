@@ -44,9 +44,9 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
         email_ids = [e.id for e in batch]
         analyses = {a.email_id: a for a in
                     db.query(AnalysisResult).filter(AnalysisResult.email_id.in_(email_ids)).all()}
-        # Track cursor before mutations
-        last_ts = batch[-1].timestamp
-        last_id = batch[-1].id
+        # Next cursor candidate (applied only after commit)
+        next_ts = batch[-1].timestamp
+        next_id = batch[-1].id
         try:
             for e in batch:
                 a = analyses.get(e.id)
@@ -72,6 +72,8 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
                     except Exception:
                         pass
             db.commit()
+            last_ts = next_ts
+            last_id = next_id
         except Exception:
             db.rollback()
             log.exception("retention batch failed, rolled back")

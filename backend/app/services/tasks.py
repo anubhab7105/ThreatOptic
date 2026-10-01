@@ -7,6 +7,7 @@ for local/offline dev (no broker needed).
 """
 import asyncio
 import base64
+import binascii
 import logging
 
 log = logging.getLogger("tasks")
@@ -41,6 +42,9 @@ def analyze_email_task(self, raw_b64: str, source: str = "api",
     try:
         res = _run_pipeline(raw_b64, source, envelope_from, organization_id)
     except Exception as e:
+        if isinstance(e, (ValueError, binascii.Error)):
+            log.warning("celery task fatal error (poison message): %s", type(e).__name__)
+            raise
         log.warning("celery task retry: %s", type(e).__name__)
         raise self.retry(exc=e, countdown=5)
     try:

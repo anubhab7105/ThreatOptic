@@ -191,7 +191,7 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         _to_thread(whois_lookup, _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))),
         _to_thread(dns_lookup, _sender_domain(hinfo.get("from_addr") or parsed.get("sender_address", ""))),
         _to_thread(flag_infrastructure, origin_ip, "", ""),
-        _to_thread(validate_all, raw, headers, origin_ip or "127.0.0.1", envelope_from or hinfo.get("return_path", "")),
+        _to_thread(validate_all, raw, headers, origin_ip or "", envelope_from or hinfo.get("return_path", "")),
     )
     geo = geo or {"lat": None, "lon": None, "country": "", "city": "", "source": "fallback"}
     whois = whois or {}
@@ -246,7 +246,11 @@ async def process_raw_email(db: Session, raw: bytes, source: str = "api", envelo
         _to_thread(analyze_attachments, parsed.get("attachments_metadata", []), vt_key, timeout=3.0),
         return_exceptions=True,
     )
-    nlp = nlp_res if isinstance(nlp_res, dict) else {"ml_score": 0.0, "ml_label": "clean", "nlp_cues_detected": [], "impersonation_cues": []}
+    if isinstance(nlp_res, dict):
+        nlp = nlp_res
+    else:
+        log.warning("NLP inference failed; failing closed to nlp_unavailable: %s", nlp_res)
+        nlp = {"ml_score": 0.5, "ml_label": "nlp_unavailable", "nlp_cues_detected": ["nlp_unavailable"], "impersonation_cues": []}
     url_res = url_res if isinstance(url_res, dict) else {"urls": urls[:50], "hits": [], "malicious_count": 0}
     attach_res = attach_res if isinstance(attach_res, dict) else {"findings": [], "risk": 0.0, "malicious_count": 0}
 

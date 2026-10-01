@@ -12,6 +12,18 @@ from datetime import datetime, timezone
 log = logging.getLogger("scheduler")
 
 AUDIT_LOG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "retention_audit.log")
+MAX_AUDIT_LOG_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
+def _rotate_audit_log_if_needed() -> None:
+    try:
+        if os.path.exists(AUDIT_LOG) and os.path.getsize(AUDIT_LOG) > MAX_AUDIT_LOG_BYTES:
+            rotated = f"{AUDIT_LOG}.1"
+            if os.path.exists(rotated):
+                os.remove(rotated)
+            os.rename(AUDIT_LOG, rotated)
+    except Exception as e:
+        log.warning("could not rotate retention audit log: %s", e)
 
 
 def run_retention_job() -> dict:
@@ -32,6 +44,7 @@ def run_retention_job() -> dict:
     }
     log.info("retention run: purged_body=%s deleted=%s", entry["purged_body"], entry["deleted"])
     try:
+        _rotate_audit_log_if_needed()
         with open(AUDIT_LOG, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
@@ -65,6 +78,8 @@ def start_scheduler():
         CronTrigger(hour=getattr(settings, "retention_hour", 3), minute=0),
         id="daily-retention",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     minutes = getattr(settings, "mail_poll_minutes", 0) or 0
     if minutes > 0:
@@ -74,6 +89,8 @@ def start_scheduler():
             IntervalTrigger(minutes=minutes),
             id="mailbox-poll",
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
         log.info("scheduler: mailbox poll every %s min", minutes)
     scheduler.start()

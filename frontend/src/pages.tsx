@@ -549,7 +549,7 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const sync = async () => {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
-      const num = Math.max(1, parseInt(maxN, 10) || 10);
+      const num = Math.max(1, Math.min(50, parseInt(maxN, 10) || 10));
       // P0: client_id from state only, client_secret never from browser storage
       const effectiveCid = clientId.trim() || undefined;
       const effectiveSec = clientSecret.trim() || undefined;
@@ -1211,12 +1211,21 @@ export function GraphSvg({ graph }: { graph: any }) {
             return (
               <g
                 key={n.id}
+                tabIndex={0}
+                role="button"
+                aria-label={`${n.kind.replace('_', ' ')}: ${lbl}`}
                 transform={`translate(${p.x}, ${p.y})`}
                 opacity={isDimmed ? 0.25 : 1}
                 style={{ cursor: 'pointer', transition: 'opacity 0.2s, transform 0.15s' }}
                 onMouseEnter={() => setHoveredId(n.id)}
                 onMouseLeave={() => setHoveredId(null)}
                 onClick={() => setSelectedId(selectedId === n.id ? null : n.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedId(selectedId === n.id ? null : n.id);
+                  }
+                }}
               >
                 <title>{`${n.kind.replace('_', ' ')}: ${lbl}\nClick to inspect details`}</title>
 
@@ -1437,7 +1446,7 @@ export function EmailView({ id }: { id: string }) {
     setErr('');
     setD(null);
     let cancelled = false;
-    jget(`/emails/${id}`).then((v) => { if (!cancelled) setD(v); }).catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load email (${e.status}): ${e.message}` : String(e)); });
+    jget(`/emails/${encodeURIComponent(id)}`).then((v) => { if (!cancelled) setD(v); }).catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load email (${e.status}): ${e.message}` : String(e)); });
     jget('/cases').then((v) => { if (!cancelled) setCases(v); }).catch(() => {});
     return () => { cancelled = true; };
   }, [id]);
@@ -1448,7 +1457,7 @@ export function EmailView({ id }: { id: string }) {
       const targetCase = cases.find((c: any) => c.id === caseId);
       const existing = targetCase?.email_ids || [];
       if (!existing.includes(id)) {
-        await jpatch(`/cases/${caseId}`, { email_ids: [...existing, id] });
+        await jpatch(`/cases/${encodeURIComponent(caseId)}`, { email_ids: [...existing, id] });
       }
       setCaseNotice(`Linked to case: ${targetCase?.title || caseId}`);
       setTimeout(() => setCaseNotice(''), 4000);
@@ -1949,7 +1958,7 @@ export function Mailboxes() {
   const syncNow = async () => {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
-      const num = Math.max(1, parseInt(maxN, 10) || 10);
+      const num = Math.max(1, Math.min(50, parseInt(maxN, 10) || 10));
       const r = await jpost('/oauth/sync-now', {
         max_results: num,
         client_id: clientId.trim() || undefined,

@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/api': { target: proxyTarget, changeOrigin: true },
+        '/api': { target: proxyTarget, changeOrigin: true, ws: true },
         '/health': { target: proxyTarget, changeOrigin: true },
       },
     },
@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     esbuild: {
-      drop: ['console', 'debugger'],
+      drop: ['debugger'],
       legalComments: 'none',
     },
   };

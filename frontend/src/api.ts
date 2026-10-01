@@ -2,12 +2,12 @@
 import { supabase } from './supabaseClient';
 
 export const BASE: string =
-  (import.meta as any).env?.VITE_API_URL ?? '';
+  ((import.meta as any).env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 export const API = `${BASE}/api/v1`;
 
 async function authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
-  const devToken = localStorage.getItem('soc-dev-token');
+  const devToken = typeof localStorage !== 'undefined' ? localStorage.getItem('soc-dev-token') : null;
   if (devToken) {
     return { ...extra, Authorization: `Bearer ${devToken}` };
   }
@@ -77,7 +77,7 @@ async function handle(r: Response) {
   try {
     return await r.json();
   } catch {
-    return null;
+    throw new ApiError(r.status, 'Invalid JSON response from server');
   }
 }
 
@@ -151,7 +151,9 @@ async function request(path: string, init: RequestInit, opts: { auth?: boolean }
     throw e;
   }
   if (r.status === 401 && opts.auth !== false && !path.startsWith('/auth/')) {
-    window.dispatchEvent(new Event('soc:unauthorized'));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('soc:unauthorized'));
+    }
   }
   return handle(r);
 }
@@ -209,7 +211,8 @@ export async function pollTask(taskId: string, tries = 30, delayMs = 2000): Prom
 
 /** Authenticated download (report links can't carry a bearer token as plain anchors). */
 export async function downloadReport(id: string, kind: 'pdf' | 'json') {
-  const blob = (await request(`/reports/${id}.${kind}`, { method: 'GET' })) as Blob;
+  const encId = encodeURIComponent(id);
+  const blob = (await request(`/reports/${encId}.${kind}`, { method: 'GET' })) as Blob;
   const url = URL.createObjectURL(blob instanceof Blob ? blob : new Blob([JSON.stringify(blob, null, 2)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;

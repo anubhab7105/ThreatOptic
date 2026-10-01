@@ -132,18 +132,21 @@ def _validate_case_emails(db: Session, user: models.User, email_ids: list[str] |
 async def ingest_text(payload: IngestBody, request: Request, async_mode: bool = Query(False),
                       db: Session = Depends(get_db),
                       user: models.User = Depends(require_roles(*READ_WRITE))):
+    raw_bytes = payload.raw.encode("utf-8")
+    if len(raw_bytes) > MAX_RAW_BYTES:
+        raise HTTPException(413, f"email payload exceeds maximum size of {MAX_RAW_BYTES} bytes")
     if async_mode:
         from ..services.tasks import analyze_email_task, broker_configured
         if not broker_configured():
             raise HTTPException(400, "async processing not configured (CELERY_BROKER_URL unset)")
         import base64
-        task = analyze_email_task.delay(base64.b64encode(payload.raw.encode()).decode(),
+        task = analyze_email_task.delay(base64.b64encode(raw_bytes).decode(),
                                         payload.source or "api", "", user.organization_id)
         _record_task_owner(task.id, user)
         audit("email.ingest.queued", user=user.email, task_id=task.id)
         return JSONResponse({"task_id": task.id, "status": "queued"}, status_code=202)
     try:
-        res = await process_raw_email(db, payload.raw.encode(), source=payload.source or "api",
+        res = await process_raw_email(db, raw_bytes, source=payload.source or "api",
                                       organization_id=user.organization_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -263,6 +266,8 @@ def list_emails(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=
 
 @router.get("/emails/{email_id}", response_model=schemas.EmailDetail)
 def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    if not re.match(r"^[A-Za-z0-9\-]{1,64}$", email_id or ""):
+        raise HTTPException(400, "invalid email id")
     e = db.query(models.EmailRecord).filter(models.EmailRecord.id == email_id).first()
     if not e:
         raise HTTPException(404, "email not found")
@@ -271,109 +276,6 @@ def email_detail(email_id: str, db: Session = Depends(get_db), user: models.User
         raise HTTPException(404, "email not found")
     a = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_id).first()
     t = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_id).first()
-    # P0: re-enrichment below issues system-resolver DNS (gethostbyname,
-    # no timeout) plus live lookups — the offline switch gates ALL of it.
-    # Offline returns the stored trace as-is (no network, no GET writes).
-    from ..config import get_settings as _get_settings
-    _detail_live = bool(_get_settings().live_lookups)
-    if t and _detail_live:
-        modified = False
-        geo = t.geolocation or {}
-        from ..modules.traceability.geoip import geolocate, has_coords, geolocate_country
-        from ..modules.traceability.ip_extractor import extract_origin_ip
-
-        if not t.origin_ip and e.raw_headers:
-            candidate_ip = extract_origin_ip(t.relay_chain or [], raw_headers=e.raw_headers)
-            if candidate_ip:
-                t.origin_ip = candidate_ip
-                modified = True
-
-        if not has_coords(geo) or geo.get("source") in ("offline-stub", "fallback", "none", "unresolved"):
-            new_geo = geolocate(t.origin_ip) if t.origin_ip else None
-            if not has_coords(new_geo):
-                for hop in (t.relay_chain or []):
-                    for hop_ip in hop.get("ips", []):
-                        g = geolocate(hop_ip)
-                        if has_coords(g):
-                            new_geo = {**g, "source": f"relay-hop ({g.get('source', 'resolved')})"}
-                            break
-                    if has_coords(new_geo):
-                        break
-
-            # Fallback to domain MX or A record
-            domain = e.sender_address.split("@")[-1].strip(" <>") if e.sender_address else ""
-            if not has_coords(new_geo) and domain:
-                try:
-                    import socket
-                    # Try MX first
-                    dns_mx = (t.dns_data or {}).get("mx", [])
-                    for mx_host in dns_mx[:3]:
-                        clean_mx = str(mx_host).strip().rstrip(".")
-                        if clean_mx:
-                            mx_ip = socket.gethostbyname(clean_mx)
-                            g = geolocate(mx_ip)
-                            if has_coords(g):
-                                new_geo = {**g, "source": "approx-mx-ip"}
-                                break
-                except Exception:
-                    pass
-
-            if not has_coords(new_geo) and domain:
-                try:
-                    import socket
-                    dip = socket.gethostbyname(domain)
-                    g = geolocate(dip)
-                    if has_coords(g):
-                        new_geo = {**g, "source": "approx-domain-ip"}
-                except Exception:
-                    pass
-
-            # Fallback to WHOIS country or TLD country centroid
-            if not has_coords(new_geo):
-                whois_c = str((t.whois_data or {}).get("country", "") or "").strip().upper()
-                if whois_c and len(whois_c) == 2:
-                    cg = geolocate_country(whois_c, source="whois-country-approx")
-                    if has_coords(cg):
-                        new_geo = cg
-                elif domain and "." in domain:
-                    tld = domain.split(".")[-1].upper()
-                    if len(tld) == 2:
-                        cg = geolocate_country(tld, source="tld-country-approx")
-                        if has_coords(cg):
-                            new_geo = cg
-
-            if has_coords(new_geo) or (new_geo or {}).get("country"):
-                t.geolocation = new_geo
-                if new_geo.get("isp") or new_geo.get("asn"):
-                    t.isp_asn = f"{new_geo.get('isp', '')} {new_geo.get('asn', '')}".strip()
-                modified = True
-
-        whois = t.whois_data or {}
-        if (not whois or whois.get("note") == "live-lookups-disabled") and e.sender_address:
-            from ..modules.traceability.whois_dns import whois_lookup
-            domain = e.sender_address.split("@")[-1].strip(" <>")
-            if domain:
-                new_w = whois_lookup(domain)
-                if new_w and new_w.get("note") != "live-lookups-disabled":
-                    t.whois_data = new_w
-                    modified = True
-
-        dnsd = t.dns_data or {}
-        if (not dnsd or (not dnsd.get("mx") and not dnsd.get("a"))) and e.sender_address:
-            from ..modules.traceability.whois_dns import dns_lookup
-            domain = e.sender_address.split("@")[-1].strip(" <>")
-            if domain:
-                new_d = dns_lookup(domain)
-                if new_d and (new_d.get("mx") or new_d.get("a")):
-                    t.dns_data = new_d
-                    modified = True
-
-        if modified:
-            try:
-                db.commit()
-                db.refresh(t)
-            except Exception:
-                db.rollback()
 
     return {
         "email": e,
@@ -465,7 +367,8 @@ def _compute_dashboard(db: Session, user: models.User) -> dict:
 
 
 @router.get("/search")
-def search(q: str = Query(..., min_length=1, max_length=200), limit: int = Query(50, ge=1, le=100),
+@limiter.limit("30/minute")
+def search(request: Request, q: str = Query(..., min_length=1, max_length=200), limit: int = Query(50, ge=1, le=100),
            db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Full-text forensic search: Elasticsearch when configured, SQLite fallback (F10)."""
     from ..modules.search.elastic_sync import search_emails
@@ -520,8 +423,12 @@ def create_case(payload: schemas.CaseIn, db: Session = Depends(get_db),
                 user: models.User = Depends(require_roles(*READ_WRITE))):
     if not payload.title or not payload.title.strip():
         raise HTTPException(400, "title is required")
-    if payload.assignee_id and not db.query(models.User).filter(models.User.id == payload.assignee_id).first():
-        raise HTTPException(400, "assignee not found")
+    if payload.assignee_id:
+        assignee = db.query(models.User).filter(models.User.id == payload.assignee_id).first()
+        if not assignee:
+            raise HTTPException(400, "assignee not found")
+        if user.role != "Admin" and assignee.organization_id != user.organization_id:
+            raise HTTPException(400, "assignee not found in organization")
     c = models.InvestigationCase(title=payload.title.strip(),
                                  email_ids=_validate_case_emails(db, user, payload.email_ids or []),
                                  assignee_id=payload.assignee_id, notes=payload.notes or "",
@@ -560,8 +467,12 @@ def update_case(case_id: str, payload: CaseUpdate, db: Session = Depends(get_db)
     if payload.notes is not None:
         c.notes = str(payload.notes)
     if payload.assignee_id is not None:
-        if payload.assignee_id and not db.query(models.User).filter(models.User.id == payload.assignee_id).first():
-            raise HTTPException(400, "assignee not found")
+        if payload.assignee_id:
+            assignee = db.query(models.User).filter(models.User.id == payload.assignee_id).first()
+            if not assignee:
+                raise HTTPException(400, "assignee not found")
+            if user.role != "Admin" and assignee.organization_id != user.organization_id:
+                raise HTTPException(400, "assignee not found in organization")
         c.assignee_id = payload.assignee_id
     if payload.email_ids is not None:
         c.email_ids = _validate_case_emails(db, user, payload.email_ids)
@@ -634,12 +545,15 @@ def report_pdf(email_id: str, db: Session = Depends(get_db), user: models.User =
 
 
 @router.post("/admin/retention")
+@limiter.limit("5/minute")
 def run_retention(
+    request: Request,
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_roles("Admin")),
 ):
     from ..config import get_settings
     settings = get_settings()
+    audit("admin.retention", user=admin.email)
     return apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days)
 
 

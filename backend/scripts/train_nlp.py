@@ -175,7 +175,7 @@ def load_training_data() -> tuple[list[str], list[str], str]:
 def build_pipeline() -> Pipeline:
     return Pipeline([
         ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=5000, sublinear_tf=True)),
-        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", C=3.0)),
+        ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", C=3.0, random_state=RANDOM_STATE)),
     ])
 
 

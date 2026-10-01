@@ -182,8 +182,8 @@ app.add_middleware(
     # lifespan() refuses to boot on a match-everything pattern.
     allow_origin_regex=settings.cors_regex_pattern,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
 )
 app.include_router(auth_router, prefix=settings.api_prefix)
 # All threat-intel routes require a valid JWT; the auth router above stays public.
@@ -217,7 +217,8 @@ def health():
 
 
 @app.get("/health/detailed")
-def health_detailed():
+@limiter.limit("5/minute")
+def health_detailed(request: Request):
     from .database import engine
     db_ok = True
     try:
@@ -227,9 +228,9 @@ def health_detailed():
         db_ok = False
         log.warning("db health check failed: %s", e)
     try:
-        from .modules.nlp.engine import analyze_text
-        r = analyze_text("test", "hello world")
-        nlp_ok = "ml_score" in r
+        from .modules.nlp.engine import _get_classifier
+        clf = _get_classifier()
+        nlp_ok = clf is not None
     except Exception:
         nlp_ok = False
     try:

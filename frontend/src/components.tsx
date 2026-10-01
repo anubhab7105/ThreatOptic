@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
 
 export function severityOf(score: number): Severity {
-  if (typeof score !== 'number' || Number.isNaN(score)) return 'unknown';
+  if (typeof score !== 'number' || Number.isNaN(score) || !isFinite(score)) return 'unknown';
   if (score >= 90) return 'critical';
   if (score >= 75) return 'high';
   if (score >= 50) return 'medium';
@@ -19,8 +19,11 @@ export function severityColor(s: string): string {
   return '#6b7280';
 }
 
-export function ScoreBadge({ v }: { v: number }) {
-  const sev = severityOf(v ?? 0);
+export function ScoreBadge({ v }: { v: number | null | undefined }) {
+  if (v === null || v === undefined) {
+    return <span className="badge unknown" title="no score">—</span>;
+  }
+  const sev = severityOf(v);
   return (
     <span className={`badge ${sev}`} title={`fraud score ${v}`}>
       {v}
@@ -40,7 +43,8 @@ export function StatCard({ label, value, caption }: { label: string; value: Reac
 
 export function Toast({ msg, kind }: { msg: string; kind?: 'error' | 'info' }) {
   if (!msg) return null;
-  return <div role="alert" className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
+  const role = kind === 'info' ? 'status' : 'alert';
+  return <div role={role} className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
 }
 
 export function Empty({ msg }: { msg: string }) {

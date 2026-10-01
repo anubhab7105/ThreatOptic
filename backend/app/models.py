@@ -42,7 +42,7 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)  # no default — set by trigger
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String(32), default="Analyst")  # Admin, Analyst, ReadOnly
+    role: Mapped[str] = mapped_column(String(32), default="ReadOnly")  # Admin, Analyst, ReadOnly
     organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     organization: Mapped[Organization | None] = relationship(back_populates="users")
