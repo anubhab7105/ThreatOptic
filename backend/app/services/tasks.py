@@ -69,6 +69,12 @@ def _run_pipeline(raw_b64: str, source: str, envelope_from: str, organization_id
             return asyncio.run(process_raw_email(
                 db, raw, source=source, envelope_from=envelope_from,
                 organization_id=organization_id))
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
         finally:
             db.close()
 

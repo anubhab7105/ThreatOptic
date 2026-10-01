@@ -271,6 +271,15 @@ class Settings(BaseSettings):
             url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
         return url
 
+    def redacted_db_url(self) -> str:
+        """Safe database URL with password stripped for logging."""
+        try:
+            from sqlalchemy.engine import make_url
+            return make_url(self.resolved_db_url()).render_as_string(hide_password=True)
+        except Exception:
+            import re
+            return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self.resolved_db_url())
+
     @property
     def live_lookups(self) -> bool:
         return str(self.enable_live_lookups).lower() not in ("", "0", "false", "no")

@@ -366,6 +366,7 @@ export function LoginPage() {
               label="Password"
               value={password}
               onChange={setPassword}
+              maxLength={128}
               placeholder={mode === 'register' ? 'Password (min 8 chars)' : '••••••••'}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               className="login-input"
@@ -690,10 +691,27 @@ export function Dashboard() {
   const [err, setErr] = useState('');
   const [raw, setRaw] = useState('');
   const [busy, setBusy] = useState(false);
-  const [q, setQ] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sevFilter, setSevFilter] = useState('all');
   const [notice, setNotice] = useState('');
   const [asyncMode, setAsyncMode] = useState(false);
+
+  useEffect(() => {
+    const onTopSearch = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { q?: string } | undefined;
+      if (detail && typeof detail.q === 'string') setSearchQuery(detail.q);
+    };
+    const onSevFilter = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { sev?: string } | undefined;
+      if (detail && typeof detail.sev === 'string') setSevFilter(detail.sev);
+    };
+    window.addEventListener('soc:top-search', onTopSearch);
+    window.addEventListener('soc:severity-filter', onSevFilter);
+    return () => {
+      window.removeEventListener('soc:top-search', onTopSearch);
+      window.removeEventListener('soc:severity-filter', onSevFilter);
+    };
+  }, []);
 
   const triggerDownload = async (id: string, kind: 'pdf' | 'json') => {
     try {
@@ -703,13 +721,14 @@ export function Dashboard() {
     }
   };
 
-  const load = async (query = q, silent = false) => {
+  const load = async (query = searchQuery, silent = false) => {
     if (!silent) setLoading(true);
     setErr('');
+    const effectiveQuery = typeof query === 'string' ? query.trim() : '';
     try {
       const [s, list] = await Promise.all([
         jget('/dashboard'),
-        jget(`/emails?limit=100${query ? `&q=${encodeURIComponent(query)}` : ''}`),
+        jget(`/emails?limit=100${effectiveQuery ? `&q=${encodeURIComponent(effectiveQuery)}` : ''}`),
       ]);
       setStats(s);
       setEmails(list);
@@ -731,14 +750,14 @@ export function Dashboard() {
 
   useEffect(() => {
     void load('', false);
-    const onUpdate = () => { void load(q, true); };
+    const onUpdate = () => { void load(searchQuery, true); };
     window.addEventListener('soc:emails-updated', onUpdate);
-    const timer = setInterval(() => { void load(q, true); }, 6000);
+    const timer = setInterval(() => { void load(searchQuery, true); }, 6000);
     return () => {
       window.removeEventListener('soc:emails-updated', onUpdate);
       clearInterval(timer);
     };
-  }, [q]);
+  }, [searchQuery]);
 
   const submit = async () => {
     if (!raw.trim()) return;
@@ -748,16 +767,16 @@ export function Dashboard() {
     try {
       if (asyncMode) {
         // Celery path (Phase 3 item 10): queue, then poll the task id.
-        const q = await jpost(`/emails/ingest?async_mode=true`, { raw });
-        setNotice(`Queued background task ${q.task_id} — polling for the verdict…`);
-        const r = await pollTask(q.task_id);
+        const taskRes = await jpost(`/emails/ingest?async_mode=true`, { raw });
+        setNotice(`Queued background task ${taskRes.task_id} — polling for the verdict…`);
+        const r = await pollTask(taskRes.task_id);
         setNotice(`Analyzed (background) - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
       } else {
         const r = await jpost('/emails/ingest', { raw });
         setNotice(`Analyzed - score ${r.fraud_score} (${r.classification}), action: ${r.action}`);
       }
       setRaw('');
-      await load(q, false);
+      await load(searchQuery, false);
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) {
       setErr(e instanceof ApiError ? `Ingest failed (${e.status}): ${e.message}` : String(e));
@@ -773,7 +792,7 @@ export function Dashboard() {
     try {
       const r = await uploadEmFile(f);
       setNotice(`Uploaded ${f.name} - score ${r.fraud_score} (${r.classification})`);
-      await load(q, false);
+      await load(searchQuery, false);
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) {
       setErr(e instanceof ApiError ? `Upload failed (${e.status}): ${e.message}` : String(e));
@@ -870,9 +889,9 @@ export function Dashboard() {
       <GmailPanel onSynced={() => load()} />
 
       <div className="toolbar">
-        <input type="search" placeholder="Search subject / sender / body…" value={q} onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} />
-        <button className="ghost" onClick={() => load()}>Search</button>
+        <input id="dash-search" type="search" placeholder="Search subject / sender / body…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void load(searchQuery); }} />
+        <button className="ghost" onClick={() => load(searchQuery)}>Search</button>
         <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
           <option value="all">All severities</option>
           <option value="critical">Critical (90+)</option>
@@ -880,7 +899,7 @@ export function Dashboard() {
           <option value="medium">Medium (50–74)</option>
           <option value="low">Low (&lt;50)</option>
         </select>
-        <button className="ghost" onClick={() => load()}>Refresh</button>
+        <button className="ghost" onClick={() => load(searchQuery)}>Refresh</button>
       </div>
 
       {loading ? <SkeletonList /> : filtered.length === 0 ? <Empty msg="No emails match. Ingest one above to get started." /> : (

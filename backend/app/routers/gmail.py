@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -288,6 +288,10 @@ async def sync(
                 res = await process_raw_email(worker_db, m["raw"], source="gmail", organization_id=user.organization_id)
                 return ("ok", res["email_id"])
             except Exception as e:
+                try:
+                    worker_db.rollback()
+                except Exception:
+                    pass
                 log.warning("gmail message %s failed pipeline: %s", m.get("id"), e)
                 return ("err", f"{m.get('id')}: {e}"[:200])
             finally:
@@ -305,7 +309,7 @@ async def sync(
         email_ids=email_ids,
         errors=errors,
     )
-    acct.last_sync_at = datetime.utcnow()
+    acct.last_sync_at = datetime.now(timezone.utc)
     db.commit()
     if out.synced:
         try:

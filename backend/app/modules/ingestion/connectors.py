@@ -43,6 +43,19 @@ def build_gmail_auth_url(client_id: str, redirect_uri: str, state: str = "", cod
     return GOOGLE_AUTH_URL + "?" + urlencode(params)
 
 
+def _raise_for_status_with_detail(r: httpx.Response) -> None:
+    if not r.is_error:
+        return
+    try:
+        body = r.json()
+        desc = body.get("error_description") or body.get("error")
+        if desc:
+            raise httpx.HTTPStatusError(f"{r.status_code} ({desc})", request=r.request, response=r)
+    except (ValueError, TypeError):
+        pass
+    r.raise_for_status()
+
+
 async def exchange_gmail_code(code: str, client_id: str, client_secret: str, redirect_uri: str,
                               code_verifier: str = "") -> dict:
     """Exchange an auth code for {access_token, refresh_token, expires_in}."""
@@ -54,7 +67,7 @@ async def exchange_gmail_code(code: str, client_id: str, client_secret: str, red
         if code_verifier:
             data["code_verifier"] = code_verifier
         r = await client.post(GOOGLE_TOKEN_URL, data=data)
-        r.raise_for_status()
+        _raise_for_status_with_detail(r)
         return r.json()
 
 
@@ -65,7 +78,7 @@ async def refresh_gmail_token(refresh_token: str, client_id: str, client_secret:
             "refresh_token": refresh_token, "client_id": client_id,
             "client_secret": client_secret, "grant_type": "refresh_token",
         })
-        r.raise_for_status()
+        _raise_for_status_with_detail(r)
         return r.json()
 
 
@@ -111,7 +124,7 @@ async def exchange_microsoft_code(code: str, client_id: str, client_secret: str,
         if code_verifier:
             data["code_verifier"] = code_verifier
         r = await client.post(MS_TOKEN_URL, data=data)
-        r.raise_for_status()
+        _raise_for_status_with_detail(r)
         return r.json()
 
 
@@ -122,7 +135,7 @@ async def refresh_microsoft_token(refresh_token: str, client_id: str, client_sec
             "refresh_token": refresh_token, "grant_type": "refresh_token",
             "scope": MS_SCOPES,
         })
-        r.raise_for_status()
+        _raise_for_status_with_detail(r)
         return r.json()
 
 

@@ -9,7 +9,7 @@ services:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     env_file: [.env]
     environment:
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}

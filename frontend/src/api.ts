@@ -7,6 +7,10 @@ export const BASE: string =
 export const API = `${BASE}/api/v1`;
 
 async function authHeaders(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+  const devToken = localStorage.getItem('soc-dev-token');
+  if (devToken) {
+    return { ...extra, Authorization: `Bearer ${devToken}` };
+  }
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token
     ? { ...extra, Authorization: `Bearer ${session.access_token}` }

@@ -243,18 +243,20 @@ def list_emails(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=
             models.EmailRecord.recipient_address.ilike(like, escape="\\"),
             models.EmailRecord.body_text_masked.ilike(like, escape="\\"),
         ))
-    records = query.order_by(desc(models.EmailRecord.timestamp)).limit(limit).offset(offset).all()
-    if not records:
-        return []
-    email_ids = [r.id for r in records]
-    analyses = {a.email_id: a for a in db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id.in_(email_ids)).all()}
+    rows = (
+        query.outerjoin(models.AnalysisResult, models.AnalysisResult.email_id == models.EmailRecord.id)
+        .add_columns(models.AnalysisResult.fraud_score, models.AnalysisResult.threat_classification)
+        .order_by(desc(models.EmailRecord.timestamp))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
     out = []
-    for r in records:
+    for r, score, cls in rows:
         item = schemas.EmailOut.model_validate(r)
-        a = analyses.get(r.id)
-        if a:
-            item.fraud_score = a.fraud_score
-            item.threat_classification = a.threat_classification
+        if score is not None:
+            item.fraud_score = score
+            item.threat_classification = cls
         out.append(item)
     return out
 

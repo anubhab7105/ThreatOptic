@@ -51,6 +51,10 @@ async def _smtp_consumer() -> None:
                     except Exception:
                         pass
                 except Exception:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                     log.exception("SMTP pipeline run failed")
                 finally:
                     db.close()
@@ -99,7 +103,7 @@ async def lifespan(app: FastAPI):
         )
     apply_limiter_setting()
     init_db()
-    log.info("DB ready at %s", settings.resolved_db_url())
+    log.info("DB ready at %s", settings.redacted_db_url())
     try:
         from .modules.nlp.engine import warmup
         warmup()
