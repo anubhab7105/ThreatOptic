@@ -58,18 +58,8 @@ def decrypt_secret(stored: str) -> str:
     from cryptography.fernet import Fernet, InvalidToken
 
     if (stored or "").startswith("gAAAAAB"):
-        # Legacy raw-Fernet format backward compatibility
-        import hashlib
-        from ...config import get_settings
-        for mat in [os.environ.get("TOKEN_ENCRYPTION_KEY", ""), get_settings().token_encryption_key, get_settings().secret_key, "change-me-in-prod"]:
-            if not mat:
-                continue
-            try:
-                legacy_key = base64.urlsafe_b64encode(hashlib.sha256(mat.encode()).digest())
-                return Fernet(legacy_key).decrypt((stored or "").encode()).decode()
-            except Exception:
-                pass
-        raise VaultError("stored credential is invalid — reconnect the mailbox")
+        # Legacy raw-Fernet format forces re-auth (P0: fail closed, never try default keys)
+        raise VaultError("stored credential is an obsolete legacy format — please reconnect the mailbox")
 
     try:
         version, b64salt, token = (stored or "").split("$", 2)

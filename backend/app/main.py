@@ -131,10 +131,13 @@ async def lifespan(app: FastAPI):
     consumer = None
     scheduler = None
     if settings.smtp_on:
-        from .modules.ingestion.smtp_server import start_smtp
-        controller = start_smtp(settings.smtp_host, settings.smtp_port)
-        consumer = asyncio.create_task(_smtp_consumer())
-        log.info("SMTP ingestion listening on %s:%s", settings.smtp_host, settings.smtp_port)
+        try:
+            from .modules.ingestion.smtp_server import start_smtp
+            controller = start_smtp(settings.smtp_host, settings.smtp_port)
+            consumer = asyncio.create_task(_smtp_consumer())
+            log.info("SMTP ingestion listening on %s:%s", settings.smtp_host, settings.smtp_port)
+        except Exception as e:
+            log.warning("SMTP server failed to start (continuing without inline SMTP): %s", e)
     try:
         from .services.scheduler import start_scheduler
         scheduler = start_scheduler()
@@ -152,6 +155,10 @@ async def lifespan(app: FastAPI):
             scheduler.shutdown(wait=False)
         if consumer:
             consumer.cancel()
+            try:
+                await consumer
+            except (asyncio.CancelledError, Exception):
+                pass
         if controller:
             controller.stop()
         try:
