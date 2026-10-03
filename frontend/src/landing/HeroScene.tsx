@@ -250,7 +250,7 @@ function AdaptiveDpr() {
         try {
           setDpr(1);
         } catch {
-
+          /* DPR already at minimum; keep rendering */
         }
       }
       acc.current.frames = 0;

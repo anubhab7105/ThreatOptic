@@ -53,7 +53,7 @@ export function GeoGlobe() {
             try {
               globe.update({ phi });
             } catch {
-
+              /* globe torn down mid-frame; next tick is a no-op */
             }
           }
           raf = window.requestAnimationFrame(tick);
@@ -90,7 +90,7 @@ export function GeoGlobe() {
       try {
         globe?.destroy();
       } catch {
-
+        /* destroy is best-effort during theme re-creation */
       }
       globe = null;
       start();
@@ -107,7 +107,7 @@ export function GeoGlobe() {
       try {
         globe?.destroy();
       } catch {
-
+        /* destroy is best-effort during unmount */
       }
     };
   }, []);

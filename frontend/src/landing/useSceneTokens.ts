@@ -22,6 +22,7 @@ export function useSceneTokens(): SceneTokens {
     try {
       return readTokens();
     } catch {
+      /* storage/DOM unavailable during SSR or tests */
       return { ...SCENE_TOKEN_FALLBACKS };
     }
   });
@@ -30,7 +31,7 @@ export function useSceneTokens(): SceneTokens {
       try {
         setTokens(readTokens());
       } catch {
-
+        /* keep last-known tokens when DOM is unavailable */
       }
     };
     const mo = new MutationObserver(update);

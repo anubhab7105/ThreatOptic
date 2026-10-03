@@ -390,7 +390,7 @@ export function LandingPage() {
         window.clearTimeout(t);
       };
     } catch {
-
+      /* environment APIs unavailable; poster stays */
     }
     return () => {
       cancelled = true;
@@ -414,7 +414,7 @@ export function LandingPage() {
         const done = -r.top + window.innerHeight * 0.25;
         useSceneStore.getState().setProgress(total > 0 ? done / total : 0);
       } catch {
-
+        /* static content stays on scroll-measurement failure */
       }
     };
     const onScroll = () => {

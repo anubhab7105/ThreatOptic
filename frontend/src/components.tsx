@@ -12,81 +12,15 @@ export function severityOf(score: number): Severity {
 }
 
 export function severityColor(s: string): string {
-  if (s === 'critical' || s === 'Critical') return '#ef4444';
-  if (s === 'high' || s === 'High') return '#f97316';
-  if (s === 'medium' || s === 'Medium') return '#eab308';
-  if (s === 'low' || s === 'Low' || s === 'clean' || s === 'Clean') return '#22c55e';
-  return '#6b7280';
-}
-
-export function ScoreBadge({ v }: { v: number | null | undefined }) {
-  if (v === null || v === undefined) {
-    return <span className="badge unknown" title="no score">—</span>;
-  }
-  const sev = severityOf(v);
-  return (
-    <span className={`badge ${sev}`} title={`fraud score ${v}`}>
-      {v}
-    </span>
-  );
-}
-
-export function StatCard({ label, value, caption }: { label: string; value: React.ReactNode; caption?: string }) {
-  return (
-    <div className="card">
-      <h3>{label}</h3>
-      <div className="stat-num">{value}</div>
-      {caption && <div className="stat-cap">{caption}</div>}
-    </div>
-  );
-}
-
-export function Toast({ msg, kind, onClose }: { msg: string; kind?: 'error' | 'info'; onClose?: () => void }) {
-  if (!msg) return null;
-  const role = kind === 'info' ? 'status' : 'alert';
-  return (
-    <div
-      role={role}
-      className={`toast${kind === 'info' ? ' info' : ''}`}
-      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-    >
-      <span style={{ wordBreak: 'break-word', flex: 1 }}>{msg}</span>
-      {onClose && (
-        <button
-          onClick={onClose}
-          type="button"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'inherit',
-            cursor: 'pointer',
-            fontSize: '1.25rem',
-            lineHeight: 1,
-            padding: '0 4px',
-            opacity: 0.8,
-          }}
-          title="Dismiss"
-          aria-label="Dismiss alert"
-        >
-          ×
-        </button>
-      )}
-    </div>
-  );
+  if (s === 'critical' || s === 'Critical') return 'var(--risk-critical)';
+  if (s === 'high' || s === 'High') return 'var(--risk-high)';
+  if (s === 'medium' || s === 'Medium') return 'var(--risk-medium)';
+  if (s === 'low' || s === 'Low' || s === 'clean' || s === 'Clean') return 'var(--risk-low)';
+  return 'var(--text-muted)';
 }
 
 export function Empty({ msg }: { msg: string }) {
   return <div className="empty">{msg}</div>;
-}
-
-export function SkeletonList({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="grid">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="skel" style={{ height: 44 }} />
-      ))}
-    </div>
-  );
 }
 
 export function AuthPill({ name, status }: { name: string; status: string }) {
@@ -193,25 +127,6 @@ export function CopyButton({ text, label = 'Copy', successLabel = 'Copied!' }: {
         </>
       )}
     </button>
-  );
-}
-
-export function FAQ({ items }: { items: { question: string; answer: React.ReactNode }[] }) {
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
-  return (
-    <div className="faq">
-      {items.map((item, i) => (
-        <details key={i} className="faq-item" open={openIndex === i} onToggle={() => setOpenIndex(openIndex === i ? null : i)}>
-          <summary className="faq-question">
-            {item.question}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="faq-chevron">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </summary>
-          <div className="faq-answer">{item.answer}</div>
-        </details>
-      ))}
-    </div>
   );
 }
 

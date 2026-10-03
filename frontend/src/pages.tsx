@@ -2,10 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, CopyButton, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
+import { AuthPill, CopyButton, PasswordToggle } from './components';
 import { Alert, Badge, Button, Card, Drawer, EmptyState, ErrorState, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, SortTh, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
 import { useChartTheme } from './useChartTheme';
-import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
 
@@ -157,44 +156,35 @@ export function LoginPage() {
             <span>{mode === 'login' ? 'Sign in' : 'Register'}</span>
           </div>
 
-          <h2 className="login-form-title">SOC Forensics Lab</h2>
+          <h2 className="login-form-title">{mode === 'login' ? 'Sign in' : 'Register'}</h2>
           <p className="login-form-sub">Sign in to access the email threat dashboard.</p>
 
-          <div className="login-tabs">
-            <button
-              type="button"
-              className={`login-tab-btn ${mode === 'login' ? 'active' : ''}`}
-              onClick={() => { setMode('login'); setErr(''); }}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              className={`login-tab-btn ${mode === 'register' ? 'active' : ''}`}
-              onClick={() => { setMode('register'); setErr(''); }}
-            >
-              Register
-            </button>
+          <SegmentedControl
+            label="Sign in or register"
+            value={mode}
+            onChange={(v) => { setMode(v); setErr(''); }}
+            options={[{ value: 'login', label: 'Sign in' }, { value: 'register', label: 'Register' }]}
+          />
+
+          <div aria-live="polite" style={{ marginTop: 12 }}>
+            {err ? <Alert tone="error">{err}</Alert> : null}
+            {notice && !err ? <Alert tone="success">{notice}</Alert> : null}
           </div>
 
-          <Toast msg={err} />
-          {notice ? <div className="login-notice" role="status">{notice}</div> : null}
-
-          <div className="login-field-group">
-            <label htmlFor="login-email" className="login-field-label">Email</label>
-            <input
+          <div style={{ marginTop: 12 }}>
+            <Input
               id="login-email"
+              label="Email"
               type="email"
               placeholder="e.g. analyst@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
               autoComplete="email"
-              className="login-input"
             />
           </div>
 
-          <div className="login-field-group">
+          <div className="login-field-group" style={{ marginTop: 12 }}>
             <PasswordToggle
               id="login-password"
               label="Password"
@@ -208,14 +198,15 @@ export function LoginPage() {
             />
           </div>
 
-          <button
-            type="button"
-            className="login-submit-btn"
+          <Button
+            variant="primary"
             onClick={submit}
-            disabled={busy || !email.trim() || !password}
+            loading={busy}
+            disabled={!email.trim() || !password}
+            style={{ width: '100%', marginTop: 12, marginBottom: 16 }}
           >
-            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </Button>
         </div>
       </div>
 
@@ -1057,12 +1048,13 @@ export function GraphSvg({ graph }: { graph: any }) {
   const [filterKind, setFilterKind] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const ct = useChartTheme();
 
   const rawNodes: any[] = graph?.nodes ?? [];
   const edges: any[] = graph?.edges ?? [];
 
   if (!rawNodes.length) {
-    return <Empty msg="No related entities yet — graph correlation links shared sender IPs, domains, and campaigns as emails are ingested." />;
+    return <EmptyState message="No related entities yet — graph correlation links shared sender IPs, domains, and campaigns as emails are ingested." />;
   }
 
   // Deduplicate and normalize nodes
@@ -1141,13 +1133,9 @@ export function GraphSvg({ graph }: { graph: any }) {
   const connectedToActive = activeFocusId ? neighborsMap.get(activeFocusId) || new Set() : null;
 
   const getColor = (k: string) => {
-    switch (k) {
-      case 'Domain': return '#f59e0b'; // Amber
-      case 'IP_Address': return '#ef4444'; // Crimson
-      case 'Threat_Campaign': return '#a855f7'; // Purple
-      case 'Email_Address': return '#10b981'; // Emerald
-      default: return '#38bdf8'; // Sky
-    }
+    // Entity colors fixed by type (Design.md §7.2), resolved via useChartTheme
+    // so the canvas re-renders with new-theme values instead of stale ones.
+    return ct.entity[k] ?? ct.entity.Entity;
   };
 
   const getIcon = (k: string) => {
@@ -1193,7 +1181,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 padding: '2px 8px',
                 borderRadius: 12,
                 border: `1px solid ${getColor(k)}`,
-                color: filterKind === k ? '#060a14' : getColor(k),
+                color: filterKind === k ? ct.onBright : getColor(k),
                 background: filterKind === k ? getColor(k) : 'transparent',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -1211,17 +1199,26 @@ export function GraphSvg({ graph }: { graph: any }) {
 
         {/* Zoom Controls */}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} title="Zoom Out" style={{ padding: '2px 8px' }}>−</button>
-          <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 38, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-          <button type="button" className="ghost small" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))} title="Zoom In" style={{ padding: '2px 8px' }}>+</button>
+          <Tooltip label="Zoom out"><button type="button" className="ghost small" onClick={() => setZoom((z) => Math.max(0.7, z - 0.15))} aria-label="Zoom out" style={{ padding: '2px 8px' }}>−</button></Tooltip>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 38, textAlign: 'center' }} aria-live="polite">{Math.round(zoom * 100)}%</span>
+          <Tooltip label="Zoom in"><button type="button" className="ghost small" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))} aria-label="Zoom in" style={{ padding: '2px 8px' }}>+</button></Tooltip>
           {zoom !== 1 && (
-            <button type="button" className="ghost small" onClick={() => setZoom(1)} style={{ fontSize: 11, padding: '2px 6px' }}>Reset</button>
+            <Tooltip label="Reset zoom to fit"><button type="button" className="ghost small" onClick={() => setZoom(1)} aria-label="Reset zoom to fit" style={{ fontSize: 11, padding: '2px 6px' }}>Reset</button></Tooltip>
           )}
         </div>
       </div>
+      <div className="graph-legend" aria-label="Entity type legend">
+        {availableKinds.map((k) => (
+          <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: '50%', background: getColor(k) }} />
+            {k.replace('_', ' ')}
+          </span>
+        ))}
+      </div>
 
+      <div className="graph-layout">
       {/* SVG Visualization Canvas */}
-      <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border)', background: 'radial-gradient(circle at center, #111a33 0%, #080c18 100%)' }}>
+      <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border-subtle)', background: 'var(--surface-inset)' }}>
         <svg
           width="100%"
           viewBox={`0 0 ${w} ${h}`}
@@ -1238,26 +1235,26 @@ export function GraphSvg({ graph }: { graph: any }) {
           <desc>Interactive graph showing relationships between senders, domains, IPs and threat campaigns.</desc>
           <defs>
             <filter id="glow-strong" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#38bdf8" floodOpacity="0.6" />
+              <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={ct.accentInfo} floodOpacity="0.6" />
             </filter>
             <filter id="glow-node" x="-30%" y="-30%" width="160%" height="160%">
-              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#ffffff" floodOpacity="0.3" />
+              <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={ct.textPrimary} floodOpacity="0.3" />
             </filter>
             <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" fillOpacity="0.8" />
+              <path d="M 0 1 L 10 5 L 0 9 z" fill={ct.charts[0]} fillOpacity="0.8" />
             </marker>
             <marker id="arrow-highlight" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0.5 L 10 5 L 0 9.5 z" fill="#38bdf8" />
+              <path d="M 0 0.5 L 10 5 L 0 9.5 z" fill={ct.accentInfo} />
             </marker>
           </defs>
 
           {/* Grid background lines */}
           <g opacity={0.12}>
             {Array.from({ length: 11 }).map((_, i) => (
-              <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+              <line key={`gx-${i}`} x1={i * 76} y1={0} x2={i * 76} y2={h} stroke={ct.textMuted} strokeWidth={1} strokeDasharray="3,3" />
             ))}
             {Array.from({ length: 6 }).map((_, i) => (
-              <line key={`gy-${i}`} x1={0} y1={i * 80} x2={w} y2={i * 80} stroke="#475569" strokeWidth={1} strokeDasharray="3,3" />
+              <line key={`gy-${i}`} x1={0} y1={i * 80} x2={w} y2={i * 80} stroke={ct.textMuted} strokeWidth={1} strokeDasharray="3,3" />
             ))}
           </g>
 
@@ -1280,7 +1277,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke={isHighlighted && activeFocusId ? '#38bdf8' : '#3b82f6'}
+                  stroke={isHighlighted && activeFocusId ? ct.accentInfo : ct.charts[0]}
                   strokeWidth={isHighlighted && activeFocusId ? 2.8 : 1.8}
                   strokeOpacity={isHighlighted && activeFocusId ? 1 : 0.65}
                   markerEnd={isHighlighted && activeFocusId ? 'url(#arrow-highlight)' : 'url(#arrow)'}
@@ -1293,11 +1290,11 @@ export function GraphSvg({ graph }: { graph: any }) {
                       width={e.rel.length * 6.8 + 10}
                       height={16}
                       rx={4}
-                      fill="#0b1329"
-                      stroke={isHighlighted && activeFocusId ? '#38bdf8' : 'var(--border)'}
+                      fill={ct.surfaceInset}
+                      stroke={isHighlighted && activeFocusId ? ct.accentInfo : ct.border}
                       strokeWidth={0.9}
                     />
-                    <text x={0} y={2.8} fill={isHighlighted && activeFocusId ? '#e0f2fe' : '#94a3b8'} fontSize={8} fontWeight={700} textAnchor="middle">
+                    <text x={0} y={2.8} fill={isHighlighted && activeFocusId ? ct.textPrimary : ct.textMuted} fontSize={8} fontWeight={700} textAnchor="middle">
                       {e.rel}
                     </text>
                   </g>
@@ -1358,13 +1355,13 @@ export function GraphSvg({ graph }: { graph: any }) {
                 <circle
                   r={r}
                   fill={nodeColor}
-                  stroke="#070d1d"
+                  stroke={ct.surfaceInset}
                   strokeWidth={2.5}
                   filter={isSelected || isHovered ? 'url(#glow-strong)' : 'url(#glow-node)'}
                 />
 
                 {/* Node Icon / Letter */}
-                <text y={4} fill="#060a14" fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
+                <text y={4} fill={ct.onBright} fontSize={isCenter ? 12 : 10} fontWeight={900} textAnchor="middle">
                   {getIcon(n.kind)}
                 </text>
 
@@ -1376,11 +1373,13 @@ export function GraphSvg({ graph }: { graph: any }) {
                     width={Math.min(lbl.length * 6.8, 120) + 8}
                     height={15}
                     rx={3}
-                    fill="rgba(8, 12, 24, 0.85)"
+                    fill={ct.surfaceInset}
+                    stroke={ct.border}
+                    strokeWidth={0.75}
                   />
                   <text
                     y={3.5}
-                    fill={isSelected || isHovered ? '#ffffff' : '#e2e8f0'}
+                    fill={ct.textPrimary}
                     fontSize={10.5}
                     fontWeight={isSelected || isHovered ? 700 : 600}
                     textAnchor="middle"
@@ -1390,7 +1389,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 </g>
 
                 {/* Node Kind Badge */}
-                <text y={r + 28} fill="#94a3b8" fontSize={8.5} fontWeight={500} textAnchor="middle">
+                <text y={r + 28} fill={ct.textMuted} fontSize={8.5} fontWeight={500} textAnchor="middle">
                   {n.kind.replace('_', ' ')}
                 </text>
               </g>
@@ -1401,14 +1400,14 @@ export function GraphSvg({ graph }: { graph: any }) {
 
       {/* Selected Entity Details Card */}
       {selectedNodeData && (
-        <div className="card" style={{ background: '#0b1329', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
+        <div className="card" style={{ background: 'var(--surface-inset)', border: `1px solid ${getColor(selectedNodeData.kind)}`, padding: 12, marginTop: 4 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span
                   style={{
                     background: getColor(selectedNodeData.kind),
-                    color: '#060a14',
+                    color: ct.onBright,
                     fontSize: 11,
                     fontWeight: 800,
                     padding: '2px 8px',
@@ -1417,7 +1416,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                 >
                   {selectedNodeData.kind.replace('_', ' ')}
                 </span>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc' }}>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
                   {getCleanLabel(selectedNodeData.id)}
                 </span>
               </div>
@@ -1465,7 +1464,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 6,
-                        background: '#131e3d',
+                        background: 'var(--surface-raised)',
                         border: '1px solid var(--border)',
                         padding: '3px 8px',
                         borderRadius: 6,
@@ -1474,7 +1473,7 @@ export function GraphSvg({ graph }: { graph: any }) {
                       }}
                       title="Click to jump to this entity"
                     >
-                      <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                      <span style={{ color: 'var(--accent-info)', fontWeight: 700 }}>
                         {isOutgoing ? `→ ${e.rel || 'LINKS'}` : `← ${e.rel || 'LINKS'}`}
                       </span>
                       <span style={{ color: getColor(targetKind), fontWeight: 600 }}>
@@ -1488,6 +1487,7 @@ export function GraphSvg({ graph }: { graph: any }) {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1501,30 +1501,32 @@ function ScoreWhy({ breakdown, score }: { breakdown: any[]; score: number }) {
   const rows = [...(breakdown || [])].sort(
     (x, y) => (y.contribution_to_score ?? 0) - (x.contribution_to_score ?? 0),
   );
-  if (!rows.length) return <Empty msg="No score breakdown stored for this email (analyzed before explainability was added)." />;
+  if (!rows.length) return <EmptyState message="No score breakdown stored for this email (analyzed before explainability was added)." />;
   const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.contribution_to_score ?? 0)));
   return (
     <div>
       <p className="sub">
         Each bar is a signal's point contribution to the final fraud score of <b>{score}</b> (weights × values ± rules).
+        Violet raises risk, teal lowers it — values are always stated as text.
       </p>
-      {rows.map((s) => {
-        const c = s.contribution_to_score ?? 0;
-        const w = (100 * Math.abs(c)) / maxAbs;
-        const bar = c > 0 ? '#ef4444' : c < 0 ? '#22c55e' : '#3b4a6b';
-        return (
-          <div key={s.signal_name} style={{ marginBottom: 12 }}>
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <span><code>{s.signal_name}</code> <span style={{ color: 'var(--muted)', fontSize: 12 }}>×{s.weight} · value {String(s.value)}</span></span>
-              <b style={{ color: bar }}>{c > 0 ? `+${c}` : c}</b>
-            </div>
-            <div className="distbar" style={{ marginTop: 4 }}>
-              <div style={{ width: `${w}%`, background: bar }} />
-            </div>
-            {s.detail && <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{s.detail}</div>}
-          </div>
-        );
-      })}
+      <ul className="contrib">
+        {rows.map((s) => {
+          const c = s.contribution_to_score ?? 0;
+          const w = (100 * Math.abs(c)) / maxAbs;
+          // Brand pair (violet/teal + neutral) — never the risk palette.
+          const bar = c > 0 ? 'var(--accent-secondary)' : c < 0 ? 'var(--chart-4)' : 'var(--text-muted)';
+          return (
+            <li key={s.signal_name}>
+              <span className="contrib-top"><code>{s.signal_name}</code> <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×{s.weight} · value {String(s.value)}</span></span>
+              <b style={{ fontVariantNumeric: 'tabular-nums' }}>{c > 0 ? `+${c}` : c}</b>
+              <span className="contrib-bar" role="img" aria-label={`${s.signal_name} contributes ${c > 0 ? '+' : ''}${c} points`}>
+                <span className="contrib-fill" style={{ display: 'block', width: `${w}%`, background: bar }} />
+              </span>
+              {s.detail ? <span style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: 12 }}>{s.detail}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -1588,210 +1590,248 @@ export function EmailView({ id }: { id: string }) {
     }
   }, [d, id]);
 
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><SkeletonList /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><ErrorState message="Could not load this email." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (!d) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><Card title="Loading email"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={160} /></Card></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
   const auth = a.authentication_results || {};
   const relay: any[] = Array.isArray(t.relay_chain) ? t.relay_chain : [];
+  const fraud = a.fraud_score ?? 0;
+  const hasCoords = t.geolocation?.lat != null && t.geolocation?.lon != null && !isNaN(Number(t.geolocation.lat)) && !isNaN(Number(t.geolocation.lon));
 
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Dashboard', href: '/' }, { label: subject.slice(0, 36) || 'Email Detail' }]} />
-      <Link to="/">← back to dashboard</Link>
-      <h1 style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'} <ScoreBadge v={a.fraud_score ?? 0} /></h1>
-      <p className="sub">
-        {a.threat_classification || 'Unclassified'} · action: <b>{a.action_taken || '—'}</b> ·{' '}
-        received: <b>{formatDateTime(d.email.timestamp)}</b> ·{' '}
-        <button className="ghost small" onClick={() => triggerDownload('pdf')}>forensic PDF</button>{' '}
-        <button className="ghost small" onClick={() => triggerDownload('json')}>JSON</button>
-      </p>
-
-      {cases.length > 0 && (
-        <div className="row" style={{ marginTop: 8, marginBottom: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: 'var(--muted)' }}>Investigate:</span>
-          <select value={caseId} onChange={(e) => setCaseId(e.target.value)} style={{ maxWidth: 260, fontSize: 12 }}>
-            <option value="">Select an investigation case…</option>
-            {cases.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
-            ))}
-          </select>
-          <button className="ghost small" onClick={linkToCase} disabled={!caseId}>Link to Case</button>
-          {caseNotice && <span style={{ color: 'var(--green)', fontSize: 12 }}>✓ {caseNotice}</span>}
-        </div>
-      )}
-
-      <div className="tabs">
-        {TABS.map((name, i) => (
-          <button key={name} role="tab" aria-selected={tab === i} className={tab === i ? 'active' : ''} onClick={() => setTab(i)}>{name}</button>
-        ))}
-      </div>
-
-      {tab === 0 && (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-          <div className="card">
-            <h3>Verdict</h3>
-            <dl className="kv">
-              <dt>Fraud score</dt><dd><ScoreBadge v={a.fraud_score ?? 0} /> {a.threat_classification}</dd>
-              <dt>Action</dt><dd>{a.action_taken}</dd>
-              <dt>Breakdown</dt><dd><span className="mono">{JSON.stringify(a.trace_summary ?? {})}</span></dd>
-            </dl>
-            <h3>Cues detected</h3>
-            {(a.nlp_cues_detected || []).length === 0 ? <p className="sub">None</p> : (
-              <div>{(a.nlp_cues_detected || []).map((c: string) => <span key={c} className="auth-pill auth-none">{c}</span>)}</div>
-            )}
-            <img src="/favicon.svg" alt="Forensic shield watermark - verdict authenticity indicator" width={48} height={48} style={{ marginTop: 12, opacity: 0.9 }} loading="lazy" />
-          </div>
-          <div className="card">
-            <h3>Authentication</h3>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-              <AuthPill name="SPF" status={auth.spf?.status} />
-              <AuthPill name="DKIM" status={auth.dkim?.status} />
-              <AuthPill name="DMARC" status={auth.dmarc?.status} />
-              <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
-            </div>
-            {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) && (
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, lineHeight: 1.45 }}>
-                {auth.spf?.detail && <div><b>SPF:</b> {auth.spf.detail}</div>}
-                {auth.dkim?.detail && <div><b>DKIM:</b> {auth.dkim.detail}</div>}
-                {auth.dmarc?.detail && <div><b>DMARC:</b> {auth.dmarc.detail}</div>}
+      <Card
+        actions={
+          <>
+            {cases.length > 0 ? (
+              <span className="row" id="email-case-row" style={{ gap: 8 }}>
+                <span style={{ maxWidth: 240 }}>
+                  <Select label="Investigation case" value={caseId} onChange={(e) => setCaseId(e.target.value)}>
+                    <option value="">Select a case…</option>
+                    {cases.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
+                    ))}
+                  </Select>
+                </span>
+                <Button variant="primary" size="sm" onClick={linkToCase} disabled={!caseId}>Link to case</Button>
+              </span>
+            ) : null}
+            <details className="collapsible">
+              <summary className="neu-btn neu-btn--ghost neu-btn--sm" style={{ textDecoration: 'none' }}>Export ▾</summary>
+              <div className="row" style={{ marginTop: 8 }}>
+                <Button variant="ghost" size="sm" onClick={() => triggerDownload('pdf')}>Forensic PDF</Button>
+                <Button variant="ghost" size="sm" onClick={() => triggerDownload('json')}>JSON</Button>
               </div>
-            )}
-            <h3 style={{ marginTop: 14 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
-            {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits</p> : (
-              <table className="tbl">
-                <thead><tr><th>Type</th><th>Value</th><th>Reason</th></tr></thead>
-                <tbody>
-                  {(a.threat_intel_hits || []).slice(0, 20).map((h: any, i: number) => (
-                    <tr key={i}>
-                      <td>{h.type}</td>
-                      <td><span className="mono">{String(h.value ?? h.url ?? '').slice(0, 80)}</span></td>
-                      <td style={{ fontSize: 12 }}>{(h.reasons || []).join(', ') || (h.blocklisted ? 'blocklisted' : 'hit')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <h3>Body (PII masked)</h3>
-            <pre className="dump" style={{ whiteSpace: 'pre-wrap' }}>{d.email.body_text_masked || '(empty)'}</pre>
-          </div>
+            </details>
+          </>
+        }
+      >
+        <Link to="/">← back to dashboard</Link>
+        <Tooltip label={d.email.subject || '(no subject)'}>
+          <h1 className="case-head__subject" style={{ marginTop: 8 }}>{d.email.subject || '(no subject)'}</h1>
+        </Tooltip>
+        <div className="case-meta">
+          <span>From <span className="mono">{d.email.sender_address || 'unknown sender'}</span></span>
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <SeverityBadge score={fraud} label={`${a.threat_classification || 'Unclassified'} ${fraud}`} />
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <span>action: <b>{a.action_taken || '—'}</b></span>
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <span>received: <b>{formatDateTime(d.email.timestamp)}</b></span>
         </div>
-      )}
-
-      {tab === 1 && (
-        <div className="card">
-          <h3>Why this score?</h3>
-          <ScoreWhy breakdown={a.score_breakdown} score={a.fraud_score ?? 0} />
+        <div className="case-score" style={{ marginTop: 12 }}>
+          <span className="case-score__num" aria-label={`Fraud score ${fraud} out of 100`}>{fraud}</span>
+          <span className="hbar-track" role="img" aria-label={`Fraud score ${fraud} of 100`} style={{ display: 'block', maxWidth: 280, flex: 1, height: 10, borderRadius: 5, background: 'var(--surface-inset)', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, fraud))}%`, background: 'var(--risk-high)' }} />
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>/ 100</span>
         </div>
-      )}
-
-      {tab === 2 && (
-        <div className="card">
-          <h3>Chain of custody</h3>
-          <dl className="kv">
-            <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span></dd>
-            <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span></dd>
-            <dt>Relay hops</dt><dd>{relay.length}</dd>
-          </dl>
-          <h3>Relay path (origin first)</h3>
-          {relay.length === 0 ? <Empty msg="No Received headers - sender path unverifiable." /> : (
-            <ol className="timeline">
-              {relay.map((h: any, i: number) => (
-                <li key={i}>
-                  <div><b>Hop {i + 1}</b> - from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>IPs: {(h.ips || []).map((ip: string) => <span key={ip} className="mono" style={{ marginRight: 4 }}>{ip}</span>)}
-                    {(h.ips || []).length === 0 && 'none parsed'}</div>
-                </li>
-              ))}
-            </ol>
-          )}
-          <h3>Raw chain</h3>
-          <pre className="dump">{JSON.stringify(relay, null, 2)}</pre>
+        <div aria-live="polite">
+          {caseNotice ? <Alert tone="success">{caseNotice}</Alert> : null}
         </div>
-      )}
+      </Card>
 
-      {tab === 3 && (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-          <div className="card">
-            <h3>Origin & Infrastructure</h3>
-            <dl className="kv">
-              <dt>Origin IP</dt>
-              <dd>
-                <span className="mono">{t.origin_ip || '-'}</span>
-                {t.geolocation?.is_private && (
-                  <span className="badge" style={{ marginLeft: 6, fontSize: 11, background: 'var(--muted)', color: '#fff', padding: '2px 6px', borderRadius: 4 }}>
-                    Private RFC1918
-                  </span>
-                )}
-              </dd>
-              <dt>Coordinates</dt>
-              <dd className="mono">
-                {t.geolocation?.lat != null && t.geolocation?.lon != null
-                  ? `${Number(t.geolocation.lat).toFixed(4)}, ${Number(t.geolocation.lon).toFixed(4)}`
-                  : '-'}
-              </dd>
-              <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
-              <dt>ISP / ASN</dt><dd>{t.isp_asn || t.geolocation?.isp || '-'}</dd>
-              <dt>Country / City</dt>
-              <dd>
-                {t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'}
-                {t.geolocation?.source && (
-                  <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 6 }}>
-                    ({t.geolocation.source})
-                  </span>
-                )}
-              </dd>
-            </dl>
-            <h3>WHOIS</h3>
-            <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
-            <h3>DNS</h3>
-            <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
-          </div>
-          <div className="card">
-            <h3>Origin Geolocation Map</h3>
-            {t.geolocation?.lat != null && t.geolocation?.lon != null && !isNaN(Number(t.geolocation.lat)) && !isNaN(Number(t.geolocation.lon)) ? (
-              <>
-                <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--muted)' }}>
-                  Target: <b>{t.geolocation.city || t.geolocation.country || 'Coordinates'}</b>
-                  {t.geolocation.source && <span> ({t.geolocation.source})</span>}
+      <Tabs tabs={[...TABS]} active={tab} onChange={setTab} label="Email analysis views" />
+
+      <Well>
+        <div role="tabpanel" id={`email-tabpanel-${tab}`} aria-label={TABS[tab]}>
+          {tab === 0 && (
+            <>
+              <section aria-label="Verdict and key indicators">
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Verdict</h2>
+                <dl className="deflist">
+                  <dt>Fraud score</dt><dd><SeverityBadge score={fraud} /> {a.threat_classification}</dd>
+                  <dt>Action</dt><dd>{a.action_taken || '—'}</dd>
+                  <dt>SPF / DKIM / DMARC</dt>
+                  <dd>
+                    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+                      <AuthPill name="SPF" status={auth.spf?.status} />
+                      <AuthPill name="DKIM" status={auth.dkim?.status} />
+                      <AuthPill name="DMARC" status={auth.dmarc?.status} />
+                      <AuthPill name="Alignment" status={auth.aligned ? 'aligned' : 'unaligned'} />
+                    </span>
+                  </dd>
+                  <dt>NLP cues</dt>
+                  <dd>{(a.nlp_cues_detected || []).length === 0 ? 'None' : (a.nlp_cues_detected || []).join(', ')}</dd>
+                </dl>
+              </section>
+              <hr className="section-divider" />
+              <section aria-label="Supporting evidence">
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Supporting evidence</h2>
+                <div className="grid-2">
+                  <div>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Authentication detail</h3>
+                    {(auth.spf?.detail || auth.dkim?.detail || auth.dmarc?.detail) ? (
+                      <dl className="deflist" style={{ gridTemplateColumns: '70px 1fr' }}>
+                        {auth.spf?.detail ? <><dt>SPF</dt><dd>{auth.spf.detail}</dd></> : null}
+                        {auth.dkim?.detail ? <><dt>DKIM</dt><dd>{auth.dkim.detail}</dd></> : null}
+                        {auth.dmarc?.detail ? <><dt>DMARC</dt><dd>{auth.dmarc.detail}</dd></> : null}
+                      </dl>
+                    ) : <p className="sub">No authentication detail recorded.</p>}
+                    <h3 style={{ margin: '16px 0 8px', fontSize: 14 }}>Body (PII masked)</h3>
+                    <pre className="dump" style={{ whiteSpace: 'pre-wrap' }}>{d.email.body_text_masked || '(empty)'}</pre>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>Threat intel hits ({(a.threat_intel_hits || []).length})</h3>
+                    {(a.threat_intel_hits || []).length === 0 ? <p className="sub">No hits.</p> : (
+                      <Table label="Threat intelligence hits">
+                        <thead><tr><th scope="col">Type</th><th scope="col">Value</th><th scope="col">Reason</th></tr></thead>
+                        <tbody>
+                          {(a.threat_intel_hits || []).slice(0, 20).map((h: any, i: number) => (
+                            <tr key={i}>
+                              <td>{h.type}</td>
+                              <td><span className="mono">{String(h.value ?? h.url ?? '').slice(0, 80)}</span></td>
+                              <td style={{ fontSize: 12 }}>{(h.reasons || []).join(', ') || (h.blocklisted ? 'blocklisted' : 'hit')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    )}
+                  </div>
                 </div>
-                <iframe
-                  title="Geolocation map of email origin"
-                  width="100%"
-                  height="380"
-                  style={{ border: 0, borderRadius: 8 }}
-                  loading="lazy"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
-                />
-                <p style={{ marginTop: 8 }}>
-                  <a
-                    target="_blank"
-                    rel="noreferrer"
-                    href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=7/${t.geolocation.lat}/${t.geolocation.lon}`}
-                  >
-                    Open full map (OSM)
-                  </a>
-                </p>
-              </>
-            ) : (
-              <Empty msg="No coordinates available - sender origin IP is unresolvable or network lookups are offline." />
-            )}
-          </div>
-        </div>
-      )}
+              </section>
+            </>
+          )}
 
-      {tab === 4 && (
-        <div className="card">
-          <h3>Identity correlation</h3>
-          <GraphSvg graph={graph} />
-          <h3 style={{ marginTop: 12 }}>Raw graph</h3>
-          <pre className="dump">{JSON.stringify(graph, null, 2)}</pre>
+          {tab === 1 && (
+            <section aria-label="Why this score">
+              <h2 style={{ marginTop: 0, fontSize: 16 }}>Why this score?</h2>
+              <ScoreWhy breakdown={a.score_breakdown} score={fraud} />
+            </section>
+          )}
+
+          {tab === 2 && (
+            <>
+              <section aria-label="Chain of custody">
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Chain of custody</h2>
+                <dl className="deflist">
+                  <dt>SHA-256 (.eml)</dt><dd><span className="mono">{d.email.raw_eml_hash}</span> <CopyButton text={String(d.email.raw_eml_hash || '')} label="Copy hash" /></dd>
+                  <dt>Message-ID</dt><dd><span className="mono">{d.email.message_id || '-'}</span> {d.email.message_id ? <CopyButton text={String(d.email.message_id)} label="Copy ID" /> : null}</dd>
+                  <dt>Relay hops</dt><dd>{relay.length}</dd>
+                </dl>
+              </section>
+              <hr className="section-divider" />
+              <div className="grid-2">
+                <section aria-label="Parsed relay path">
+                  <h2 style={{ marginTop: 0, fontSize: 16 }}>Relay path (origin first)</h2>
+                  {relay.length === 0 ? <EmptyState message="No Received headers — sender path unverifiable." /> : (
+                    <ol className="timeline">
+                      {relay.map((h: any, i: number) => (
+                        <li key={i}>
+                          <div><b>Hop {i + 1}</b> — from <span className="mono">{h.from_host || '?'}</span> by <span className="mono">{h.by_host || '?'}</span></div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>IPs: {(h.ips || []).map((ip: string) => <span key={ip} className="mono" style={{ marginRight: 4 }}>{ip}</span>)}
+                            {(h.ips || []).length === 0 && 'none parsed'}</div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+                <section aria-label="Raw headers">
+                  <h2 style={{ marginTop: 0, fontSize: 16 }}>Raw chain</h2>
+                  <pre className="dump">{JSON.stringify(relay, null, 2)}</pre>
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <CopyButton text={JSON.stringify(relay, null, 2)} label="Copy raw chain" />
+                  </div>
+                </section>
+              </div>
+            </>
+          )}
+
+          {tab === 3 && (
+            <>
+              <section aria-label="Origin and map">
+                <h2 style={{ marginTop: 0, fontSize: 16 }}>Origin</h2>
+                <dl className="deflist">
+                  <dt>Origin IP</dt>
+                  <dd>
+                    <span className="mono">{t.origin_ip || '-'}</span>
+                    {t.geolocation?.is_private ? <Badge tone="neutral">Private RFC1918</Badge> : null}
+                  </dd>
+                  <dt>Country / City</dt><dd>{t.geolocation ? `${t.geolocation.country || '?'} / ${t.geolocation.city || '?'}` : '-'} {t.geolocation?.source ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>({t.geolocation.source})</span> : null}</dd>
+                  <dt>ISP / ASN</dt><dd>{t.isp_asn || t.geolocation?.isp || '-'}</dd>
+                  <dt>VPN / TOR</dt><dd>{String(t.is_vpn_tor)}</dd>
+                  <dt>Coordinates</dt>
+                  <dd className="mono">{hasCoords ? `${Number(t.geolocation.lat).toFixed(4)}, ${Number(t.geolocation.lon).toFixed(4)}` : '-'}</dd>
+                </dl>
+                <div style={{ marginTop: 12 }}>
+                  {hasCoords ? (
+                    <>
+                      <div className="map-frame">
+                        <iframe
+                          title="Geolocation map of email origin"
+                          width="100%"
+                          height="380"
+                          style={{ border: 0 }}
+                          loading="lazy"
+                          sandbox="allow-scripts allow-same-origin allow-popups"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(t.geolocation.lon) - 4}%2C${Number(t.geolocation.lat) - 4}%2C${Number(t.geolocation.lon) + 4}%2C${Number(t.geolocation.lat) + 4}&layer=mapnik&marker=${Number(t.geolocation.lat)}%2C${Number(t.geolocation.lon)}`}
+                        />
+                      </div>
+                      <p className="sub" style={{ marginTop: 8, marginBottom: 0 }}>
+                        Origin IP <span className="mono">{t.origin_ip || '—'}</span>
+                        {t.geolocation?.city || t.geolocation?.country ? ` — ${t.geolocation.city || ''}${t.geolocation.city && t.geolocation.country ? ', ' : ''}${t.geolocation.country || ''}` : ''}
+                        {' · '}<a target="_blank" rel="noreferrer" href={`https://www.openstreetmap.org/?mlat=${t.geolocation.lat}&mlon=${t.geolocation.lon}#map=7/${t.geolocation.lat}/${t.geolocation.lon}`}>Open full map (OSM)</a>
+                      </p>
+                    </>
+                  ) : (
+                    <EmptyState message="No coordinates available — sender origin IP is unresolvable or network lookups are offline." />
+                  )}
+                </div>
+              </section>
+              <hr className="section-divider" />
+              <details className="collapsible">
+                <summary>Secondary evidence (WHOIS, DNS)</summary>
+                <div className="grid-2" style={{ marginTop: 12 }}>
+                  <section aria-label="WHOIS record">
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>WHOIS</h3>
+                    <pre className="dump">{JSON.stringify(t.whois, null, 2)}</pre>
+                  </section>
+                  <section aria-label="DNS records">
+                    <h3 style={{ margin: '0 0 8px', fontSize: 14 }}>DNS</h3>
+                    <pre className="dump">{JSON.stringify(t.dns, null, 2)}</pre>
+                  </section>
+                </div>
+              </details>
+            </>
+          )}
+
+          {tab === 4 && (
+            <section aria-label="Identity correlation graph">
+              <h2 style={{ marginTop: 0, fontSize: 16 }}>Identity correlation</h2>
+              <p className="sub" style={{ marginTop: 0 }}>Trace node graph — domain linked to related campaign entities.</p>
+              <GraphSvg graph={graph} />
+              <details className="collapsible" style={{ marginTop: 12 }}>
+                <summary>Raw graph JSON</summary>
+                <pre className="dump" style={{ marginTop: 8 }}>{JSON.stringify(graph, null, 2)}</pre>
+              </details>
+            </section>
+          )}
         </div>
-      )}
+      </Well>
+
       <InternalLinks current="/email" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: subject,
@@ -1823,28 +1863,45 @@ export function Campaigns() {
     return () => { cancelled = true; };
   }, []);
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns' }]} />
-      <h1>Campaigns</h1>
-      <p className="sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
-      <img src="/og-image.svg" alt="Campaign clustering visualization - threat infrastructure graph preview" width={640} height={336} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
-      <Toast msg={err} />
-      {loading ? <SkeletonList /> : cards.length === 0 ? <Empty msg="No campaigns yet - ingest more mail sharing IPs/domains." /> : (
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">Campaigns</h1>
+          <p className="greet-sub">Graph-detected clusters: domains sharing sender infrastructure, joined with forensic records.</p>
+        </div>
+        <div className="greet-actions">
+          <Badge tone="neutral">{cards.length} clusters</Badge>
+        </div>
+      </div>
+      {err ? <Alert tone="error" title="Campaigns unavailable">{err}</Alert> : null}
+      {loading ? <Card title="Loading campaigns"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card> : cards.length === 0 ? (
+        <Card title="No campaigns">
+          <EmptyState
+            message="No campaigns yet — ingest more mail sharing IPs/domains."
+            action={<Link to="/" className="neu-btn neu-btn--primary neu-btn--sm">Ingest email</Link>}
+          />
+        </Card>
+      ) : (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {cards.map((k) => (
-            <div key={k.id} className="card">
-              <h3><Link to={`/campaign/${k.id}`}>{k.name}</Link></h3>
-              <div className="stat-num">{k.email_count} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--muted)' }}>emails</span></div>
-              <dl className="kv" style={{ gridTemplateColumns: '110px 1fr' }}>
-                <dt>Confidence</dt><dd><b>{Math.round(k.confidence * 100)}%</b></dd>
-                <dt>Shared IP</dt><dd><span className="mono">{k.ip}</span></dd>
+            <Card
+              key={k.id}
+              title={k.name}
+              description={`${k.email_count} emails · IP ${k.ip}`}
+              actions={<Badge tone="info">⚡ {Math.round((k.confidence ?? 0) * 100)}% confidence</Badge>}
+            >
+              <dl className="deflist" style={{ gridTemplateColumns: '110px 1fr' }}>
                 <dt>ASN</dt><dd>{k.asn || '-'}</dd>
                 <dt>Domains</dt><dd>{(k.domains || []).map((d: string) => <span key={d} className="mono" style={{ marginRight: 4 }}>{d}</span>)}</dd>
                 <dt>First seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.first_seen)}</dd>
                 <dt>Last seen</dt><dd style={{ fontSize: 12 }}>{formatDateTime(k.last_seen)}</dd>
               </dl>
-              <Link to={`/campaign/${k.id}`}>Open campaign →</Link>
-            </div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <span style={{ flex: 1 }} />
+                <Link to={`/campaign/${k.id}`} className="neu-btn neu-btn--primary neu-btn--sm">Open campaign →</Link>
+              </div>
+            </Card>
           ))}
         </div>
       )}
@@ -1877,41 +1934,48 @@ export function CampaignDetail({ id }: { id: string }) {
       .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)); });
     return () => { cancelled = true; };
   }, [id]);
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><Toast msg={err} /></div>;
-  if (!d) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><SkeletonList /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><ErrorState message="Could not load this campaign." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (!d) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><Card title="Loading campaign"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={160} /></Card></div>;
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: cardName }]} />
-      <Link to="/campaigns">← campaigns</Link>
-      <h1 style={{ marginTop: 8 }}>{d.card.name}</h1>
-      <p className="sub">
-        {d.card.email_count} emails · confidence {Math.round(d.card.confidence * 100)}% · IP <span className="mono">{d.card.ip}</span>
-        {d.card.asn ? <> · ASN {d.card.asn}</> : null}
-        {' · '}<Link to="/">Dashboard</Link> · <Link to="/cases">Cases</Link>
-      </p>
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Attribution graph (campaign nodes)</h3>
+      <Card
+        actions={<Badge tone="info">⚡ {Math.round((d.card.confidence ?? 0) * 100)}% confidence</Badge>}
+      >
+        <Link to="/campaigns">← campaigns</Link>
+        <h1 className="case-head__subject" style={{ marginTop: 8 }}>{d.card.name}</h1>
+        <div className="case-meta">
+          <span>{d.card.email_count} emails</span>
+          <span className="dot-sep" aria-hidden="true">·</span>
+          <span>IP <span className="mono">{d.card.ip}</span></span>
+          {d.card.asn ? <><span className="dot-sep" aria-hidden="true">·</span><span>ASN {d.card.asn}</span></> : null}
+        </div>
+        <p className="sub" style={{ marginBottom: 0 }}>
+          Shared-infrastructure cluster — {d.card.email_count} emails sharing <span className="mono">{d.card.ip}</span>.
+          {' '}<Link to="/">Dashboard</Link> · <Link to="/cases">Cases</Link>
+        </p>
+      </Card>
+      <Card title="Attribution graph" description="Campaign nodes and shared infrastructure.">
         <GraphSvg graph={d.graph} />
-      </div>
-      <div className="card">
-        <h3>Emails in this campaign</h3>
-        {d.emails.length === 0 ? <Empty msg="No stored emails match this cluster." /> : (
-          <table className="tbl">
-            <thead><tr><th>Score</th><th>Subject</th><th>Sender</th><th>Classification</th><th>Received</th></tr></thead>
+      </Card>
+      <Card title="Emails in this campaign" description={`${(d.emails || []).length} stored emails match this cluster.`}>
+        {d.emails.length === 0 ? <EmptyState message="No stored emails match this cluster." /> : (
+          <Table label="Emails in this campaign">
+            <thead><tr><th scope="col">Verdict</th><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col">Classification</th><th scope="col">Received</th></tr></thead>
             <tbody>
               {d.emails.map((e: any) => (
                 <tr key={e.id}>
-                  <td><ScoreBadge v={e.fraud_score ?? 0} /></td>
+                  <td><SeverityBadge score={e.fraud_score ?? 0} label={`${e.classification || 'Unclassified'} ${e.fraud_score ?? 0}`} /></td>
                   <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
                   <td><span className="mono">{e.sender}</span></td>
                   <td>{e.classification}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
+                  <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
-      </div>
+      </Card>
       <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: cardName,
@@ -1943,66 +2007,97 @@ export function ModelInfo() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
-  if (loading) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><SkeletonList /></div>;
-  if (err) return <div className="page"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1>Model Transparency</h1><Toast msg={err} /></div>;
+  if (loading) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1 className="greet-title">Model Transparency</h1><Card title="Loading metrics"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1 className="greet-title">Model Transparency</h1><ErrorState message="Could not load model metrics." detail={err} onRetry={() => window.location.reload()} /></div>;
   const labels: string[] = m.confusion_labels || [];
   const per = m.per_class || {};
+  const macroP = m.macro_precision ?? (labels.length ? labels.reduce((x, l) => x + (per[l]?.precision ?? 0), 0) / labels.length : 0);
+  const macroR = m.macro_recall ?? (labels.length ? labels.reduce((x, l) => x + (per[l]?.recall ?? 0), 0) / labels.length : 0);
+  const macroF = m.macro_f1 ?? (labels.length ? labels.reduce((x, l) => x + (per[l]?.f1 ?? 0), 0) / labels.length : 0);
+  const cmMax = Math.max(1, ...(m.confusion_matrix || []).flat());
+  const heatClass = (v: number) => {
+    const f = v / cmMax;
+    if (f >= 0.8) return 'heat-4';
+    if (f >= 0.55) return 'heat-3';
+    if (f >= 0.3) return 'heat-2';
+    if (f > 0) return 'heat-1';
+    return 'heat-0';
+  };
+  const summaryMetrics: [string, string][] = [
+    ['Accuracy', (m.accuracy ?? 0).toFixed(3)],
+    ['Precision (macro)', Number(macroP).toFixed(3)],
+    ['Recall (macro)', Number(macroR).toFixed(3)],
+    ['F1 (macro)', Number(macroF).toFixed(3)],
+    ...(m.auc != null ? [['AUC', Number(m.auc).toFixed(3)] as [string, string]] : []),
+  ];
   return (
-    <div className="page">
+    <div className="page page-stack">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Transparency' }]} />
-      <h1>Model Transparency</h1>
-      <p className="sub">
-        Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split
-        ({m.n_test} test / {m.n_train} train, seed {m.random_state}). Metrics cached by <code>scripts/train_nlp.py</code>.
-      </p>
-      <img src="/og-image.svg" alt="Model metrics preview - accuracy and F1 visualization for SOC Forensics classifier" width={640} height={200} style={{ width: '100%', maxWidth: 640, height: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 14 }} loading="lazy" />
-      <div className="grid stats">
-        <StatCard label="Accuracy" value={`${Math.round((m.accuracy ?? 0) * 100)}%`} />
-        <StatCard label="Macro F1" value={(m.macro_f1 ?? 0).toFixed(3)} />
-        <StatCard label="Macro precision" value={(m.macro_precision ?? 0).toFixed(3)} />
-        <StatCard label="Macro recall" value={(m.macro_recall ?? 0).toFixed(3)} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">Classifier transparency</h1>
+          <p className="greet-sub">
+            Phishing/BEC/clean text classifier (TF-IDF + LogisticRegression), evaluated on a held-out split.
+            Contributes 30% of the fraud score (nlp signal).
+          </p>
+        </div>
       </div>
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-        <div className="card">
-          <h3>Per-class precision / recall / F1</h3>
-          <table className="tbl">
-            <thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr></thead>
-            <tbody>
-              {labels.map((l) => (
-                <tr key={l}>
-                  <td><b>{l}</b></td>
-                  <td>{(per[l]?.precision ?? 0).toFixed(3)}</td>
-                  <td>{(per[l]?.recall ?? 0).toFixed(3)}</td>
-                  <td>{(per[l]?.f1 ?? 0).toFixed(3)}</td>
-                  <td>{per[l]?.support ?? 0}</td>
+      <Card title="Summary metrics" description="Held-out evaluation — one sequential scale, values always stated.">
+        <div className="kpi-strip">
+          {summaryMetrics.map(([label, value]) => (
+            <div className="kpi" key={label}><div className="kpi__value">{value}</div><div className="kpi__label">{label}</div></div>
+          ))}
+        </div>
+      </Card>
+      <Card title="Per-class metrics" description="Precision, recall, F1 and support per class, with inline F1 bars.">
+        <Table label="Per-class precision, recall, F1 and support">
+          <thead><tr><th scope="col">Class</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">F1</th><th scope="col">Support</th></tr></thead>
+          <tbody>
+            {labels.map((l) => (
+              <tr key={l}>
+                <td><b>{l}</b></td>
+                <td>{(per[l]?.precision ?? 0).toFixed(3)}</td>
+                <td>{(per[l]?.recall ?? 0).toFixed(3)}</td>
+                <td>
+                  <span className="hbar-row" style={{ margin: 0 }}>
+                    <span className="hbar-track" style={{ minWidth: 80 }}><span className="hbar-fill" style={{ display: 'block', width: `${Math.round(100 * (per[l]?.f1 ?? 0))}%`, background: 'var(--chart-4)' }} /></span>
+                    <span className="hbar-val">{(per[l]?.f1 ?? 0).toFixed(3)}</span>
+                  </span>
+                </td>
+                <td>{per[l]?.support ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+      <Card title="Confusion matrix" description="Rows = actual, columns = predicted. Diagonal cells are correct predictions.">
+        <Table label="Confusion matrix with counts and row percentages">
+          <thead><tr><th scope="col"><span className="sr-only">Actual \ Predicted</span></th>{labels.map((l) => <th key={l} scope="col">{l}</th>)}</tr></thead>
+          <tbody>
+            {(m.confusion_matrix || []).map((row: number[], i: number) => {
+              const total = Math.max(1, row.reduce((x, y) => x + y, 0));
+              return (
+                <tr key={labels[i]}>
+                  <th scope="row" style={{ textAlign: 'left' }}>{labels[i]}</th>
+                  {row.map((v, j) => (
+                    <td key={j} className={heatClass(v)}>
+                      <b>{v}</b> <span style={{ opacity: 0.75, fontSize: 11 }}>{Math.round((100 * v) / total)}%</span>
+                    </td>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="card">
-          <h3>Confusion matrix (rows = actual, cols = predicted)</h3>
-          <table className="tbl">
-            <thead><tr><th></th>{labels.map((l) => <th key={l}>{l}</th>)}</tr></thead>
-            <tbody>
-              {(m.confusion_matrix || []).map((row: number[], i: number) => {
-                const total = Math.max(1, row.reduce((x, y) => x + y, 0));
-                return (
-                  <tr key={labels[i]}>
-                    <th style={{ textAlign: 'left' }}>{labels[i]}</th>
-                    {row.map((v, j) => (
-                      <td key={j} style={{ background: i === j ? 'rgba(34,197,94,0.15)' : v ? 'rgba(239,68,68,0.15)' : undefined }}>
-                        <b>{v}</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>{Math.round((100 * v) / total)}%</span>
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="sub" style={{ marginBottom: 0 }}>Diagonal cells are correct predictions; off-diagonal cells are confusions.</p>
-        </div>
-      </div>
+              );
+            })}
+          </tbody>
+        </Table>
+      </Card>
+      <Card title="Dataset & training info" description="Support counts, split, version and training date.">
+        <dl className="deflist">
+          <dt>Train / test split</dt><dd>{m.n_train ?? '—'} train / {m.n_test ?? '—'} test{m.random_state != null ? ` · seed ${m.random_state}` : ''}</dd>
+          {m.version || m.model_version ? <><dt>Model version</dt><dd><span className="mono">{m.version || m.model_version}</span></dd></> : null}
+          {m.trained_at || m.training_date ? <><dt>Trained</dt><dd>{formatDateTime(m.trained_at || m.training_date)}</dd></> : null}
+          <dt>Per-class support</dt><dd>{labels.length ? labels.map((l) => `${l}: ${per[l]?.support ?? 0}`).join(' · ') : '—'}</dd>
+        </dl>
+      </Card>
       <InternalLinks current="/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
@@ -2065,7 +2160,7 @@ export function Mailboxes() {
       // allowlist before the browser leaves the dashboard.
       setClientId('');
       setClientSecret('');
-      window.location.href = assertIdpUrl(r.auth_url, provider);
+      window.location.assign(assertIdpUrl(r.auth_url, provider));
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
 
@@ -2098,86 +2193,145 @@ export function Mailboxes() {
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
-  return (
-    <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Mailboxes' }]} />
-      <h1>Mailboxes</h1>
-      <p className="sub">Organization-level OAuth connectors (Google + Microsoft) with background polling. All credentials and refresh tokens are encrypted server-side.</p>
-      <img src="/favicon.svg" alt="Mailbox connectors - secure OAuth integration for Gmail and Microsoft" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Connected</h3>
-        {conns.length === 0 ? <Empty msg="No mailbox connected yet." /> : (
-          <table className="tbl">
-            <thead><tr><th>Provider</th><th>Account</th><th>Last poll</th><th></th></tr></thead>
-            <tbody>
-              {conns.map((m) => (
-                <tr key={m.provider + m.account_email}>
-                  <td><b>{m.provider}</b></td>
-                  <td><span className="mono">{m.account_email}</span></td>
-                  <td style={{ fontSize: 12 }}>{formatDateTime(m.last_poll_at)}</td>
-                  <td><button className="ghost small" onClick={() => disconnect(m.provider)}>Disconnect</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+  const [confirmDisc, setConfirmDisc] = useState<string | null>(null);
+
+  const relTime = (ts: string | null | undefined) => {
+    if (!ts) return 'never';
+    const t = new Date(ts).getTime();
+    if (isNaN(t)) return 'never';
+    // eslint-disable-next-line react-hooks/purity -- relative "x ago" labels are inherently time-dependent; absolute time stays in the tooltip
+    const mins = Math.max(0, Math.round((Date.now() - t) / 60000));
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 48) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  };
+
+  const providerCard = (
+    provider: 'google' | 'microsoft',
+    name: string,
+    glyph: string,
+    conn: any,
+  ) => {
+    const status = busy ? { color: 'var(--warning)', label: 'Syncing' }
+      : conn ? { color: 'var(--success)', label: 'Connected' }
+      : err ? { color: 'var(--danger)', label: 'Error' }
+      : { color: 'var(--text-muted)', label: 'Disconnected' };
+    // Polling fields are optional in /oauth/status — fall back to manual sync.
+    const pollOn = conn?.poll_enabled === true || (typeof conn?.poll_interval_minutes === 'number' && conn.poll_interval_minutes > 0);
+    const canConnect = !busy && redirectUri.trim() && clientId.trim() && clientSecret.trim();
+    return (
+      <Card
+        title={name}
+        description={conn ? `Connected · ${conn.account_email}` : 'Not connected'}
+        actions={<span className="provider-icon" aria-hidden="true" style={{ width: 40, height: 40, fontSize: 18 }}>{glyph}</span>}
+      >
+        <div className="provider-row">
+          <StatusIndicator color={status.color} label={status.label} />
+        </div>
+        <div className="provider-meta">
+          <span>
+            Last sync:{' '}
+            {conn?.last_poll_at || conn?.last_sync_at ? (
+              <Tooltip label={formatDateTime(conn.last_poll_at || conn.last_sync_at)}>
+                <span>{relTime(conn.last_poll_at || conn.last_sync_at)}</span>
+              </Tooltip>
+            ) : 'never'}
+          </span>
+          <span>Polling: {pollOn ? `On${conn.poll_interval_minutes ? ` (every ${conn.poll_interval_minutes}m)` : ''}` : 'Off — manual sync only'}</span>
+        </div>
+        {conn?.account_email ? (
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+            Account <span className="mono">{conn.account_email}</span> · encrypted refresh token stored, secret never shown
+          </div>
+        ) : null}
+        {conn ? (
+          <div className="row" style={{ marginTop: 10 }}>
+            <span style={{ maxWidth: 130 }}>
+              <Input label="Max emails" type="number" min="1" max="50" value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="25" />
+            </span>
+            <Button size="sm" variant="primary" onClick={syncNow} loading={busy} disabled={conns.length === 0}>Sync now</Button>
+            <Button size="sm" variant="ghost" onClick={() => document.getElementById('mailbox-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Configure</Button>
+            <Button size="sm" variant="danger" onClick={() => setConfirmDisc(provider)}>Disconnect</Button>
+          </div>
+        ) : (
+          <div className="row" style={{ marginTop: 10 }}>
+            <Button variant="primary" size="sm" onClick={() => connect(provider)} loading={busy} disabled={!canConnect}>
+              Connect {provider === 'google' ? 'Google' : 'Microsoft'}
+            </Button>
+          </div>
         )}
-        <div className="row" style={{ marginTop: 10 }}>
-          <input
-            type="number"
-            min="1"
-            style={{ maxWidth: 110 }}
-            value={maxN}
-            onChange={(e) => setMaxN(e.target.value)}
-            placeholder="Count"
-            title="Max emails to sync (any number)"
+      </Card>
+    );
+  };
+
+  const googleConn = conns.find((m) => m.provider === 'google');
+  const msConn = conns.find((m) => m.provider === 'microsoft');
+
+  return (
+    <div className="page page-stack">
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Mailboxes' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">Mailbox connectors</h1>
+          <p className="greet-sub">Organization-level OAuth connectors (Google + Microsoft). Credentials and refresh tokens are encrypted server-side.</p>
+        </div>
+      </div>
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Mailbox sync issue">{err}<div className="row" style={{ marginTop: 8 }}><Button size="sm" variant="primary" onClick={() => { setErr(''); void load(); }}>Retry</Button></div></Alert> : null}
+        {notice && !err ? <Alert tone="success">{notice}</Alert> : null}
+      </div>
+      {conns.length === 0 && !err ? (
+        <Card title="Add a connection" description="Connect your first organization mailbox to enable polling and manual sync.">
+          <EmptyState
+            message="No mailbox connected yet — Google Workspace or Microsoft 365."
+            action={<Button variant="primary" size="sm" onClick={() => document.getElementById('mailbox-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Connection settings</Button>}
           />
-          <button onClick={syncNow} disabled={busy || conns.length === 0}>{busy ? 'Syncing…' : 'Sync now'}</button>
-          <Link to="/">Back to Dashboard</Link>
-        </div>
+        </Card>
+      ) : null}
+      <div className="grid-2">
+        {providerCard('google', 'Google Workspace', 'G', googleConn)}
+        {providerCard('microsoft', 'Microsoft 365', 'M', msConn)}
       </div>
-      <div className="card">
-        <h3>Connect Mailbox</h3>
-        <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client ID</label>
-            <input
-              type="text"
-              value={clientId}
-              onChange={(e) => updateClientId(e.target.value)}
-              placeholder="OAuth client ID (kept blank for privacy)"
-              style={{ width: '100%' }}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client Secret</label>
-            <div className="row" style={{ gap: 6 }}>
-              <input
-                type={showSecret ? "text" : "password"}
-                style={{ flex: 1 }}
-                value={clientSecret}
-                onChange={(e) => updateClientSecret(e.target.value)}
-                placeholder="OAuth client secret (kept blank for privacy)"
-                autoComplete="new-password"
-                spellCheck={false}
-              />
-              <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+      <Card
+        title="Connection settings"
+        description="Shared OAuth parameters for both providers. Secrets stay in form state and are never persisted."
+      >
+        <div id="mailbox-settings" style={{ maxWidth: 560 }}>
+          {conns.length > 0 ? (
+            <p style={{ fontSize: 13, marginTop: 0 }}>
+              Connected: {conns.map((m) => <span key={m.provider + m.account_email} className="mono" style={{ marginRight: 6 }}>{m.provider}:{m.account_email}</span>)}
+            </p>
+          ) : null}
+          <Input label="Redirect URI" help="Must match the provider console entry exactly." value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" autoComplete="off" spellCheck={false} />
+          <details className="collapsible" style={{ marginTop: 8 }}>
+            <summary>{showSecret ? '▲ Hide custom credentials' : '⚙ Custom credentials (optional)'}</summary>
+            <div style={{ marginTop: 8 }}>
+              <Well>
+                <div className="grid-2">
+                  <Input label="OAuth Client ID" help="Leave blank to use the server .env value." value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID (kept blank for privacy)" autoComplete="off" spellCheck={false} />
+                  <div>
+                    <Input label="OAuth Client Secret" help="Leave blank to use the server .env value." type={showSecret ? 'text' : 'password'} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="OAuth client secret (kept blank for privacy)" autoComplete="new-password" spellCheck={false} />
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <Button size="sm" variant="ghost" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</Button>
+                    </div>
+                  </div>
+                </div>
+              </Well>
             </div>
-          </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match provider console)</label>
-            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" style={{ width: '100%' }} autoComplete="off" spellCheck={false} />
-          </div>
-          <div className="row" style={{ marginTop: 4 }}>
-            <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim() || !clientId.trim() || !clientSecret.trim()}>Connect Google</button>
-            <button className="ghost" onClick={() => connect('microsoft')} disabled={busy || !redirectUri.trim() || !clientId.trim() || !clientSecret.trim()}>Connect Microsoft</button>
-          </div>
+          </details>
         </div>
-      </div>
-      <InternalLinks current="/mailboxes" />
+      </Card>
+      {confirmDisc ? (
+        <Modal title={`Disconnect ${confirmDisc} mailbox?`} onClose={() => setConfirmDisc(null)}>
+          <p>Polling and manual sync stop for this provider. Stored emails and cases are kept.</p>
+          <div className="row" style={{ marginTop: 12 }}>
+            <Button variant="danger" onClick={() => { const p = confirmDisc; setConfirmDisc(null); void disconnect(p); }}>Disconnect</Button>
+            <Button variant="ghost" onClick={() => setConfirmDisc(null)}>Cancel</Button>
+          </div>
+        </Modal>
+      ) : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/mailboxes`,
@@ -2191,11 +2345,32 @@ export function Mailboxes() {
 
 type CaseRow = { id: string; title: string; status: string; email_ids: string[]; notes?: string; created_at: string };
 
-const COLS = [
-  { key: 'Open', color: '#60a5fa' },
-  { key: 'InProgress', color: '#eab308' },
-  { key: 'Closed', color: '#22c55e' },
-];
+const CASE_STATUSES = [
+  { key: 'Open', label: 'Open', tone: 'info' },
+  { key: 'InProgress', label: 'In Progress', tone: 'medium' },
+  { key: 'Closed', label: 'Closed', tone: 'low' },
+] as const;
+
+function statusLabel(s: string) {
+  return CASE_STATUSES.find((x) => x.key === s)?.label ?? s;
+}
+
+/** Desktop ≥1024 / tablet 768–1023 / mobile <768 (Design.md §6). */
+function useLayoutMode(): 'desktop' | 'tablet' | 'mobile' {
+  const current = () => {
+    if (typeof window === 'undefined' || !window.matchMedia) return 'desktop';
+    if (window.matchMedia('(max-width: 767px)').matches) return 'mobile';
+    if (window.matchMedia('(max-width: 1023px)').matches) return 'tablet';
+    return 'desktop';
+  };
+  const [mode, setMode] = useState<'desktop' | 'tablet' | 'mobile'>(current);
+  useEffect(() => {
+    const onChange = () => setMode(current());
+    window.addEventListener('resize', onChange);
+    return () => window.removeEventListener('resize', onChange);
+  }, []);
+  return mode;
+}
 
 export function Cases() {
   usePageMeta({
@@ -2209,7 +2384,14 @@ export function Cases() {
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [title, setTitle] = useState('');
   const [err, setErr] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | string>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const mode = useLayoutMode();
+  const ct = useChartTheme();
 
   const load = async () => {
     setLoading(true);
@@ -2230,6 +2412,7 @@ export function Cases() {
     try {
       await jpost('/cases', { title: title.trim() });
       setTitle('');
+      setNotice('Case created.');
       await load();
     } catch (e) {
       setErr(e instanceof ApiError ? `Create failed (${e.status}): ${e.message}` : String(e));
@@ -2238,7 +2421,8 @@ export function Cases() {
 
   const move = async (id: string, status: string) => {
     try {
-      await jpatch(`/cases/${id}`, { status });
+      await jpatch(`/cases/${encodeURIComponent(id)}`, { status });
+      setNotice(`Case moved to ${statusLabel(status)}.`);
       await load();
     } catch (e) {
       setErr(e instanceof ApiError ? `Update failed (${e.status}): ${e.message}` : String(e));
@@ -2246,51 +2430,182 @@ export function Cases() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm('Delete this case?')) return;
     try {
-      await jdel(`/cases/${id}`);
+      await jdel(`/cases/${encodeURIComponent(id)}`);
+      setConfirmDeleteId(null);
+      if (selectedId === id) setSelectedId(null);
+      setNotice('Case deleted.');
       await load();
     } catch (e) {
       setErr(e instanceof ApiError ? `Delete failed (${e.status}): ${e.message}` : String(e));
     }
   };
 
-  return (
-    <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Case Management' }]} />
-      <h1>Case Management</h1>
-      <p className="sub">Track investigations from triage to closure.</p>
-      <img src="/favicon.svg" alt="Case management kanban board - investigation workflow illustration" width={64} height={64} style={{ marginBottom: 12 }} loading="lazy" />
-      <Toast msg={err} />
-      <div className="row" style={{ marginBottom: 16 }}>
-        <input type="text" style={{ maxWidth: 360 }} value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="New case title…" onKeyDown={(e) => { if (e.key === 'Enter') void create(); }} />
-        <button onClick={create}>Create case</button>
-        <Link to="/campaigns" className="ghost" style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--panel-2)', textDecoration: 'none' }}>View Campaigns →</Link>
-      </div>
-      {loading ? <SkeletonList /> : (
-        <div className="kanban">
-          {COLS.map((c) => (
-            <div key={c.key} className="kcol">
-              <h3><span className="sev" style={{ background: severityColor(c.key === 'Open' ? 'high' : c.key === 'Closed' ? 'low' : 'medium') }} />{c.key} ({cases.filter((k) => k.status === c.key).length})</h3>
-              {cases.filter((k) => k.status === c.key).map((k) => (
-                <div key={k.id} className="kcard">
-                  <b>{k.title}</b>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    <span className="mono">{k.id.slice(0, 8)}</span> · {k.email_ids?.length ?? 0} email(s)
-                  </div>
-                  <div className="row" style={{ marginTop: 8 }}>
-                    {COLS.filter((x) => x.key !== c.key).map((x) => (
-                      <button key={x.key} className="ghost small" onClick={() => move(k.id, x.key)}>{x.key}</button>
-                    ))}
-                    {isAdmin && <button className="danger small" onClick={() => remove(k.id)}>Delete</button>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return cases.filter((k) => {
+      if (statusFilter !== 'all' && k.status !== statusFilter) return false;
+      if (q && !`${k.title} ${k.id}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [cases, search, statusFilter]);
+
+  const selected = filtered.find((k) => k.id === selectedId) ?? cases.find((k) => k.id === selectedId) ?? null;
+  const showList = mode === 'mobile' ? selectedId === null : true;
+
+  const statusTone = (s: string) => (CASE_STATUSES.find((x) => x.key === s)?.tone ?? 'neutral') as 'info' | 'medium' | 'low' | 'neutral';
+  const statusDot = (s: string) => s === 'Open' ? ct.risk.high : s === 'Closed' ? ct.risk.low : ct.risk.medium;
+
+  const listPane = (
+    <Card
+      title="Investigations"
+      description={`${filtered.length} of ${cases.length} in scope`}
+      actions={<Badge tone="neutral">{cases.length} total</Badge>}
+    >
+      <div className="row" style={{ marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <Input id="case-search" label="Search cases" type="search" placeholder="Title or case ID…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
+      </div>
+      <SegmentedControl
+        label="Filter by status"
+        value={statusFilter}
+        onChange={setStatusFilter}
+        options={[
+          { value: 'all', label: `All (${cases.length})` },
+          ...CASE_STATUSES.map((s) => ({ value: s.key as string, label: `${s.label} (${cases.filter((k) => k.status === s.key).length})` })),
+        ]}
+      />
+      <div style={{ marginTop: 8 }}>
+        <Input
+          id="case-new-title"
+          label="New case title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="New case title…"
+          onKeyDown={(e) => { if (e.key === 'Enter') void create(); }}
+        />
+        <div className="row" style={{ marginTop: 8 }}>
+          <Button variant="primary" size="sm" onClick={create} disabled={!title.trim()}>Create case</Button>
+          <Link to="/campaigns" className="neu-btn neu-btn--ghost neu-btn--sm">View Campaigns →</Link>
+        </div>
+      </div>
+      <ul className="invest-list">
+        {filtered.map((k) => (
+          <li key={k.id}>
+            <button
+              type="button"
+              className="invest-list__item"
+              aria-current={selected?.id === k.id}
+              onClick={() => setSelectedId(k.id)}
+            >
+              <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Badge tone={statusTone(k.status)}>{statusLabel(k.status)}</Badge>
+                <b>{k.title}</b>
+              </span>
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                <span className="mono">{k.id.slice(0, 8)}</span> · {k.email_ids?.length ?? 0} email(s) · {formatDateTime(k.created_at)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {filtered.length === 0 ? (
+        <div style={{ marginTop: 8 }}>
+          <EmptyState message={cases.length === 0 ? 'No cases yet — create one above to start triaging.' : 'No cases match these filters.'} />
+        </div>
+      ) : null}
+    </Card>
+  );
+
+  const detailPane = selected ? (
+    <Card
+      title={selected.title}
+      description={`${statusLabel(selected.status)} · opened ${formatDateTime(selected.created_at)}`}
+      actions={
+        <span className="row" style={{ gap: 6 }}>
+          {mode === 'mobile' ? <Button variant="ghost" size="sm" onClick={() => setSelectedId(null)}>← Back</Button> : null}
+          <StatusIndicator color={statusDot(selected.status)} label={statusLabel(selected.status)} />
+        </span>
+      }
+    >
+      <dl className="deflist">
+        <dt>Case ID</dt><dd><span className="mono">{selected.id}</span></dd>
+        <dt>Status</dt>
+        <dd>
+          <span className="row" style={{ gap: 6 }}>
+            {CASE_STATUSES.filter((s) => s.key !== selected.status).map((s) => (
+              <Button key={s.key} variant="ghost" size="sm" onClick={() => move(selected.id, s.key)}>Move to {s.label}</Button>
+            ))}
+          </span>
+        </dd>
+        <dt>Linked emails</dt>
+        <dd>{(selected.email_ids || []).length === 0 ? 'None linked yet.' : (
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {(selected.email_ids || []).map((eid: string) => (
+              <li key={eid}><Link to={`/email/${eid}`} className="mono">{eid}</Link></li>
+            ))}
+          </ul>
+        )}</dd>
+        {selected.notes ? <><dt>Notes</dt><dd>{selected.notes}</dd></> : null}
+      </dl>
+      {isAdmin ? (
+        <div className="danger-zone">
+          <h4><span aria-hidden="true">⬢</span> Danger zone</h4>
+          <p className="sub" style={{ margin: '0 0 8px' }}>Deleting a case is permanent and admin-only. Linked emails are kept.</p>
+          <Button variant="danger" size="sm" onClick={() => setConfirmDeleteId(selected.id)}>Delete this case</Button>
+        </div>
+      ) : null}
+    </Card>
+  ) : (
+    <Card title="No case selected" description="Pick an investigation from the list.">
+      <EmptyState message="Select a case to review its timeline, linked emails and actions." />
+    </Card>
+  );
+
+  return (
+    <div className="page page-stack">
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Case Management' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">Case management</h1>
+          <p className="greet-sub">Track investigations from triage to closure. {cases.length} case{cases.length === 1 ? '' : 's'} in scope.</p>
+        </div>
+      </div>
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Cases unavailable">{err}</Alert> : null}
+        {notice && !err ? <Alert tone="success">{notice}</Alert> : null}
+      </div>
+      {loading ? <Card title="Loading cases"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card> : (
+        <>
+          {mode === 'desktop' ? (
+            <div className="master-detail">
+              {listPane}
+              {detailPane}
+            </div>
+          ) : null}
+          {mode === 'tablet' ? (
+            <>
+              {listPane}
+              {selectedId !== null && selected ? (
+                <Drawer title={selected.title} onClose={() => setSelectedId(null)}>
+                  {detailPane}
+                </Drawer>
+              ) : null}
+            </>
+          ) : null}
+          {mode === 'mobile' ? (showList ? listPane : detailPane) : null}
+        </>
       )}
+      {confirmDeleteId ? (
+        <Modal title="Delete this case?" onClose={() => setConfirmDeleteId(null)}>
+          <p>Permanent, admin-only. Linked emails are kept; the case record is removed.</p>
+          <div className="row" style={{ marginTop: 12 }}>
+            <Button variant="danger" onClick={() => remove(confirmDeleteId)}>Delete permanently</Button>
+            <Button variant="ghost" onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+          </div>
+        </Modal>
+      ) : null}
       <InternalLinks current="/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
         '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
