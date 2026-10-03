@@ -1590,7 +1590,7 @@ export function EmailView({ id }: { id: string }) {
     }
   }, [d, id]);
 
-  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><ErrorState message="Could not load this email." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email', href: '/' }, { label: 'Error' }]} /><Link to="/">← back</Link><ErrorState message={/\(404\)/.test(err) ? 'This email was not found. It may have been purged by retention, or belong to a different workspace.' : 'Could not load this email.'} detail={err} onRetry={() => window.location.reload()} /></div>;
   if (!d) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Email' }]} /><Link to="/">← back</Link><Card title="Loading email"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={160} /></Card></div>;
   const a = d.analysis || {};
   const t = d.trace || {};
@@ -1934,7 +1934,7 @@ export function CampaignDetail({ id }: { id: string }) {
       .catch((e) => { if (!cancelled) setErr(e instanceof ApiError ? `Could not load campaign (${e.status}): ${e.message}` : String(e)); });
     return () => { cancelled = true; };
   }, [id]);
-  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><ErrorState message="Could not load this campaign." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Error' }]} /><Link to="/campaigns">← campaigns</Link><ErrorState message={/\(404\)/.test(err) ? 'This campaign was not found. It may have been deleted, or belong to a different workspace.' : 'Could not load this campaign.'} detail={err} onRetry={() => window.location.reload()} /></div>;
   if (!d) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Campaigns', href: '/campaigns' }, { label: 'Loading' }]} /><Link to="/campaigns">← campaigns</Link><Card title="Loading campaign"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={160} /></Card></div>;
   return (
     <div className="page page-stack">
@@ -2008,7 +2008,7 @@ export function ModelInfo() {
     return () => { cancelled = true; };
   }, []);
   if (loading) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1 className="greet-title">Model Transparency</h1><Card title="Loading metrics"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card></div>;
-  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1 className="greet-title">Model Transparency</h1><ErrorState message="Could not load model metrics." detail={err} onRetry={() => window.location.reload()} /></div>;
+  if (err) return <div className="page page-stack"><Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Model Info' }]} /><h1 className="greet-title">Model Transparency</h1><ErrorState message={/metrics not computed yet/.test(err) ? 'No trained model found on the server. Run python backend/scripts/train_nlp.py to compute metrics.' : 'Could not load model metrics.'} detail={err} onRetry={() => window.location.reload()} /></div>;
   const labels: string[] = m.confusion_labels || [];
   const per = m.per_class || {};
   const macroP = m.macro_precision ?? (labels.length ? labels.reduce((x, l) => x + (per[l]?.precision ?? 0), 0) / labels.length : 0);
