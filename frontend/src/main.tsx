@@ -4,8 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
+import { ThemeProvider, useTheme } from './theme';
 import { BASE, jpost } from './api';
 import { BackToTop, ScrollProgress, SkipToContent } from './components';
+import { Alert } from './primitives';
 
 // Code-split pages to reduce initial bundle
 const Dashboard = lazy(() => import('./pages').then(m => ({ default: m.Dashboard })));
@@ -19,6 +21,8 @@ const ModelInfo = lazy(() => import('./pages').then(m => ({ default: m.ModelInfo
 const Mailboxes = lazy(() => import('./pages').then(m => ({ default: m.Mailboxes })));
 const PrivacyPolicy = lazy(() => import('./pages').then(m => ({ default: m.PrivacyPolicy })));
 const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.TermsConditions })));
+// Dev-only showcase; the route element below renders null in production builds.
+const DesignSystem = lazy(() => import('./designSystem').then(m => ({ default: m.DesignSystem })));
 
 // Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
 const CANONICAL_BASE = 'https://socforensics.io';
@@ -79,19 +83,17 @@ export function Breadcrumb({ items }: { items: { label: string; href?: string }[
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<string>(() => {
-    try {
-      const s = localStorage.getItem('soc-theme');
-      if (s === 'light' || s === 'dark') return s;
-      return document.documentElement.getAttribute('data-theme') || 'dark';
-    } catch { return 'dark'; }
-  });
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('soc-theme', theme); } catch { /* storage unavailable */ }
-  }, [theme]);
+  const { theme, setTheme } = useTheme();
+  const next = theme === 'dark' ? 'light' : 'dark';
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+    <button
+      type="button"
+      className="theme-toggle"
+      aria-pressed={theme === 'dark'}
+      aria-label={`Switch to ${next} mode (currently ${theme})`}
+      title={`Switch to ${next} mode`}
+      onClick={() => setTheme(next)}
+    >
       <span aria-hidden="true">{theme === 'dark' ? '☾' : '☀'}</span> {theme === 'dark' ? 'Light' : 'Dark'}
     </button>
   );
@@ -256,8 +258,8 @@ function AlertBell() {
   return (
     <span style={{ position: 'relative' }} title={live ? 'Live alert stream connected' : 'Live alert stream'}>
       <button className="ghost" onClick={() => setOpen((o) => !o)} aria-label={`Alerts (${alerts.length} unread)`} title="High-risk alerts">
-        🔔{alerts.length > 0 && <b style={{ color: '#ef4444' }}> {alerts.length}</b>}
-        <span className="dot" style={{ background: live ? '#22c55e' : '#6b7280', marginLeft: 6 }} aria-hidden="true" />
+        🔔{alerts.length > 0 && <b style={{ color: 'var(--risk-critical)' }}> {alerts.length}</b>}
+        <span className="dot" style={{ background: live ? 'var(--success)' : 'var(--text-muted)', marginLeft: 6 }} aria-hidden="true" />
       </button>
       {open && (
         <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
@@ -289,7 +291,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         <div className="page">
           <h1>Something went wrong</h1>
           <p className="sub">An unexpected error occurred in the forensic UI. Reload or return to the dashboard.</p>
-          <div className="toast">{this.state.msg.slice(0, 400)}</div>
+          <Alert tone="error" title="Something went wrong">{this.state.msg.slice(0, 400)}</Alert>
           <Link to="/">Back to Dashboard</Link>
         </div>
       );
@@ -454,6 +456,7 @@ useEffect(() => {
           <div className="mobile-menu-footer">
             <Link to="/privacy" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Privacy Policy</Link>
             <Link to="/terms" className="mobile-menu-link" onClick={() => setMobileMenuOpen(false)}>Terms of Service</Link>
+            <ThemeToggle />
             <Link to="/" className="nl" onClick={(e) => { e.preventDefault(); logout(); navigate('/'); setMobileMenuOpen(false); }}>Sign out</Link>
           </div>
         </div>
@@ -461,7 +464,7 @@ useEffect(() => {
 
       <ErrorBoundary>
         <Suspense fallback={<div className="page"><div className="skel" style={{ height: 120 }} /></div>}>
-          <div id="main-content">
+          <main id="main-content">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/email/:id" element={<EmailRoute />} />
@@ -473,9 +476,10 @@ useEffect(() => {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              {import.meta.env.DEV ? <Route path="/design-system" element={<DesignSystem />} /> : null}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
-          </div>
+          </main>
         </Suspense>
       </ErrorBoundary>
 
@@ -487,7 +491,7 @@ useEffect(() => {
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
           {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>
         </div>
-        <div style={{ marginTop: 6, color: '#5a6b8a' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
+        <div style={{ marginTop: 6, color: 'var(--muted)' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
       </footer>
       <CookieConsent />
       <KeyboardShortcuts shortcuts={[
@@ -506,9 +510,11 @@ useEffect(() => {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
-    <AuthProvider>
-      <Shell />
-    </AuthProvider>
-  </BrowserRouter>,
+  <ThemeProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
+    </BrowserRouter>
+  </ThemeProvider>,
 );

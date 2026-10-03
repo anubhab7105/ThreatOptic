@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
+import { AuthPill, CopyButton, Empty, PasswordToggle } from './components';
+import { Alert, Badge, Button, Card, Drawer, EmptyState, ErrorState, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, SortTh, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
+import { useChartTheme } from './useChartTheme';
 import { ThemeToggle } from './main';
 
 const CANONICAL_BASE = 'https://socforensics.io';
