@@ -206,7 +206,7 @@ function AlertBell() {
         ws = new WebSocket(`${wsBase}/api/v1/ws/alerts?ticket=${encodeURIComponent(t.ticket)}`);
         ws.onopen = () => {
           if (closed) {
-            try { ws?.close(); } catch {}
+            try { ws?.close(); } catch { /* already closed */ }
             return;
           }
           setLive(true);
@@ -225,7 +225,7 @@ function AlertBell() {
           }
         };
         ws.onerror = () => {
-          try { ws?.close(); } catch {}
+          try { ws?.close(); } catch { /* socket already torn down */ }
         };
       } catch {
         if (!closed) {

@@ -324,10 +324,6 @@ pre.dump {
   color: var(--text);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-[data-theme="light"] .login-input {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
 .login-input:focus {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -381,10 +377,6 @@ pre.dump {
   color: var(--text);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-[data-theme="light"] .login-input {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
 .login-input:focus {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -405,7 +397,6 @@ pre.dump {
 
 @media (max-width: 700px) {
   .page { padding: 14px; }
-  .kv { grid-template-columns: 1fr; }
   .nav { flex-wrap: wrap; }
 }
 
@@ -451,12 +442,12 @@ pre.dump {
 }
 .btn-primary {
   background: var(--accent) !important;
-  color: #060a14 !important;
+  color: var(--text-on-accent) !important;
   border: none;
 }
 .btn-primary:hover {
   filter: brightness(1.1);
-  color: #060a14 !important;
+  color: var(--text-on-accent) !important;
 }
 .btn-secondary {
   background: var(--panel-2) !important;
@@ -561,7 +552,7 @@ pre.dump {
   height: 48px;
   border-radius: 10px;
   background: var(--accent);
-  color: #060a14;
+  color: var(--text-on-accent);
   margin-bottom: 16px;
 }
 .feature-card h3 {
@@ -708,7 +699,7 @@ pre.dump {
   z-index: 100;
   padding: 10px 16px;
   background: var(--accent);
-  color: #060a14;
+  color: var(--text-on-accent);
   font-weight: 700;
   border-radius: 6px;
   text-decoration: none;
@@ -754,7 +745,7 @@ pre.dump {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-raised-md);
   opacity: 0;
   transform: translateY(16px);
   transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease, border-color 0.15s ease;
@@ -844,7 +835,7 @@ pre.dump {
   border: none;
   border-radius: 14px;
   background: var(--panel);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-raised-lg);
   max-width: 520px;
   width: 90%;
   padding: 0;
@@ -1008,7 +999,8 @@ pre.dump {
 }
 .feature-card:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .table-link:hover,
 .link-hover {
@@ -1133,41 +1125,22 @@ table.neu-table { width: 100%; border-collapse: collapse; font-variant-numeric: 
 .neu-toast-stack { position: fixed; bottom: 24px; right: 24px; z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; max-width: min(360px, 90vw); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-/* ============ App shell breakpoints (Design.md §6) ============ */
-.app-shell { max-width: 100%; }
-.shell-main { min-width: 0; }
-.content-well { max-width: 1440px; margin: 0 auto; width: 100%; padding: 24px; }
-@media (min-width: 1280px) {
-  .workspace-col { width: 248px; }
-  .icon-rail { display: flex; }
-}
-@media (min-width: 1024px) and (max-width: 1279px) {
-  .workspace-col:not(.open) { display: none; }
-  .workspace-col.open { position: fixed; left: 72px; top: 0; bottom: 0; z-index: var(--z-drawer); box-shadow: var(--shadow-raised-lg); }
-  .icon-rail { display: flex; }
-}
-@media (min-width: 768px) and (max-width: 1023px) {
-  .icon-rail { display: none; }
-  .workspace-col { position: fixed; left: 0; top: 0; bottom: 0; z-index: var(--z-drawer); transform: translateX(-100%); transition: transform var(--motion-ms) var(--motion-ease); box-shadow: var(--shadow-raised-lg); display: block; }
-  .workspace-col.open { transform: translateX(0); }
-}
+/* ============ App shell (Design.md §6) ============
+   This baseline uses a sticky top nav + mobile drawer (no icon rail /
+   workspace column). The nav gets the raised-header treatment; the drawer
+   follows modal/drawer layering. Content width rhythm lives on .page. */
+.nav { box-shadow: var(--shadow-raised-md); }
+.nav a.nl[aria-current="page"] { box-shadow: var(--shadow-inset-sm); color: var(--accent-primary); }
+.mobile-menu { z-index: var(--z-drawer); }
+.mobile-menu-panel { box-shadow: var(--shadow-raised-lg); }
 @media (max-width: 767px) {
-  .icon-rail { display: none; }
-  .workspace-col { position: fixed; left: 0; top: 0; bottom: 0; z-index: var(--z-drawer); transform: translateX(-100%); transition: transform var(--motion-ms) var(--motion-ease); box-shadow: var(--shadow-raised-lg); display: block; }
-  .workspace-col.open { transform: translateX(0); }
-  .content-well { padding: 16px; }
   .neu-table-wrap { overflow-x: auto; }
 }
-.topbar, .icon-rail, .workspace-col { background: var(--surface); }
-.topbar { box-shadow: var(--shadow-raised-md); border-bottom: 1px solid var(--border-subtle); z-index: var(--z-sticky); }
-.icon-rail, .workspace-col { border-right: 1px solid var(--border-subtle); }
-.rail-btn[aria-current="page"] { box-shadow: var(--shadow-inset-sm); color: var(--accent-primary); border: 1px solid var(--border-subtle); }
-.ws-folder[aria-current="true"] { box-shadow: var(--shadow-inset-sm); color: var(--accent-primary); font-weight: 700; }
 
 /* ============ Accessibility safeguards (Design.md §4) ============ */
 .neu-btn:focus-visible, .neu-icon-btn:focus-visible, .neu-input:focus-visible, .neu-select:focus-visible,
 .neu-textarea:focus-visible, .neu-segmented button:focus-visible, .neu-tabs [role="tab"]:focus-visible,
-.neu-check input:focus-visible, .rail-btn:focus-visible, .ws-folder:focus-visible {
+.neu-check input:focus-visible, .nav a.nl:focus-visible, .mobile-menu-link:focus-visible, .mobile-menu-btn:focus-visible, .mobile-menu-close:focus-visible {
   outline: 2px solid var(--focus-ring); outline-offset: 2px;
 }
 @media (prefers-contrast: more) {
