@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
-import { AuthPill, CopyButton, Empty, PasswordToggle } from './components';
+import { AuthPill, CopyButton, Empty, ScoreBadge, SkeletonList, StatCard, Toast, severityColor, PasswordToggle } from './components';
 import { Alert, Badge, Button, Card, Drawer, EmptyState, ErrorState, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, SortTh, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
 import { useChartTheme } from './useChartTheme';
 import { ThemeToggle } from './main';
@@ -430,7 +430,7 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 /* ---------------- Gmail live import ---------------- */
 
-function GmailPanel({ onSynced }: { onSynced: () => void }) {
+function GmailPanel({ onSynced, bare = false }: { onSynced: () => void; bare?: boolean }) {
   const [status, setStatus] = useState<any>(null);
   // OAuth credentials are never prepopulated in state or DOM — kept blank for privacy
   const [clientId, setClientId] = useState('');
@@ -592,64 +592,82 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     } catch (e) { fail(e, 'Disconnect'); }
   };
 
-  return (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <h3>Gmail live import (OAuth2, read-only)</h3>
-      <Toast msg={err} onClose={() => setErr('')} />
-      {notice && <Toast msg={notice} kind="info" onClose={() => setNotice('')} />}
+  // Stepper phase (Design.md §7.6): Waiting > Connecting > Connected / Error.
+  // OAuth code/state are still auto-captured (see effect above); the visible
+  // code fields below remain only as a collapsed manual retry.
+  const phase = status?.connected ? 'connected' : err ? 'error' : busy || code ? 'connecting' : 'waiting';
+  const steps = ['waiting', 'connecting', 'connected'] as const;
+  const stepLabel: Record<string, string> = { waiting: 'Waiting', connecting: 'Connecting', connected: 'Connected' };
+  const stepIcon = (s: string) => {
+    if (phase === 'error' && s === 'connecting') return <span aria-hidden="true">⬢</span>;
+    if (s === 'connected' && phase === 'connected') return <span aria-hidden="true">✓</span>;
+    if (s === 'connecting' && phase === 'connecting') return <Spinner label="Connecting" />;
+    if (steps.indexOf(s as typeof steps[number]) < steps.indexOf(phase as typeof steps[number])) return <span aria-hidden="true">✓</span>;
+    return <span aria-hidden="true">○</span>;
+  };
+
+  const toggleCreds = () => {
+    const next = !showCreds;
+    setShowCreds(next);
+    if (next) {
+      setClientId('');
+      setClientSecret('');
+    }
+  };
+
+  const body = (
+    <>
+      <ol className="stepper" aria-label="Gmail connection progress">
+        {steps.map((s, i) => (
+          <li key={s} className={phase === 'error' && s === 'connecting' ? 'is-error' : s === phase ? 'is-current' : steps.indexOf(phase as typeof steps[number]) > i ? 'is-done' : undefined} aria-current={s === phase ? 'step' : undefined}>
+            {stepIcon(s)} {stepLabel[s]}{i < steps.length - 1 ? <span className="step-sep" aria-hidden="true">›</span> : null}
+          </li>
+        ))}
+        {phase === 'error' ? <li className="is-error"><span aria-hidden="true">⬢</span> Error</li> : null}
+      </ol>
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Gmail connection issue">{err}</Alert> : null}
+        {notice && !err ? <Alert tone={status?.connected ? 'success' : 'info'}>{notice}</Alert> : null}
+      </div>
+      {phase === 'error' ? (
+        <div className="row" style={{ marginTop: 8 }}>
+          <Button size="sm" variant="primary" onClick={() => { setErr(''); void refresh(); }}>Retry</Button>
+        </div>
+      ) : null}
       {status?.connected ? (
         <div>
-          <p>Connected as <b>{status.gmail_address}</b>
-            {status.last_sync_at ? <span style={{ color: 'var(--muted)' }}> · last sync {formatDateTime(status.last_sync_at)}</span> : null}
+          <p style={{ margin: '12px 0 8px' }}>
+            <StatusIndicator color="var(--success)" label={`Connected as ${status.gmail_address}`} />
+            {status.last_sync_at ? (
+              <Tooltip label={formatDateTime(status.last_sync_at)}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}> · last sync {formatDateTime(status.last_sync_at)}</span>
+              </Tooltip>
+            ) : null}
           </p>
-          <div className="row">
-            <input type="text" style={{ maxWidth: 200 }} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Gmail query" title="Gmail search query" />
-            <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
-            <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
-            <button className="ghost" onClick={disconnect}>Disconnect</button>
-            <button
-              className="ghost small"
-              onClick={() => {
-                const next = !showCreds;
-                setShowCreds(next);
-                if (next) {
-                  setClientId('');
-                  setClientSecret('');
-                }
-              }}
-              title="Show/hide OAuth credentials"
-            >
-              {showCreds ? '▲ Hide credentials' : '▼ Change credentials'}
-            </button>
+          <div className="grid-2" style={{ maxWidth: 560 }}>
+            <Input label="Gmail search query" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="is:unread" />
+            <Input label="Max emails to sync" type="number" min="1" max="50" value={maxN} onChange={(e) => setMaxN(e.target.value)} />
+          </div>
+          <div className="row" style={{ marginTop: 10 }}>
+            <Button size="sm" variant="primary" onClick={sync} loading={busy}>Sync now</Button>
+            <Button size="sm" variant="ghost" onClick={toggleCreds}>{showCreds ? 'Hide credentials' : 'Change credentials'}</Button>
+            <Button size="sm" variant="danger" onClick={disconnect}>Disconnect</Button>
           </div>
           {showCreds && (
-            <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
-              <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
+            <Well>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 0 }}>
                 Server has encrypted credentials saved. Leave fields blank to keep current credentials, or enter new ones to rotate.
               </p>
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client ID</label>
-              <input
-                type="text"
-                value={clientId}
-                onChange={(e) => updateClientId(e.target.value)}
-                placeholder="Google OAuth Client ID (kept blank for privacy)"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client Secret</label>
-              <div className="row" style={{ gap: 6 }}>
-                <input
-                  type={showSecret ? "text" : "password"}
-                  style={{ flex: 1 }}
-                  value={clientSecret}
-                  onChange={(e) => updateClientSecret(e.target.value)}
-                  placeholder="Google OAuth Client Secret (kept blank for privacy)"
-                  autoComplete="new-password"
-                  spellCheck={false}
-                />
-                <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+              <div className="grid-2">
+                <Input label="Google OAuth Client ID" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth Client ID (kept blank for privacy)" autoComplete="off" spellCheck={false} />
+                <div>
+                  <Input label="Google OAuth Client Secret" type={showSecret ? 'text' : 'password'} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth Client Secret (kept blank for privacy)" autoComplete="new-password" spellCheck={false} />
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <Button size="sm" variant="ghost" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </Well>
           )}
         </div>
       ) : (
@@ -657,73 +675,53 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           <p className="sub" style={{ marginTop: 0 }}>
             Enter your Google OAuth Client ID &amp; Secret below, then click <b>Connect Gmail</b>.
           </p>
-          <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client ID</label>
-              <input
-                type="text"
-                value={clientId}
-                onChange={(e) => updateClientId(e.target.value)}
-                placeholder="Google OAuth client ID"
-                style={{ width: '100%' }}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client Secret</label>
-              <div className="row" style={{ gap: 6 }}>
-                <input
-                  type={showSecret ? "text" : "password"}
-                  style={{ flex: 1 }}
-                  value={clientSecret}
-                  onChange={(e) => updateClientSecret(e.target.value)}
-                  placeholder="Google OAuth client secret"
-                  autoComplete="new-password"
-                  spellCheck={false}
-                />
-                <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
+          <div style={{ maxWidth: 560 }}>
+            <div className="grid-2">
+              <Input label="Google OAuth Client ID" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" autoComplete="off" spellCheck={false} />
+              <div>
+                <Input label="Google OAuth Client Secret" type={showSecret ? 'text' : 'password'} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" autoComplete="new-password" spellCheck={false} />
+                <div className="row" style={{ marginTop: 6 }}>
+                  <Button size="sm" variant="ghost" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</Button>
+                </div>
               </div>
             </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match Google Console)</label>
-              <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" style={{ width: '100%' }} autoComplete="off" spellCheck={false} />
+            <div style={{ marginTop: 8 }}>
+              <Input label="Redirect URI" help="Must match the Google Console entry exactly." value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" autoComplete="off" spellCheck={false} />
             </div>
-            <div className="row" style={{ marginTop: 4 }}>
-              <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !clientSecret.trim() || !redirectUri.trim()}>Connect Gmail</button>
+            <div className="row" style={{ marginTop: 10 }}>
+              <Button variant="primary" onClick={getUrl} loading={busy} disabled={!clientId.trim() || !clientSecret.trim() || !redirectUri.trim()}>Connect Gmail</Button>
             </div>
             {authUrl && (
-              <div style={{ marginTop: 8, padding: 12, background: 'rgba(59, 130, 246, 0.12)', border: '1px solid #3b82f6', borderRadius: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#93c5fd', marginBottom: 6 }}>
-                  👉 Click below if Google login did not open automatically:
+              <Well>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  Click below if Google login did not open automatically:
                 </div>
-                <a
-                  href={authUrl}
-                  style={{
-                    display: 'inline-block',
-                    background: '#2563eb',
-                    color: '#ffffff',
-                    fontWeight: 700,
-                    fontSize: 13,
-                    padding: '8px 16px',
-                    borderRadius: 6,
-                    textDecoration: 'none',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                  }}
-                >
+                <a className="neu-btn neu-btn--primary neu-btn--md" href={authUrl}>
                   Open Google Consent Screen →
                 </a>
-              </div>
+              </Well>
             )}
-            <div className="row" style={{ marginTop: 6 }}>
-              <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code (auto-filled on redirect)" style={{ flex: 1 }} />
-              <input type="text" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State (auto-filled on redirect)" style={{ flex: 1 }} />
-              <button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</button>
-            </div>
+            <details className="collapsible" style={{ marginTop: 8 }}>
+              <summary>Manual connection retry</summary>
+              <div className="grid-2" style={{ marginTop: 8 }}>
+                <Input label="Authorization code" help="Auto-filled on redirect; only needed for manual retry." value={code} onChange={(e) => setCode(e.target.value)} placeholder="Authorization code" />
+                <Input label="OAuth state" value={oauthState} onChange={(e) => setOauthState(e.target.value)} placeholder="State" />
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <Button onClick={() => finish()} disabled={busy || !code.trim() || !oauthState.trim()}>Finish connection</Button>
+              </div>
+            </details>
           </div>
         </div>
       )}
-    </div>
+    </>
+  );
+
+  if (bare) return <>{body}</>;
+  return (
+    <Card title="Gmail live import" description="OAuth2, read-only mailbox sync">
+      {body}
+    </Card>
   );
 }
 
@@ -877,116 +875,337 @@ export function Dashboard() {
   const dist = stats?.score_distribution ?? { critical: 0, high: 0, medium: 0, low: 0 };
   const distTotal = Math.max(1, dist.critical + dist.high + dist.medium + dist.low);
 
-  return (
-    <div className="page">
-      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Threat Dashboard' }]} />
-      <h1>Global Threat Dashboard</h1>
-      <p className="sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
+  // Ingest source + analytics range + table sort (all client-side, existing data only)
+  const [source, setSource] = useState<'paste' | 'upload' | 'gmail'>('paste');
+  const [range, setRange] = useState<'24h' | '7d' | '30d' | 'all'>('7d');
+  const [sortKey, setSortKey] = useState<'received' | 'score'>('received');
+  const [sortDir, setSortDir] = useState<'ascending' | 'descending'>('descending');
+  const [activityOpen, setActivityOpen] = useState<boolean>(() =>
+    typeof window === 'undefined' ? true : !window.matchMedia('(max-width: 1023px)').matches);
 
-      <div className="card" style={{ marginBottom: 16, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <img src="/og-image.svg" alt="SOC Forensics Lab dashboard hero - email threat detection map and shield emblem" width={320} height={168} style={{ borderRadius: 8, border: '1px solid var(--border)', maxWidth: '100%', height: 'auto' }} loading="lazy" />
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <h3 style={{ marginTop: 0 }}>Headers, scores, and locations in one view</h3>
-          <p className="sub" style={{ marginBottom: 8 }}>Paste RFC822, upload .eml, or sync Gmail. Each message gets a 0-100 fraud score, SPF/DKIM/DMARC checks, VirusTotal and blocklist lookups, and an origin map with SHA-256 custody hash.</p>
-          <div className="row">
-            <Link to="/campaigns">View Campaigns →</Link>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <Link to="/cases">Open Cases →</Link>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <Link to="/model">Model Transparency →</Link>
-          </div>
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const newAnalysis = () => {
+    setSource('paste');
+    scrollTo('ingest-panel');
+    setTimeout(() => document.getElementById('ingest-raw')?.focus(), 300);
+  };
+
+  const sevCounts = useMemo(() => {
+    const c = { all: emails.length, critical: 0, high: 0, medium: 0, low: 0 };
+    for (const e of emails) {
+      const s = scores[e.id]?.score ?? -1;
+      if (s >= 90) c.critical += 1;
+      else if (s >= 75) c.high += 1;
+      else if (s >= 50) c.medium += 1;
+      else if (s >= 0) c.low += 1;
+    }
+    return c;
+  }, [emails, scores]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sortKey === 'score') {
+        const sa = scores[a.id]?.score ?? -1;
+        const sb = scores[b.id]?.score ?? -1;
+        return sortDir === 'ascending' ? sa - sb : sb - sa;
+      }
+      const ta = new Date(a.timestamp).getTime() || 0;
+      const tb = new Date(b.timestamp).getTime() || 0;
+      return sortDir === 'ascending' ? ta - tb : tb - ta;
+    });
+    return arr;
+  }, [filtered, scores, sortKey, sortDir]);
+
+  const flipSort = (key: 'received' | 'score') => {
+    if (sortKey === key) setSortDir(sortDir === 'ascending' ? 'descending' : 'ascending');
+    else { setSortKey(key); setSortDir('descending'); }
+  };
+
+  // Ingest trend buckets from already-loaded emails (honest client-side range filter,
+  // anchored to the newest loaded email so render stays pure)
+  const trend = useMemo(() => {
+    const end = Math.max(0, ...emails.map((e) => new Date(e.timestamp).getTime() || 0));
+    const span = range === '24h' ? 864e5 : range === '7d' ? 7 * 864e5 : range === '30d' ? 30 * 864e5 : 0;
+    const inRange = emails.filter((e) => {
+      const t = new Date(e.timestamp).getTime() || 0;
+      return !span || end - t <= span;
+    });
+    const buckets = new Map<string, number>();
+    for (const e of inRange) {
+      const d = new Date(e.timestamp);
+      const key = range === '24h'
+        ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()} ${d.getHours()}:00`
+        : d.toISOString().slice(0, 10);
+      buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    }
+    return [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-15);
+  }, [emails, range]);
+  const trendMax = Math.max(1, ...trend.map(([, v]) => v));
+
+  const topCats = useMemo(() => {
+    const entries = Object.entries(stats?.by_classification || {}) as [string, number][];
+    return entries.sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [stats]);
+  const topCatMax = Math.max(1, ...topCats.map(([, v]) => v));
+  const chartVars = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+  const riskOf = (s: number) => (s >= 90 ? 'critical' : s >= 75 ? 'high' : s >= 50 ? 'medium' : 'low');
+
+  const blockedShare = stats?.total_emails ? Math.round((100 * (stats.blocked_threats || 0)) / Math.max(1, stats.total_emails)) : 0;
+
+  return (
+    <div className="page page-stack">
+      <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Threat Dashboard' }]} />
+      <div className="greet-row">
+        <div>
+          <h1 className="greet-title">Global Threat Dashboard</h1>
+          <p className="greet-sub">Real-time phishing, BEC and spoofing detection across ingested mail.</p>
+        </div>
+        <div className="greet-actions">
+          <Button variant="ghost" onClick={() => { setRaw(PHISH_SAMPLE); newAnalysis(); }} title="Load a sample template">Template</Button>
+          <Button variant="primary" onClick={newAnalysis}>+ New Analysis</Button>
         </div>
       </div>
 
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
+      <div aria-live="polite">
+        {err ? <Alert tone="error" title="Something needs attention">{err}</Alert> : null}
+        {notice && !err ? <Alert tone="success">{notice}</Alert> : null}
+      </div>
 
       {loading && !stats ? (
-        <SkeletonList rows={4} />
+        <Card title="Loading dashboard"><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={120} /></Card>
       ) : (
         stats && (
           <>
-            <div className="grid stats">
-              <StatCard label="Emails processed" value={stats.total_emails} />
-              <StatCard label="Blocked threats (≥75)" value={stats.blocked_threats} />
-              <StatCard label="Active campaigns" value={stats.active_campaigns} caption="shared infrastructure clusters" />
-              <StatCard label="Classifications" value={Object.keys(stats.by_classification || {}).length} caption={Object.entries(stats.by_classification || {}).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' · ') || '-'} />
-            </div>
-            <div className="card" style={{ marginBottom: 18 }}>
-              <h3>Score distribution</h3>
-              <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
-                <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: '#ef4444' }} />
-                <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: '#f97316' }} />
-                <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: '#eab308' }} />
-                <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: '#22c55e' }} />
+            <Card title="Key metrics" description="Fleet-wide totals from the dashboard endpoint">
+              <div className="kpi-strip">
+                <div className="kpi"><div className="kpi__value">{stats.total_emails}</div><div className="kpi__label">Emails processed</div></div>
+                <div className="kpi"><div className="kpi__value">{stats.blocked_threats}</div><div className="kpi__label">Blocked threats (≥75)</div><div className="kpi__sub"><span aria-hidden="true">▸</span>{blockedShare}% of all mail</div></div>
+                <div className="kpi"><div className="kpi__value">{stats.active_campaigns}</div><div className="kpi__label">Active campaigns</div><div className="kpi__sub">shared infrastructure</div></div>
+                <div className="kpi"><div className="kpi__value">{dist.critical}</div><div className="kpi__label">Critical (90–100)</div><div className="kpi__sub"><span aria-hidden="true">⬢</span>needs immediate triage</div></div>
+                <div className="kpi"><div className="kpi__value">{Object.keys(stats.by_classification || {}).length}</div><div className="kpi__label">Classifications</div><div className="kpi__sub">{Object.entries(stats.by_classification || {}).slice(0, 2).map(([k, v]) => `${k}: ${v}`).join(' · ') || '—'}</div></div>
               </div>
-              <div className="legend">
-                <span><span className="sev" style={{ background: '#ef4444' }} />Critical {dist.critical}</span>
-                <span><span className="sev" style={{ background: '#f97316' }} />High {dist.high}</span>
-                <span><span className="sev" style={{ background: '#eab308' }} />Medium {dist.medium}</span>
-                <span><span className="sev" style={{ background: '#22c55e' }} />Low {dist.low}</span>
+            </Card>
+
+            <Card
+              title="Ingest email for analysis"
+              description="Primary action area — pick a source, then analyze."
+              actions={<Badge tone="info">paste · upload · Gmail</Badge>}
+            >
+              <div id="ingest-panel">
+                <SegmentedControl
+                  label="Ingest source"
+                  value={source}
+                  onChange={setSource}
+                  options={[
+                    { value: 'paste', label: 'Paste raw email' },
+                    { value: 'upload', label: 'Upload .eml' },
+                    { value: 'gmail', label: 'Gmail live import' },
+                  ]}
+                />
+                <div style={{ marginTop: 12 }}>
+                  <Well>
+                    {source === 'paste' ? (
+                      <>
+                        <Textarea id="ingest-raw" label="Raw RFC822 message" rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" help="Nothing is sent until you press Analyze." />
+                        <div className="row" style={{ marginTop: 10 }}>
+                          <Button variant="primary" size="lg" onClick={submit} loading={busy} disabled={!raw.trim()}>Analyze email</Button>
+                          <Toggle label="Background queue (Celery)" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} />
+                          <Button variant="ghost" size="sm" onClick={() => setRaw(PHISH_SAMPLE)}>Load phishing sample</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setRaw(CLEAN_SAMPLE)}>Load clean sample</Button>
+                        </div>
+                      </>
+                    ) : source === 'upload' ? (
+                      <>
+                        <label className="neu-label" htmlFor="ingest-file" style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Email file (.eml, .txt, .mime — max 5 MB)</label>
+                        <input id="ingest-file" className="neu-input" type="file" accept=".eml,.txt,.mime" disabled={busy} onChange={(e) => onFile(e.target.files?.[0])} aria-describedby="ingest-file-help" />
+                        <div id="ingest-file-help" className="neu-help">Analysis starts automatically when a file is chosen.</div>
+                        {busy ? <div className="row" style={{ marginTop: 8 }}><Spinner label="Uploading and analyzing" /><span style={{ fontSize: 13 }}>Uploading and analyzing…</span></div> : null}
+                      </>
+                    ) : (
+                      <GmailPanel onSynced={() => load()} bare />
+                    )}
+                  </Well>
+                </div>
               </div>
-            </div>
+            </Card>
+
+            <Card
+              title="Threat analytics"
+              description="Severity share, ingest trend and top classifications."
+              actions={
+                <SegmentedControl
+                  label="Analytics time range"
+                  value={range}
+                  onChange={setRange}
+                  options={[
+                    { value: '24h', label: '24h' }, { value: '7d', label: '7d' },
+                    { value: '30d', label: '30d' }, { value: 'all', label: 'All' },
+                  ]}
+                />
+              }
+            >
+              <div className="chart-grid">
+                <div className="chart-block">
+                  <h4>Emails by risk band</h4>
+                  <p className="chart-sub">Critical {dist.critical} · High {dist.high} · Medium {dist.medium} · Low {dist.low}</p>
+                  <div className="distbar" role="img" aria-label={`Score distribution: Critical ${dist.critical}, High ${dist.high}, Medium ${dist.medium}, Low ${dist.low}`}>
+                    <div style={{ width: `${(100 * dist.critical) / distTotal}%`, background: 'var(--risk-critical)' }} />
+                    <div style={{ width: `${(100 * dist.high) / distTotal}%`, background: 'var(--risk-high)' }} />
+                    <div style={{ width: `${(100 * dist.medium) / distTotal}%`, background: 'var(--risk-medium)' }} />
+                    <div style={{ width: `${(100 * dist.low) / distTotal}%`, background: 'var(--risk-low)' }} />
+                  </div>
+                  <div className="legend">
+                    {(['critical', 'high', 'medium', 'low'] as const).map((s) => (
+                      <span key={s}><SeverityIcon severity={s} /> {s.charAt(0).toUpperCase() + s.slice(1)} {dist[s]}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="chart-block">
+                  <h4>Ingest trend</h4>
+                  <p className="chart-sub">{range === 'all' ? 'All loaded mail, by day' : `Last ${range}, loaded mail`}</p>
+                  {trend.length === 0 ? (
+                    <p className="chart-sub">No mail in this range yet.</p>
+                  ) : (
+                    <div className="trend-wrap">
+                      <div className="trend" role="img" aria-label={`Ingest trend: ${trend.map(([k, v]) => `${k}: ${v}`).join(', ')}`}>
+                        {trend.map(([k, v]) => (
+                          <div key={k} className="trend-bar" title={`${k}: ${v}`} style={{ height: `${Math.max(4, (100 * v) / trendMax)}%` }} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="chart-block">
+                  <h4>Top classifications</h4>
+                  <p className="chart-sub">All-time counts from the dashboard endpoint</p>
+                  {topCats.length === 0 ? <p className="chart-sub">No classifications yet.</p> : topCats.map(([name, v], i) => (
+                    <div className="hbar-row" key={name}>
+                      <span className="hbar-name" title={name}>{name}</span>
+                      <span className="hbar-track"><span className="hbar-fill" style={{ display: 'block', width: `${(100 * v) / topCatMax}%`, background: chartVars[i % chartVars.length] }} /></span>
+                      <span className="hbar-val">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
           </>
         )
       )}
 
-      <div className="card" style={{ marginBottom: 18 }}>
-        <h3>Ingest email for analysis</h3>
-        <textarea rows={6} value={raw} onChange={(e) => setRaw(e.target.value)} placeholder="Paste raw RFC822 / .eml content here…" />
-        <div className="row" style={{ marginTop: 10 }}>
-          <button onClick={submit} disabled={busy || !raw.trim()}>{busy ? 'Analyzing…' : 'Analyze email'}</button>
-          <label className="row" style={{ gap: 6, fontSize: 12, color: 'var(--muted)' }} title="Queue via Celery worker instead of inline analysis">
-            <input type="checkbox" checked={asyncMode} onChange={(e) => setAsyncMode(e.target.checked)} /> background queue
-          </label>
-          <button className="ghost" onClick={() => setRaw(PHISH_SAMPLE)}>Load phishing sample</button>
-          <button className="ghost" onClick={() => setRaw(CLEAN_SAMPLE)}>Load clean sample</button>
-          <label className="row" style={{ gap: 6 }}>
-            <span style={{ color: 'var(--muted)', fontSize: 12 }}>or upload .eml</span>
-            <input type="file" accept=".eml,.txt,.mime" onChange={(e) => onFile(e.target.files?.[0])} />
-          </label>
+      <Card
+        title="Recent threats"
+        description="Every row opens the Email Analysis view."
+        actions={<Badge tone="neutral">{sorted.length} shown</Badge>}
+      >
+        <div className="neu-segmented" role="group" aria-label="Filter by severity" style={{ marginBottom: 12 }}>
+          {(['all', 'critical', 'high', 'medium', 'low'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={sevFilter === k}
+              title={k === 'all' ? 'All severities' : `${k} band`}
+              onClick={() => setSevFilter(k)}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {k === 'all' ? <span aria-hidden="true">◈</span> : <SeverityIcon severity={k} />}
+                {k === 'all' ? 'All' : k.charAt(0).toUpperCase() + k.slice(1)}
+                <b>{sevCounts[k]}</b>
+              </span>
+            </button>
+          ))}
         </div>
-      </div>
+        <div className="row" style={{ marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <Input
+              id="dash-search"
+              label="Search threats"
+              type="search"
+              placeholder="Subject, sender, body…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void load(searchQuery); }}
+            />
+          </div>
+          <div className="row" style={{ alignSelf: 'end' }}>
+            <Button variant="primary" size="sm" onClick={() => load(searchQuery)}>Search</Button>
+            <Button variant="ghost" size="sm" onClick={() => load(searchQuery)}>Refresh</Button>
+          </div>
+        </div>
+        <div id="all-emails">
+          {loading ? <><Skeleton height={44} /><div style={{ height: 8 }} /><Skeleton height={44} /></> : sorted.length === 0 ? (
+            <EmptyState
+              message="No emails match. Ingest one above to get started."
+              action={<Button variant="primary" size="sm" onClick={newAnalysis}>New analysis</Button>}
+            />
+          ) : (
+            <Table label="Recent threats">
+              <thead><tr>
+                <th scope="col">Subject</th><th scope="col">Sender</th>
+                <SortTh label="Received" direction={sortKey === 'received' ? sortDir : 'none'} onSort={() => flipSort('received')}>Received</SortTh>
+                <SortTh label="Fraud score" direction={sortKey === 'score' ? sortDir : 'none'} onSort={() => flipSort('score')}>Verdict</SortTh>
+                <th scope="col">Reports</th>
+              </tr></thead>
+              <tbody>
+                {sorted.map((e) => {
+                  const s = scores[e.id];
+                  return (
+                    <tr key={e.id}>
+                      <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
+                      <td><span className="mono">{e.sender_address}</span></td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
+                      <td>
+                        {s ? <SeverityBadge score={s.score} label={`${s.cls} ${s.score}`} /> : <span style={{ color: 'var(--text-muted)' }}>…</span>}
+                      </td>
+                      <td>
+                        <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
+                          <Button variant="ghost" size="sm" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</Button>
+                          <Button variant="ghost" size="sm" onClick={() => triggerDownload(e.id, 'json')}>JSON</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      </Card>
 
-      <GmailPanel onSynced={() => load()} />
-
-      <div className="toolbar">
-        <input id="dash-search" type="search" placeholder="Search subject / sender / body…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void load(searchQuery); }} />
-        <button className="ghost" onClick={() => load(searchQuery)}>Search</button>
-        <select value={sevFilter} onChange={(e) => setSevFilter(e.target.value)}>
-          <option value="all">All severities</option>
-          <option value="critical">Critical (90+)</option>
-          <option value="high">High (75–89)</option>
-          <option value="medium">Medium (50–74)</option>
-          <option value="low">Low (&lt;50)</option>
-        </select>
-        <button className="ghost" onClick={() => load(searchQuery)}>Refresh</button>
-      </div>
-
-      {loading ? <SkeletonList /> : filtered.length === 0 ? <Empty msg="No emails match. Ingest one above to get started." /> : (
-        <table className="tbl">
-          <thead><tr><th>Score</th><th>Subject</th><th>Sender</th><th>Classification</th><th>Received</th><th>Reports</th></tr></thead>
-          <tbody>
-            {filtered.map((e) => {
-              const s = scores[e.id];
-              return (
-                <tr key={e.id}>
-                  <td>{s ? <ScoreBadge v={s.score} /> : <span style={{ color: 'var(--muted)' }}>…</span>}</td>
-                  <td><Link to={`/email/${e.id}`}>{e.subject || '(no subject)'}</Link></td>
-                  <td><span className="mono">{e.sender_address}</span></td>
-                  <td>{s?.cls ?? '—'}</td>
-                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDateTime(e.timestamp)}</td>
-                  <td>
-                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'pdf')}>PDF</button>{' '}
-                    <button className="ghost small" onClick={() => triggerDownload(e.id, 'json')}>JSON</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      <Card
+        title="Activity"
+        description="Latest scoring events across loaded mail."
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => setActivityOpen(!activityOpen)} aria-expanded={activityOpen}>
+            {activityOpen ? 'Collapse' : 'Expand'}
+          </Button>
+        }
+      >
+        {activityOpen ? (
+          loading ? <Skeleton height={44} /> : filtered.length === 0 ? (
+            <EmptyState message="Activity will appear once mail is ingested." />
+          ) : (
+            <ul className="activity-feed">
+              {filtered.slice(0, 5).map((e) => {
+                const s = scores[e.id];
+                const sev = riskOf(s?.score ?? -1);
+                return (
+                  <li key={e.id} className="activity-item">
+                    <SeverityIcon severity={s ? sev : 'unknown'} />
+                    <div>
+                      <div>System scored sender as <b>{s?.cls ?? '—'} {s?.score ?? ''}</b></div>
+                      <div className="activity-time"><Link to={`/email/${e.id}`}>{(e.subject || '(no subject)').slice(0, 40)}</Link> · {formatDateTime(e.timestamp)}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )
+        ) : <p className="sub" style={{ margin: 0 }}>Collapsed — expand to review recent scoring events.</p>}
+      </Card>
 
       <InternalLinks current="/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({

@@ -1493,3 +1493,13 @@ table.neu-table { width: 100%; border-collapse: collapse; font-variant-numeric: 
   .kpi + .kpi { border-left-color: var(--border-strong); }
   .neu-table tbody tr:hover td { background: transparent; }
 }
+
+/* Greeting header + activity feed (Dashboard/Cases headers) */
+.greet-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 6px 0 16px; }
+.greet-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.3px; color: var(--text-primary); }
+.greet-sub { color: var(--text-secondary); margin: 4px 0 0; font-size: 13px; }
+.greet-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 767px) { .greet-title { font-size: 24px; } }
+.activity-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.activity-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-primary); }
+.activity-time { color: var(--text-muted); font-size: 12px; }
