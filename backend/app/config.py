@@ -48,6 +48,7 @@ _env_path = _env_files[0] if _env_files else os.path.join(_backend_dir, ".env")
 for _path in _env_files:
     load_dotenv(_path, override=False)
 
+DEFAULT_VERCEL_PREVIEW_REGEX = r"https://[a-z0-9-]+\.vercel\.app"
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -404,6 +405,18 @@ def require_secrets() -> None:
             "Refusing to boot: ELASTICSEARCH_URL uses plaintext http in "
             "production (basic_auth would leak). Use https://."
         )
+
+    if settings.smtp_on:
+        if str(settings.smtp_require_auth).strip().lower() not in TRUTHY_VALUES:
+            raise RuntimeError(
+                "Refusing to boot: SMTP_REQUIRE_AUTH must be enabled outside development. "
+                "Anonymous SMTP relay is only permitted in development."
+            )
+        if not (settings.smtp_username or "").strip() or not (settings.smtp_password or "").strip():
+            raise RuntimeError(
+                "Refusing to boot: SMTP_USERNAME and SMTP_PASSWORD must be configured "
+                "when SMTP is enabled outside development."
+            )
 
 
 @lru_cache

@@ -19,6 +19,7 @@ exist (reported with "trusted-upstream:" provenance).
 """
 import os
 import re
+import time
 from typing import Any
 
 UNVERIFIABLE = "unverifiable"
@@ -214,6 +215,15 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
                     "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
                     "upstream": dict(upstream_dkim)}
         return _with_upstream({"status": "none", "detail": "no-dkim-signature-header"}, upstream_dkim)
+
+    # RFC 6376 Section 3.5: x= Signature Expiration. If expired, fail closed.
+    x_match = re.search(r"\bx\s*=\s*(\d+)", dkim_sig)
+    if x_match:
+        try:
+            if int(x_match.group(1)) < time.time():
+                return _with_upstream({"status": "fail", "detail": "dkim-signature-expired"}, upstream_dkim)
+        except Exception:
+            pass
 
     try:
         import dkim

@@ -428,13 +428,11 @@ Hi Bob, lunch tomorrow at noon? Let me know if cafeteria works.`;
 
 /* ---------------- Gmail live import ---------------- */
 
-const DEFAULT_GOOGLE_CLIENT_ID = '895214579171-hlobo12ski2r1pocvm6eolf1ih0sn079.apps.googleusercontent.com';
-const DEFAULT_GOOGLE_CLIENT_SECRET = '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';
-
 function GmailPanel({ onSynced }: { onSynced: () => void }) {
   const [status, setStatus] = useState<any>(null);
-  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
-  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
+  // OAuth credentials are never prepopulated in state or DOM — kept blank for privacy
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -513,6 +511,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
       setStatus(r);
       setCode('');
       setOauthState('');
+      setClientId('');
+      setClientSecret('');
       setNotice(`Connected as ${r.gmail_address}. Credentials saved securely on the server.`);
       await refresh();
       await onSynced();
@@ -550,9 +550,9 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
     setBusy(true); setErr(''); setNotice('Syncing emails & running ML threat detection pipeline…');
     try {
       const num = Math.max(1, Math.min(50, parseInt(maxN, 10) || 10));
-      // P0: client_id from state only, client_secret never from browser storage
-      const effectiveCid = clientId.trim() || undefined;
-      const effectiveSec = clientSecret.trim() || undefined;
+      // Only send credentials if the user explicitly opened credentials and changed them
+      const effectiveCid = showCreds && clientId.trim() ? clientId.trim() : undefined;
+      const effectiveSec = showCreds && clientSecret.trim() ? clientSecret.trim() : undefined;
 
       const r = await jpost('/gmail/sync', {
         max_results: num,
@@ -560,17 +560,30 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
         client_id: effectiveCid,
         client_secret: effectiveSec,
       });
+      setErr('');
       setNotice(`Synced ${r.synced} email(s) through the pipeline${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      setClientId('');
+      setClientSecret('');
       await refresh();
       await onSynced();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
-    } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
+    } catch (e) {
+      setNotice('');
+      fail(e, 'Sync');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const disconnect = async () => {
     if (!confirm('Disconnect this Gmail mailbox?')) return;
     try {
       await jdel('/gmail/disconnect');
+      setErr('');
+      setNotice('Mailbox disconnected.');
+      setClientId('');
+      setClientSecret('');
+      setShowCreds(false);
       await refresh();
       await onSynced();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
@@ -580,8 +593,8 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <h3>Gmail live import (OAuth2, read-only)</h3>
-      <Toast msg={err} />
-      {notice && <Toast msg={notice} kind="info" />}
+      <Toast msg={err} onClose={() => setErr('')} />
+      {notice && <Toast msg={notice} kind="info" onClose={() => setNotice('')} />}
       {status?.connected ? (
         <div>
           <p>Connected as <b>{status.gmail_address}</b>
@@ -592,15 +605,46 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
             <input type="number" min="1" style={{ maxWidth: 110 }} value={maxN} onChange={(e) => setMaxN(e.target.value)} placeholder="Count" title="Max emails to sync (any number)" />
             <button onClick={sync} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>
             <button className="ghost" onClick={disconnect}>Disconnect</button>
-            <button className="ghost small" onClick={() => setShowCreds(!showCreds)} title="Show/hide OAuth credentials">{showCreds ? '▲ Hide credentials' : '▼ Change credentials'}</button>
+            <button
+              className="ghost small"
+              onClick={() => {
+                const next = !showCreds;
+                setShowCreds(next);
+                if (next) {
+                  setClientId('');
+                  setClientSecret('');
+                }
+              }}
+              title="Show/hide OAuth credentials"
+            >
+              {showCreds ? '▲ Hide credentials' : '▼ Change credentials'}
+            </button>
           </div>
           {showCreds && (
             <div className="grid" style={{ gap: 8, maxWidth: 560, marginTop: 10 }}>
+              <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
+                Server has encrypted credentials saved. Leave fields blank to keep current credentials, or enter new ones to rotate.
+              </p>
               <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client ID</label>
-              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" />
+              <input
+                type="text"
+                value={clientId}
+                onChange={(e) => updateClientId(e.target.value)}
+                placeholder="Google OAuth Client ID (kept blank for privacy)"
+                autoComplete="off"
+                spellCheck={false}
+              />
               <label style={{ fontSize: 12, fontWeight: 600 }}>Google OAuth Client Secret</label>
               <div className="row" style={{ gap: 6 }}>
-                <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
+                <input
+                  type={showSecret ? "text" : "password"}
+                  style={{ flex: 1 }}
+                  value={clientSecret}
+                  onChange={(e) => updateClientSecret(e.target.value)}
+                  placeholder="Google OAuth Client Secret (kept blank for privacy)"
+                  autoComplete="new-password"
+                  spellCheck={false}
+                />
                 <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
               </div>
             </div>
@@ -614,18 +658,34 @@ function GmailPanel({ onSynced }: { onSynced: () => void }) {
           <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client ID</label>
-              <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="Google OAuth client ID" style={{ width: '100%' }} />
+              <input
+                type="text"
+                value={clientId}
+                onChange={(e) => updateClientId(e.target.value)}
+                placeholder="Google OAuth client ID"
+                style={{ width: '100%' }}
+                autoComplete="off"
+                spellCheck={false}
+              />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Google OAuth Client Secret</label>
               <div className="row" style={{ gap: 6 }}>
-                <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="Google OAuth client secret" />
+                <input
+                  type={showSecret ? "text" : "password"}
+                  style={{ flex: 1 }}
+                  value={clientSecret}
+                  onChange={(e) => updateClientSecret(e.target.value)}
+                  placeholder="Google OAuth client secret"
+                  autoComplete="new-password"
+                  spellCheck={false}
+                />
                 <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
               </div>
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match Google Console)</label>
-              <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" style={{ width: '100%' }} />
+              <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match Google console)" style={{ width: '100%' }} autoComplete="off" spellCheck={false} />
             </div>
             <div className="row" style={{ marginTop: 4 }}>
               <button className="ghost" onClick={getUrl} disabled={busy || !clientId.trim() || !clientSecret.trim() || !redirectUri.trim()}>Connect Gmail</button>
@@ -1914,9 +1974,9 @@ export function Mailboxes() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   // P0: OAuth client secrets are NEVER held in the browser — not in state,
-  // not in storage. Client ID is not persisted (user enters each session).
-  const [clientId, setClientId] = useState(DEFAULT_GOOGLE_CLIENT_ID);
-  const [clientSecret, setClientSecret] = useState(DEFAULT_GOOGLE_CLIENT_SECRET);
+  // not in storage. Client ID is not persisted (user enters each session). Kept blank for privacy.
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState(
     typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:5173/',
@@ -1950,6 +2010,8 @@ export function Mailboxes() {
       });
       // P1: see getUrl() — the consent hop is verified against the IdP
       // allowlist before the browser leaves the dashboard.
+      setClientId('');
+      setClientSecret('');
       window.location.href = assertIdpUrl(r.auth_url, provider);
     } catch (e) { fail(e, 'Connect'); } finally { setBusy(false); }
   };
@@ -1965,6 +2027,8 @@ export function Mailboxes() {
         client_secret: clientSecret.trim() || undefined,
       });
       setNotice(`Synced ${r.synced} email(s)${r.errors?.length ? `, ${r.errors.length} error(s)` : ''}.`);
+      setClientId('');
+      setClientSecret('');
       await load();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Sync'); } finally { setBusy(false); }
@@ -1974,6 +2038,8 @@ export function Mailboxes() {
     if (!confirm(`Disconnect ${provider} mailbox?`)) return;
     try {
       await jdel(`/oauth/${provider}`);
+      setClientId('');
+      setClientSecret('');
       await load();
       window.dispatchEvent(new CustomEvent('soc:emails-updated'));
     } catch (e) { fail(e, 'Disconnect'); }
@@ -2023,18 +2089,34 @@ export function Mailboxes() {
         <div className="grid" style={{ gap: 8, maxWidth: 560 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client ID</label>
-            <input type="text" value={clientId} onChange={(e) => updateClientId(e.target.value)} placeholder="OAuth client ID" style={{ width: '100%' }} />
+            <input
+              type="text"
+              value={clientId}
+              onChange={(e) => updateClientId(e.target.value)}
+              placeholder="OAuth client ID (kept blank for privacy)"
+              style={{ width: '100%' }}
+              autoComplete="off"
+              spellCheck={false}
+            />
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>OAuth Client Secret</label>
             <div className="row" style={{ gap: 6 }}>
-              <input type={showSecret ? "text" : "password"} style={{ flex: 1 }} value={clientSecret} onChange={(e) => updateClientSecret(e.target.value)} placeholder="OAuth client secret" />
+              <input
+                type={showSecret ? "text" : "password"}
+                style={{ flex: 1 }}
+                value={clientSecret}
+                onChange={(e) => updateClientSecret(e.target.value)}
+                placeholder="OAuth client secret (kept blank for privacy)"
+                autoComplete="new-password"
+                spellCheck={false}
+              />
               <button type="button" className="ghost small" onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</button>
             </div>
           </div>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Redirect URI (must match provider console)</label>
-            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" style={{ width: '100%' }} />
+            <input type="text" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} placeholder="Redirect URI (must match provider console)" style={{ width: '100%' }} autoComplete="off" spellCheck={false} />
           </div>
           <div className="row" style={{ marginTop: 4 }}>
             <button className="ghost" onClick={() => connect('google')} disabled={busy || !redirectUri.trim() || !clientId.trim() || !clientSecret.trim()}>Connect Google</button>

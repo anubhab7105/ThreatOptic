@@ -269,7 +269,16 @@ async def sync(
     try:
         fresh = await connectors.refresh_gmail_token(raw_token, cid, secret)
     except httpx.HTTPError as e:
-        raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {e}")
+        detail = str(e)
+        if isinstance(e, httpx.HTTPStatusError):
+            try:
+                body = e.response.json()
+                desc = body.get("error_description") or body.get("error")
+                if desc:
+                    detail = f"{e.response.status_code} ({desc})"
+            except Exception:
+                pass
+        raise HTTPException(400, f"Gmail token refresh failed (reconnect mailbox): {detail}")
     try:
         messages = await connectors.fetch_gmail_messages(
             fresh["access_token"], query=payload.query, max_results=payload.max_results

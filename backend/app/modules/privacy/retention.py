@@ -15,7 +15,7 @@ log = logging.getLogger("retention")
 BATCH = 500
 
 
-def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) -> dict:
+def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90, dry_run: bool = False) -> dict:
     from ...database import as_utc, utcnow
     now = utcnow()
     mal_cut = now - timedelta(days=malicious_days)
@@ -55,27 +55,34 @@ def apply_retention(db: Session, clean_days: int = 7, malicious_days: int = 90) 
                     score = 0
                 if score < 50:
                     if e.body_text or e.body_text_masked:
-                        e.body_text = ""
-                        e.body_text_masked = ""
+                        if not dry_run:
+                            e.body_text = ""
+                            e.body_text_masked = ""
                         purged_body += 1
                 elif e.timestamp and as_utc(e.timestamp) < mal_cut:
                     if e.body_text or e.body_text_masked:
                         purged_body += 1
-                    if a:
-                        db.delete(a)
-                    db.query(TraceabilityData).filter(TraceabilityData.email_id == e.id).delete()
-                    db.delete(e)
+                    if not dry_run:
+                        if a:
+                            db.delete(a)
+                        db.query(TraceabilityData).filter(TraceabilityData.email_id == e.id).delete()
+                        db.delete(e)
+                        delete_email(e.id)
+                        try:
+                            remove_email_graph(e.sender_address or "")
+                        except Exception:
+                            pass
                     deleted += 1
-                    delete_email(e.id)
-                    try:
-                        remove_email_graph(e.sender_address or "")
-                    except Exception:
-                        pass
-            db.commit()
+            if not dry_run:
+                db.commit()
             last_ts = next_ts
             last_id = next_id
         except Exception:
-            db.rollback()
+            if not dry_run:
+                db.rollback()
             log.exception("retention batch failed, rolled back")
             raise
-    return {"purged_body": purged_body, "deleted": deleted}
+    res = {"purged_body": purged_body, "deleted": deleted}
+    if dry_run:
+        res["dry_run"] = True
+    return res

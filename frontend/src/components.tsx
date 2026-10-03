@@ -41,10 +41,38 @@ export function StatCard({ label, value, caption }: { label: string; value: Reac
   );
 }
 
-export function Toast({ msg, kind }: { msg: string; kind?: 'error' | 'info' }) {
+export function Toast({ msg, kind, onClose }: { msg: string; kind?: 'error' | 'info'; onClose?: () => void }) {
   if (!msg) return null;
   const role = kind === 'info' ? 'status' : 'alert';
-  return <div role={role} className={`toast${kind === 'info' ? ' info' : ''}`}>{msg}</div>;
+  return (
+    <div
+      role={role}
+      className={`toast${kind === 'info' ? ' info' : ''}`}
+      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+    >
+      <span style={{ wordBreak: 'break-word', flex: 1 }}>{msg}</span>
+      {onClose && (
+        <button
+          onClick={onClose}
+          type="button"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+            fontSize: '1.25rem',
+            lineHeight: 1,
+            padding: '0 4px',
+            opacity: 0.8,
+          }}
+          title="Dismiss"
+          aria-label="Dismiss alert"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function Empty({ msg }: { msg: string }) {

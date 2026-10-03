@@ -68,6 +68,25 @@ def delete_email(email_id: str) -> dict:
         return {"deleted": False, "error": str(e)[:300]}
 
 
+def _extract_snippet(row: Any, query: str, window: int = 60) -> str:
+    """Extract a surrounding snippet from masked body or subject matching query."""
+    if not query:
+        return ""
+    q_lower = query.lower()
+    for text in (getattr(row, "body_text_masked", "") or "", getattr(row, "subject", "") or ""):
+        idx = text.lower().find(q_lower)
+        if idx != -1:
+            start = max(0, idx - window)
+            end = min(len(text), idx + len(query) + window)
+            snippet = text[start:end].strip()
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+            return snippet
+    return (getattr(row, "subject", "") or "")[:120]
+
+
 def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
     from ...config import get_settings
 
@@ -115,4 +134,5 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
     rows = q.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
     return {"backend": "sqlite", "hits": [
         {"id": r.id, "email": {"subject": r.subject, "sender_address": r.sender_address,
-                              "recipient_address": r.recipient_address}} for r in rows]}
+                              "recipient_address": r.recipient_address},
+         "snippet": _extract_snippet(r, query)} for r in rows]}

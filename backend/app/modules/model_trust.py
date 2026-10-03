@@ -129,6 +129,8 @@ def verify_model_artifact(path: str, *, purpose: str = "model") -> None:
 
     # No key, no sidecar: fail closed except explicit logged dev override.
     if _is_production():
+        if os.environ.get("MODEL_TRUST_INSECURE", "").strip() == "1":
+            raise ModelTrustError("MODEL_TRUST_INSECURE is not permitted outside development")
         raise ModelTrustError(
             f"{purpose} has no signature (.sig + MODEL_VERIFY_KEY) and no "
             f"checksum sidecar (.sha256) — refusing to load in production"

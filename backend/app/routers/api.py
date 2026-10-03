@@ -544,17 +544,31 @@ def report_pdf(email_id: str, db: Session = Depends(get_db), user: models.User =
                     headers={"Content-Disposition": f"attachment; filename=forensic-{email_id}.pdf"})
 
 
-@router.post("/admin/retention")
+@router.get("/admin/retention/preview")
 @limiter.limit("5/minute")
-def run_retention(
+def preview_retention(
     request: Request,
     db: Session = Depends(get_db),
     admin: models.User = Depends(require_roles("Admin")),
 ):
     from ..config import get_settings
     settings = get_settings()
-    audit("admin.retention", user=admin.email)
-    return apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days)
+    audit("admin.retention.preview", user=admin.email)
+    return apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days, dry_run=True)
+
+
+@router.post("/admin/retention")
+@limiter.limit("5/minute")
+def run_retention(
+    request: Request,
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(require_roles("Admin")),
+):
+    from ..config import get_settings
+    settings = get_settings()
+    audit("admin.retention", user=admin.email, dry_run=dry_run)
+    return apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days, dry_run=dry_run)
 
 
 @router.get("/model/metrics")

@@ -30,19 +30,35 @@ def run_retention_job() -> dict:
     from ..config import get_settings
     from ..database import SessionLocal
     from ..modules.privacy.retention import apply_retention
+    from .. import models
 
     settings = get_settings()
     db = SessionLocal()
+    oauth_cleaned = 0
     try:
         result = apply_retention(db, settings.retention_clean_days, settings.retention_malicious_days)
+        # Periodic cleanup of expired and used OAuthState records (Fix #13)
+        try:
+            now = datetime.now(timezone.utc)
+            oauth_cleaned = db.query(models.OAuthState).filter(
+                (models.OAuthState.expires_at < now) | (models.OAuthState.used == True)
+            ).delete(synchronize_session=False)
+            db.commit()
+            if oauth_cleaned:
+                log.info("retention: cleaned up %d expired/used OAuthState records", oauth_cleaned)
+        except Exception as oe:
+            db.rollback()
+            log.warning("could not clean up expired OAuthState records: %s", oe)
     finally:
         db.close()
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "purged_body": result.get("purged_body", 0),
         "deleted": result.get("deleted", 0),
+        "oauth_states_cleaned": oauth_cleaned,
     }
-    log.info("retention run: purged_body=%s deleted=%s", entry["purged_body"], entry["deleted"])
+    log.info("retention run: purged_body=%s deleted=%s oauth_cleaned=%s",
+             entry["purged_body"], entry["deleted"], oauth_cleaned)
     try:
         _rotate_audit_log_if_needed()
         with open(AUDIT_LOG, "a") as f:

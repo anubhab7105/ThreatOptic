@@ -1,6 +1,7 @@
 """FastAPI entrypoint."""
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +102,13 @@ async def lifespan(app: FastAPI):
             "CORS_ORIGINS=https://your-app.vercel.app",
             boot_settings.cors_origin_list or "empty",
         )
+    if not boot_settings.is_development() and boot_settings.expected_replicas > 1:
+        neo_uri = (os.environ.get("NEO4J_URI", "") or boot_settings.neo4j_uri or "").strip()
+        if not neo_uri:
+            raise RuntimeError(
+                "Refusing to boot: EXPECTED_REPLICAS > 1 requires NEO4J_URI to be configured "
+                "so the graph does not diverge across replicas."
+            )
     apply_limiter_setting()
     init_db()
     log.info("DB ready at %s", settings.redacted_db_url())
