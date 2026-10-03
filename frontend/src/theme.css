@@ -138,25 +138,22 @@ a:hover { text-decoration: underline; }
 code, .mono {
   font-family: var(--mono);
   font-size: 12px;
-  background: #0a0f1f;
+  background: var(--surface-inset);
   padding: 1px 6px;
   border-radius: 6px;
   border: 1px solid var(--border);
   word-break: break-all;
-}
-[data-theme="light"] code, [data-theme="light"] .mono {
-  background: #f1f5f9;
 }
 
 /* layout */
 .nav {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 20px;
-  background: #0d1528;
-  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-raised-md);
   position: sticky; top: 0; z-index: 10;
 }
-[data-theme="light"] .nav { background: #ffffff; }
 .nav .brand { font-weight: 800; letter-spacing: 0.3px; margin-right: 12px; }
 .nav .brand span { color: var(--accent); }
 .nav a.nl {
@@ -256,7 +253,7 @@ pre.dump {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
   background: var(--panel); border-top: 1px solid var(--border);
   padding: 14px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-raised-md);
 }
 .cookie-banner p { margin: 0; flex: 1; min-width: 240px; color: var(--text); font-size: 13px; }
 .cookie-banner .sub { margin: 0; }
