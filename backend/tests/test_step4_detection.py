@@ -435,3 +435,72 @@ def test_sanitize_html_still_strips_tags_and_scripts():
     assert "steal" not in out
     assert "<" not in out and ">" not in out
     assert "Hello" in out and "there" in out
+
+
+def test_misp_covers_every_indicator_offered(monkeypatch):
+    """MISP_VALUE_CAP truncated `seen`, so the last 60 of the 90 indicators a
+    mail can contribute were never queried and could never register a hit --
+    while the code comment claimed "coverage identical"."""
+    import app.modules.threat_intel.feeds as feeds
+    import app.modules.threat_intel.url_analyzer as ua
+
+    calls: list = []
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"response": {"Attribute": []}}
+
+    import requests
+    monkeypatch.setattr(feeds, "_MISP_CACHE", {})
+    monkeypatch.setenv("MISP_URL", "https://misp.test")
+    monkeypatch.setenv("MISP_KEY", "k")
+    monkeypatch.setattr(requests, "post",
+                        lambda *a, **k: (calls.append(k.get("json")), Resp())[1])
+
+    domains = [f"d{i}.evil.test" for i in range(20)]
+    ips = [f"203.0.113.{i}" for i in range(20)]
+    urls = [f"http://u{i}.bad.test/p" for i in range(50)]
+
+    out = feeds.query_misp_batch([*domains, *ips,
+                                  *(ua.domain_of(u) for u in urls)])
+    assert len(out) == 90, len(out)
+    sent = [v for call in calls for v in call["value"]]
+    assert sorted(sent) == sorted(out), "some indicators were never sent"
+    # bounded per-request size, not a single unbounded POST
+    assert all(len(c["value"]) <= feeds.MISP_VALUE_CAP for c in calls)
+    assert len(calls) == 3, len(calls)
+
+
+def test_misp_cache_is_bounded(monkeypatch):
+    """TTL alone never bounded the cache: an entry expired only when the same
+    value was read again, so rotating indicators grew the dict forever."""
+    import app.modules.threat_intel.feeds as feeds
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"response": {"Attribute": []}}
+
+    import requests
+    monkeypatch.setattr(feeds, "_MISP_CACHE", {})
+    monkeypatch.setattr(feeds, "MISP_CACHE_MAX_ENTRIES", 50)
+    monkeypatch.setenv("MISP_URL", "https://misp.test")
+    monkeypatch.setenv("MISP_KEY", "k")
+    monkeypatch.setattr(requests, "post", lambda *a, **k: Resp())
+
+    for batch in range(20):
+        feeds.query_misp_batch([f"v{batch}-{i}.test" for i in range(20)])
+    assert len(feeds._MISP_CACHE) <= 50, len(feeds._MISP_CACHE)
+
+    # Stale entries are swept before live ones are evicted.
+    feeds._MISP_CACHE.clear()
+    now = 1_000.0
+    for i in range(40):
+        feeds._misp_cache_put(f"stale{i}", now - 1, 0, now)
+    for i in range(40):
+        feeds._misp_cache_put(f"live{i}", now + 900, 1, now)
+    assert not any(k.startswith("stale") for k in feeds._MISP_CACHE)
+    assert all(k.startswith("live") for k in feeds._MISP_CACHE)

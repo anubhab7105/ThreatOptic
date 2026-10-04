@@ -157,12 +157,16 @@ def _misp_config() -> tuple[str, str]:
     return url, key
 
 
-# Batch MISP state (P0 reliability): per-value TTL cache + single batched
+# Batch MISP state (P0 reliability): per-value TTL cache + batched
 # restSearch per mail instead of up to 90 sequential POSTs.
 _MISP_CACHE: dict[str, tuple[float, int]] = {}
 MISP_CACHE_TTL_S = 15 * 60
 MISP_VALUE_CAP = 30
 MISP_TIMEOUT_S = 5.0
+# Hard ceiling on cache entries. Expiry alone does not bound this dict: an
+# expired entry is dropped only when that same value is read again, so
+# rotating indicators accumulated forever and the process grew without limit.
+MISP_CACHE_MAX_ENTRIES = 5000
 
 
 def _misp_cache_get(value: str, now: float) -> int | None:
@@ -174,20 +178,72 @@ def _misp_cache_get(value: str, now: float) -> int | None:
     return None
 
 
+def _misp_cache_put(key: str, expires_at: float, hits: int, now: float) -> None:
+    """Insert one entry, keeping the cache bounded.
+
+    Expired entries are swept first; only if that is not enough are the
+    soonest-to-expire entries evicted, so the live working set survives and
+    stale indicators go first.
+    """
+    _MISP_CACHE[key] = (expires_at, hits)
+    if len(_MISP_CACHE) <= MISP_CACHE_MAX_ENTRIES:
+        return
+    for k in [k for k, (exp, _) in _MISP_CACHE.items() if exp <= now]:
+        _MISP_CACHE.pop(k, None)
+    while len(_MISP_CACHE) > MISP_CACHE_MAX_ENTRIES:
+        _MISP_CACHE.pop(min(_MISP_CACHE, key=lambda k: _MISP_CACHE[k][0]), None)
+
+
+def _misp_restsearch(url: str, key: str, batch: list[str]) -> dict[str, int] | None:
+    """One restSearch POST -> {value: hits}, or None on transport error."""
+    try:
+        import requests
+        r = requests.post(
+            f"{url.rstrip('/')}/attributes/restSearch",
+            headers={"Authorization": key, "Accept": "application/json",
+                     "Content-Type": "application/json"},
+            json={"value": batch, "limit": 100}, timeout=MISP_TIMEOUT_S,
+        )
+        counts: dict[str, int] = {v: 0 for v in batch}
+        if r.status_code == 200:
+            try:
+                attrs = (r.json().get("response", {}) or {}).get("Attribute", []) or []
+            except Exception:
+                attrs = []
+            wanted = {v.lower(): v for v in batch}
+            for a in attrs:
+                try:
+                    av = str((a or {}).get("value", "")).strip().lower()
+                except Exception:
+                    continue
+                original = wanted.get(av)
+                if original is not None:
+                    counts[original] += 1
+        return counts
+    except Exception:
+        return None
+
+
 def query_misp_batch(values: list[str]) -> dict[str, int]:
-    """One batched MISP restSearch for deduplicated values -> {value: hits}.
+    """Batched MISP restSearch for deduplicated values -> {value: hits}.
 
     P0: replaces up to 90 sequential per-indicator POSTs (each with its own
-    5s timeout) with a single request over capped unique values, served
-    from a 15-minute TTL cache when warm. Transport failure yields zero
-    hits (same fail-open-per-mail as before); errors are NOT cached.
+    5s timeout) with restSearch over the deduplicated values, served from a
+    15-minute TTL cache when warm. Transport failure yields zero hits (same
+    fail-open-per-mail as before); errors are NOT cached.
+
+    Coverage is COMPLETE. Values are chunked into requests of at most
+    MISP_VALUE_CAP rather than truncated to it: `seen[:MISP_VALUE_CAP]`
+    silently dropped everything past the first 30 while the call site offers
+    up to 90, so 60 indicators per mail were never looked up and could never
+    contribute a MISP hit. Worst case is ceil(n / MISP_VALUE_CAP) requests at
+    MISP_TIMEOUT_S each.
     """
     seen: list[str] = []
     for v in values or []:
         v = (v or "").strip()
         if v and v not in seen:
             seen.append(v)
-    seen = seen[:MISP_VALUE_CAP]
     if not seen:
         return {}
     url, key = _misp_config()
@@ -195,40 +251,23 @@ def query_misp_batch(values: list[str]) -> dict[str, int]:
         return {}
     now = time.time()
     out: dict[str, int] = {}
-    pending = [v for v in seen if (_misp_cache_get(v, now) is None)]
+    pending: list[str] = []
     for v in seen:
         cached = _misp_cache_get(v, now)
-        if cached is not None:
+        if cached is None:
+            pending.append(v)
+        else:
             out[v] = cached
-    if not pending:
-        return out
-    try:
-        import requests
-        r = requests.post(
-            f"{url.rstrip('/')}/attributes/restSearch",
-            headers={"Authorization": key, "Accept": "application/json", "Content-Type": "application/json"},
-            json={"value": pending, "limit": 100}, timeout=MISP_TIMEOUT_S,
-        )
-        counts: dict[str, int] = {v: 0 for v in pending}
-        if r.status_code == 200:
-            try:
-                attrs = (r.json().get("response", {}) or {}).get("Attribute", []) or []
-            except Exception:
-                attrs = []
-            wanted = {v.lower() for v in pending}
-            for a in attrs:
-                try:
-                    av = str((a or {}).get("value", "")).strip().lower()
-                except Exception:
-                    continue
-                if av in wanted:
-                    counts[next(v for v in pending if v.lower() == av)] += 1
-        for v in pending:
+    for i in range(0, len(pending), MISP_VALUE_CAP):
+        batch = pending[i:i + MISP_VALUE_CAP]
+        counts = _misp_restsearch(url, key, batch)
+        if counts is None:
+            for v in batch:
+                out[v] = 0
+            continue
+        for v in batch:
             out[v] = counts[v]
-            _MISP_CACHE[v.lower()] = (now + MISP_CACHE_TTL_S, counts[v])
-    except Exception:
-        for v in pending:
-            out[v] = 0
+            _misp_cache_put(v.lower(), now + MISP_CACHE_TTL_S, counts[v], now)
     return out
 
 
@@ -251,8 +290,9 @@ def aggregate_threat_intel(domains: list[str], ips: list[str], urls: list[str]) 
     dom_list = [d for d in domains[:20] if d]
     ip_list = [ip for ip in ips[:20] if ip]
 
-    # P0: ONE batched, deduplicated, TTL-cached MISP query per mail instead
-    # of up to 90 sequential POSTs. Coverage identical, latency bounded.
+    # P0: a few batched, deduplicated, TTL-cached MISP queries per mail
+    # instead of up to 90 sequential POSTs. Chunked, not truncated, so
+    # every indicator offered here is actually looked up.
     misp_hits = query_misp_batch([*dom_list, *ip_list, *url_doms])
 
     def _misp_entry(value: str) -> dict[str, Any] | None:

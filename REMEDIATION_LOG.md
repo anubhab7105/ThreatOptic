@@ -691,6 +691,63 @@ case, and the card-pattern timing).
 
 ## Still open
 
+### P0-12 — MISP truncated two thirds of its indicators; cache was unbounded
+
+**Status:** resolved
+**Severity:** High (detection gap, evasion) + Medium (resource exhaustion)
+
+**Files**
+
+- `backend/app/modules/threat_intel/feeds.py`
+- `backend/tests/test_step4_detection.py`
+
+**Issue 1 — silent truncation (`feeds.py:190`)**
+
+`query_misp_batch` did `seen = seen[:MISP_VALUE_CAP]` with
+`MISP_VALUE_CAP = 30`. Its only caller,
+`aggregate_threat_intel()`, offers `domains[:20] + ips[:20] + url_doms[:50]` —
+**up to 90 unique values.** So up to 60 indicators per mail were never
+queried, returned no entry, and therefore could never contribute a MISP hit
+or raise `malicious_count`. A mail whose malicious indicators happened to
+sort past the first 30 scored clean.
+
+The comment directly above the call site claimed *"Coverage identical,
+latency bounded."* It was identical to the first 30 and nothing else.
+
+**Issue 2 — `_MISP_CACHE` grew without bound (`:162`)**
+
+Entries carry a 15-minute TTL, but `_misp_cache_get` only drops an expired
+entry when *that same value* is read again. With rotating indicators — which
+is exactly what a mail scanner sees — nothing was ever read twice, so the
+dict was append-only for the life of the process.
+
+**Change**
+
+- Coverage is now complete: `pending` is chunked into requests of at most
+  `MISP_VALUE_CAP` (`range(0, len(pending), MISP_VALUE_CAP)`) rather than
+  truncated to it. Per-request size stays bounded, the call site gets all 90
+  values back, and worst-case latency is `ceil(90/30) = 3` requests at
+  `MISP_TIMEOUT_S` instead of 1. The false comment is replaced with the real
+  trade-off.
+- `_misp_cache_put()` enforces `MISP_CACHE_MAX_ENTRIES` (5000, ~55× the
+  90-indicator working set). It sweeps expired entries first and only then
+  evicts the soonest-to-expire, so the live working set survives and stale
+  indicators go first.
+- The per-request POST moved into `_misp_restsearch()`, which returns `None`
+  on transport error so the existing "errors fail open and are not cached"
+  behaviour is applied **per chunk** instead of to the whole batch.
+- Incidental: the attribute-counting loop built a `wanted` set and then did
+  `next(v for v in pending if ...)` per attribute — O(attrs × values). It is
+  now a dict lookup.
+
+**Tests** — `tests/test_step4_detection.py`, 2 new. Both fail pre-fix: the
+coverage test gets `len(out) == 30` instead of 90, and the cache test finds
+no `MISP_CACHE_MAX_ENTRIES`. The coverage test also asserts the request count
+is 3 and no request exceeds the cap, so a future "fix" that restores
+truncation or sends one unbounded POST both fail.
+
+## Still open
+
 ### From this audit
 
 - **H21 — frontend token storage is real, but needs a decision.** `supabaseClient.ts`
@@ -710,7 +767,7 @@ case, and the card-pattern timing).
 
 - MISP residuals in `feeds.py`: unbounded `_MISP_CACHE` growth (`:162`) and a
   silent 30-value truncation (`MISP_VALUE_CAP`) against inputs of up to 60,
-  which contradicts the "coverage identical" comment.
+  which contradicts the "coverage identical" comment. **Both fixed in P0-12.**
 - `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
   runs unauthenticated model inference and returns `live_lookups`; `replicas:
   2` with no shared state; image pinned to a tag rather than a digest.
