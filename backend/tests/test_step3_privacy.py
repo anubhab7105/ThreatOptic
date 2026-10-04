@@ -72,7 +72,7 @@ def test_search_none_db_and_wildcard_escape():
         assert all("%" in (hit.get("email") or {}).get("subject", "") for hit in wild)
 
 
-def test_retention_full_delete_malicious():
+def test_retention_deletes_expired_clean_and_keeps_malicious():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from app.database import Base
@@ -88,14 +88,18 @@ def test_retention_full_delete_malicious():
     db.flush()
     db.add(models.AnalysisResult(email_id=old_bad.id, fraud_score=95.0))
     db.add(models.AnalysisResult(email_id=old_clean.id, fraud_score=10.0))
-    db.add(models.TraceabilityData(email_id=old_bad.id, origin_ip="9.9.9.9"))
+    db.add(models.TraceabilityData(email_id=old_clean.id, origin_ip="9.9.9.9"))
     db.commit()
 
+    # Rules.md: expired CLEAN metadata is deleted outright (the row, its
+    # analysis and its traceability), while expired MALICIOUS traffic keeps
+    # its row so the aggregated Graph DB indicators stay attributable and
+    # only has its body purged.
     from app.modules.privacy.retention import apply_retention
     out = apply_retention(db, clean_days=7, malicious_days=90)
     assert out["deleted"] == 1 and out["purged_body"] >= 1
-    assert db.get(models.EmailRecord, old_bad.id) is None
-    assert db.query(models.AnalysisResult).filter_by(email_id=old_bad.id).count() == 0
-    assert db.query(models.TraceabilityData).filter_by(email_id=old_bad.id).count() == 0
-    kept = db.get(models.EmailRecord, old_clean.id)
-    assert kept is not None and kept.body_text == "" and kept.subject == "ok"
+    assert db.get(models.EmailRecord, old_clean.id) is None
+    assert db.query(models.AnalysisResult).filter_by(email_id=old_clean.id).count() == 0
+    assert db.query(models.TraceabilityData).filter_by(email_id=old_clean.id).count() == 0
+    kept = db.get(models.EmailRecord, old_bad.id)
+    assert kept is not None and kept.body_text == "" and kept.subject == "bad"
