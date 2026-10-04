@@ -179,6 +179,68 @@ pre-fix module and pass after:
 - `test_trusted_upstream_still_substitutes_for_unverifiable` (guards against
   over-correcting into ignoring every relay-forwarded verdict)
 
+### P0-3 — Retention violated the documented policy in both directions
+
+**Status:** resolved
+**Severity:** Critical (GDPR / data-integrity)
+
+**Files**
+
+- `backend/app/modules/privacy/retention.py`
+- `backend/tests/test_privacy.py`
+- `backend/tests/test_step3_privacy.py`
+
+**Issue**
+
+`Rules.md` "Data Retention" specifies two different regimes, and the code
+implemented neither:
+
+| Traffic | `Rules.md` requires | Code did |
+| --- | --- | --- |
+| Clean (`score < 50`) | metadata retained for **7 days**, body dropped immediately | body blanked, row kept **forever** |
+| Malicious (`score >= 50`) | retained **90 days**, then body purged, **leaving aggregated threat intel indicators in the Graph DB** | full row deleted |
+
+So clean traffic PII (subject, sender, recipients, `headers`,
+`raw_headers`) was retained indefinitely, while malicious evidence — the
+indicators the retention policy explicitly exists to preserve — was
+destroyed at 90 days.
+
+**Change**
+
+- Clean traffic past `clean_days` is now deleted outright, cascading to
+  `AnalysisResult`, `TraceabilityData` and the Elasticsearch document.
+- Malicious traffic past `malicious_days` keeps its row and has only its
+  body purged, so the graph indicators remain attributable.
+- Removed `remove_email_graph(e.sender_address)`. It issued
+  `MATCH (e:Email_Address {address:$a}) DETACH DELETE e` against a
+  **globally shared** node, so one tenant's retention run deleted graph
+  edges belonging to other tenants and to emails that still exist.
+  Per-email graph removal needs per-email nodes and tenancy, which the
+  graph model does not have yet; removing the unsafe call is the correct
+  interim behaviour.
+- `clean_days`/`malicious_days` are now rejected when negative. A negative
+  value inverts every cutoff and can delete the whole corpus.
+- The `delete_email()` result is now checked. A row removed from Postgres
+  whose ES document survives was previously invisible; it is counted and
+  returned as `es_delete_failed`.
+
+**Tests**
+
+Six tests, verified to fail against the pre-fix module:
+
+- `test_retention_deletes_expired_clean_row_entirely`
+- `test_retention_keeps_expired_malicious_row_and_only_purges_body`
+- `test_retention_keeps_malicious_row_inside_forensic_window`
+- `test_retention_does_not_touch_shared_graph_sender_node`
+- `test_retention_rejects_negative_windows`
+- `test_retention_reports_es_delete_failure`
+
+Two existing tests asserted the non-compliant behaviour and were rewritten to
+the policy: `test_retention_purges_old_clean_body_only` (now
+`test_retention_deletes_expired_clean_row_entirely`) and
+`test_retention_full_delete_malicious` (now
+`test_retention_deletes_expired_clean_and_keeps_malicious`).
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.
