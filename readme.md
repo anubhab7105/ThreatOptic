@@ -6,7 +6,7 @@ This repository contains the architecture, documentation, and source code for th
 The platform is designed to move beyond static, signature-based email filtering by utilizing Natural Language Processing (NLP), Graph-based identity correlation, and deep header forensics. It aims to accurately detect sophisticated phishing, impersonation, and BEC (Business Email Compromise) attacks, trace their true geographical origins, and provide actionable forensic intelligence for SOC analysts and law enforcement.
 
 ## Documentation Index
-Please refer to the following markdown files in this repository to understand the system comprehensively:
+Please refer to the following markdown files in this repository to understand the system comprehensively :
 1. [Product Requirements Document (PRD)](PRD.md) - Problem statement, proposed solutions, and key components.
 2. [Technical Specification (Techspec)](Techspec.md) - Tech stack and core module breakdown.
 3. [Application Flow (AppFlow)](AppFlow.md) - Step-by-step data lifecycle from ingestion to alerting.
