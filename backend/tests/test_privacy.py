@@ -20,6 +20,58 @@ def test_masking_kinds():
     assert mask_text("") == ""
 
 
+# ---------------------------------------------------------------------------
+# E164_RE: the separator class contained \s, so a match ran across lines.
+# ---------------------------------------------------------------------------
+
+def test_e164_does_not_swallow_the_next_line():
+    """`[\d.\s\-()]*` matched \\n, so 'call +1\\n2025550123' lost its newline
+    and the masked body no longer reflected the message's line structure."""
+    out = mask_text("call +1\n2025550123 now")
+    assert "\n" in out, out
+    assert "2025550123" in out, out
+
+
+def test_e164_over_long_run_no_longer_leaks_interior_numbers():
+    """A run over 15 digits was returned verbatim, so BOTH phone numbers in
+    '+12025550123 15551234567' survived masking."""
+    out = mask_text("+12025550123 15551234567")
+    assert "12025550123" not in out, out
+    assert "15551234567" not in out, out
+
+
+def test_e164_short_plus_token_is_not_a_phone():
+    """The 7-digit floor stays: '+1' must not be redacted everywhere."""
+    assert mask_text("sum +1 = 2 ok") == "sum +1 = 2 ok"
+    assert mask_text("call +1 now") == "call +1 now"
+
+
+def test_e164_boundary_digits_still_masked():
+    for txt in ("+1202555", "+12025550"):
+        assert "[PHONE-REDACTED]" in mask_text(txt), txt
+
+
+def test_card_pattern_stays_bounded_on_adversarial_input():
+    """Guard, not a claim of a live ReDoS: measured <0.05ms across five
+    shapes up to 400 repetitions. `(?:\d[ \\-.]*){13,19}` is the classic
+    nested-quantifier shape, so pin it against a future regression."""
+    import time
+
+    from app.modules.privacy.masking import CARD_CANDIDATE_RE
+
+    shapes = (
+        " ".join(["1" * 13] * 400) + " ",
+        ("1 1 1 1 1 1 1 1 1 1 1 1 1 " * 400) + " ",
+        "1234567890123" + " " * 400 + "!",
+        "1." * 400 + "1",
+        ("1234567890123 -" * 400),
+    )
+    for shape in shapes:
+        t0 = time.perf_counter()
+        CARD_CANDIDATE_RE.search(shape)
+        assert time.perf_counter() - t0 < 1.0, "card pattern became superlinear"
+
+
 def _db():
     eng = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=eng)

@@ -20,7 +20,7 @@ SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 # class must NOT contain \s: a newline-spanning match swallowed the following
 # line, so 'call +1\n2025550123' lost its line break and an over-long run
 # spanning lines was returned unmasked (see _mask_e164).
-E164_RE = re.compile(r"\+\d(?:[ .\-()]*\d)?")
+E164_RE = re.compile(r"\+\d(?:[\d .\-()]*\d)?")
 NANP_RE = re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}\b")
 EMAIL_RE = re.compile(r"([\w.\-+]+)@([\w.\-]+\.\w+)")
 
