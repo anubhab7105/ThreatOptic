@@ -13,7 +13,7 @@ Weights (sum to 1.0 across evidence, scaled to a 0..0.99 score):
 Each term is proportional (overlap/size, 0/1, neighbours/cap).
 """
 from typing import Any
-from .store import related_entities, find_campaigns
+from .store import ALL_TENANTS, related_entities, find_campaigns
 
 W_ATTRIBUTION = {"infra": 0.45, "known_ip": 0.30, "density": 0.25}
 _DENSITY_CAP = 12
@@ -46,7 +46,8 @@ def attribute(email_addr: str, ip: str, domains: list[str]) -> dict[str, Any]:
         signals.append(f"known-malicious-ip:{ip}")
         best_campaign = best_campaign or f"known-ip:{ip}"
 
-    rel = related_entities(email_addr or ip or (domains[0] if domains else ""))
+    rel = related_entities(email_addr or ip or (domains[0] if domains else ""),
+                           organization_id=ALL_TENANTS)
     neighbours = len(rel.get("nodes", []))
     density = min(1.0, neighbours / _DENSITY_CAP) if neighbours else 0.0
     if neighbours:

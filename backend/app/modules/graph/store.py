@@ -16,6 +16,8 @@ import os
 from typing import Any
 import networkx as nx
 
+from ...sql_utils import LIKE_ESCAPE, escape_like
+
 G = nx.DiGraph()
 
 # Step 4: bound the ephemeral graph so one flood can't OOM the process.
@@ -26,6 +28,10 @@ MAX_GRAPH_NODES = 20000
 # read output — none of these paths may load or return unbounded data.
 HYDRATE_BATCH_ROWS = 1000
 HYDRATE_MAX_ROWS = 5000
+
+
+class ALL_TENANTS:
+    """Sentinel: cross-tenant read, for internal/shared-infra callers only."""
 NX_MAX_DEPTH = 5
 NX_MAX_NODES = 500
 NX_MAX_EDGES = 1000
@@ -320,11 +326,34 @@ def ensure_graph_hydrated(db: Any) -> None:
         pass
 
 
-def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str | None = None) -> dict[str, Any]:
+def _org_clause(column: Any, organization_id: str | None | ALL_TENANTS) -> Any:
+    """Tenant predicate for a DB-hydration query.
+
+    ALL_TENANTS keeps the shared-infra behaviour for internal callers that
+    legitimately need cross-tenant reads; a real org id pins the row to that
+    tenant. None (a user with no org) matches nothing rather than everything.
+    """
+    from sqlalchemy import and_
+    if organization_id is ALL_TENANTS:
+        return and_(True)
+    if organization_id is None:
+        return and_(False)
+    return column.organization_id == organization_id
+
+
+def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str | None = None,
+                     organization_id: str | None | ALL_TENANTS = ALL_TENANTS) -> dict[str, Any]:
     """BFS neighbourhood for graph view. Neo4j-first when configured (F8).
 
     P0: depth clamped (unbounded radius on a 20k-node graph hangs the
     request) and networkx output capped — same shape, bounded size.
+
+    P0 tenancy: when `db` is supplied the hydration step reads EmailRecord
+    rows directly. Those rows carry recipient addresses and campaign
+    classification, so an unscoped read both leaks another tenant's row into
+    the shared graph (via upsert_email_graph) and lets a caller pivot onto a
+    foreign email by passing its id. `organization_id` pins those reads;
+    callers on a user-facing path MUST pass it.
     """
     try:
         depth = max(1, min(int(depth or 2), NX_MAX_DEPTH))
@@ -358,9 +387,23 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             from ... import models
             email_row = None
             if email_id:
-                email_row = db.query(models.EmailRecord).filter(models.EmailRecord.id == email_id).first()
+                email_row = (
+                    db.query(models.EmailRecord)
+                    .filter(models.EmailRecord.id == email_id)
+                    .filter(_org_clause(models.EmailRecord, organization_id))
+                    .first()
+                )
             if not email_row and len(clean_val) >= 3:
-                email_row = db.query(models.EmailRecord).filter(models.EmailRecord.sender_address.ilike(f"%{clean_val}%")).first()
+                # Escape LIKE wildcards: without this a search for "%" or "_"
+                # matches every sender (wildcard semantics) instead of the
+                # literal substring the caller asked for.
+                like = f"%{escape_like(clean_val)}%"
+                email_row = (
+                    db.query(models.EmailRecord)
+                    .filter(models.EmailRecord.sender_address.ilike(like, escape=LIKE_ESCAPE))
+                    .filter(_org_clause(models.EmailRecord, organization_id))
+                    .first()
+                )
             if email_row:
                 trace = db.query(models.TraceabilityData).filter(models.TraceabilityData.email_id == email_row.id).first()
                 analysis = db.query(models.AnalysisResult).filter(models.AnalysisResult.email_id == email_row.id).first()
@@ -378,6 +421,11 @@ def related_entities(value: str, depth: int = 2, db: Any = None, email_id: str |
             domain = clean_val.split("@")[-1].strip(" <>")
             upsert_email_graph(clean_val, "", [domain] if domain else [])
             key = f"email:{clean_val}"
+    if key is None:
+        # Nothing matched and there is no address to synthesise a node from
+        # (e.g. value="a"). ego_graph(None) raises NodeNotFound, so an
+        # unrecognised short value 500'd the endpoint for any logged-in user.
+        return {"nodes": [], "edges": []}
     sub = nx.ego_graph(G.to_undirected(), key, radius=depth)
     # P0: cap read output even if the capped radius still covers plenty.
     sub_nodes = list(sub.nodes)[:NX_MAX_NODES]

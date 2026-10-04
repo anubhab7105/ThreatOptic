@@ -13,7 +13,7 @@ from ..database import get_db
 from .. import models, schemas
 from ..services.pipeline import process_raw_email
 from ..modules.auth.rate_limit import audit, limiter
-from ..modules.graph.store import related_entities, find_campaigns
+from ..modules.graph.store import ALL_TENANTS, related_entities, find_campaigns
 from ..modules.privacy.retention import apply_retention
 from .deps import get_current_user, require_roles
 
@@ -238,8 +238,8 @@ def list_emails(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=
                 db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     query = _org_filter(db.query(models.EmailRecord), models.EmailRecord, user)
     if q:
-        from ..modules.search.elastic_sync import _escape_like
-        like = f"%{_escape_like(q)}%"
+        from ..sql_utils import escape_like
+        like = f"%{escape_like(q)}%"
         query = query.filter(or_(
             models.EmailRecord.subject.ilike(like, escape="\\"),
             models.EmailRecord.sender_address.ilike(like, escape="\\"),
@@ -387,7 +387,12 @@ def graph_related(value: str = Query(..., min_length=1, max_length=320),
                  email_id: str | None = Query(None),
                  db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     from ..services.campaigns import _filter_graph_emails, _tenant_email_addresses
-    graph = related_entities(value, db=db, email_id=email_id)
+    # Hydration reads EmailRecord directly (tenant PII + campaign labels),
+    # so the scope has to be pushed down, not only filtered afterwards.
+    graph = related_entities(
+        value, db=db, email_id=email_id,
+        organization_id=ALL_TENANTS if user.role == "Admin" else user.organization_id,
+    )
     if user.role == "Admin":
         return graph
     # P0: traversal runs on the shared global graph — strip foreign email

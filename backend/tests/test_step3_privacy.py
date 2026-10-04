@@ -55,8 +55,9 @@ def test_report_returns_masked_only():
 
 
 def test_search_none_db_and_wildcard_escape():
-    from app.modules.search.elastic_sync import _escape_like, search_emails
-    assert _escape_like("%_\\") == "\\%\\_\\\\"
+    from app.modules.search.elastic_sync import search_emails
+    from app.sql_utils import escape_like
+    assert escape_like("%_\\") == "\\%\\_\\\\"
     assert search_emails("anything", db=None, organization_id="org-1") == {"backend": "none", "hits": []}
 
     from app.main import app

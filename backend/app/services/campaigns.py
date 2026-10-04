@@ -15,7 +15,7 @@ user", NOT "admin".
 from collections import Counter
 from sqlalchemy.orm import Session
 from .. import models
-from ..modules.graph.store import find_campaigns, related_entities
+from ..modules.graph.store import ALL_TENANTS, find_campaigns, related_entities
 
 # Cap on addresses pulled for graph email-node filtering (fail closed
 # beyond: unlisted addresses are hidden, never leaked).
@@ -180,7 +180,7 @@ def campaign_detail(db: Session, cid: str, organization_id: str | None = None, *
             "classification": a.threat_classification if a else "—",
         })
     rows.sort(key=lambda r: r["timestamp"] or "", reverse=True)
-    graph = related_entities(card["ip"])
+    graph = related_entities(card["ip"], organization_id=ALL_TENANTS)
     if not is_admin:
         # P0: the embedded neighbourhood traverses the shared global graph —
         # strip foreign email nodes before returning.

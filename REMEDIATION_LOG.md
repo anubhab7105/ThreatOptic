@@ -495,6 +495,80 @@ failed on `src/landing/*` with `Cannot find module 'zustand'`; that was a
 stale `node_modules` from unrelated concurrent work (`zustand` was already
 in `package.json`), resolved with `npm install`.
 
+### P0-9 — Graph hydration read another tenant's `EmailRecord`; wildcard `LIKE`
+
+**Status:** resolved
+**Severity:** Critical (tenant isolation) + High (availability, correctness)
+
+**Files**
+
+- `backend/app/modules/graph/store.py`
+- `backend/app/routers/api.py`, `app/services/campaigns.py`, `app/modules/graph/attribution.py`
+- `backend/app/modules/search/elastic_sync.py`, new `backend/app/sql_utils.py`
+- `backend/tests/test_graph_neo.py`, `test_step3_privacy.py`
+
+**Issue 1 — unscoped hydration read (`store.py:361,363`)**
+
+`related_entities()`'s fallback branch reads `EmailRecord` directly, with no
+`organization_id` filter on either lookup. Both paths leak:
+
+- `email_id`: any caller could pass another tenant's email id. The row's
+  sender, recipient and phishing classification were fed to
+  `upsert_email_graph()` and the traversal was **rooted** on it, so the
+  response carried that email's IP / domain / campaign neighbourhood. The
+  router's `_filter_graph_emails()` strips foreign *email* nodes, but the
+  infra nodes and the edges leading to them survive — and those are the
+  tenant-attributable part. The pre-fix regression test reproduces it:
+  org-A asking for org-B's email id gets back
+  `domain:othercorp.test` and `campaign:phishing-Low-Suspicious`.
+- substring fallback: `sender_address ILIKE '%value%'` then `.first()` picked
+  an arbitrary row from *any* organization.
+
+**Issue 2 — unescaped `LIKE` (same line)**
+
+The pattern was built with `f"%{clean_val}%"` and no `escape=`, so `%` and `_`
+in the caller's value acted as wildcards. `GET /graph/related?value=%25`
+matched every sender in the table and hydrated from whichever row `.first()`
+returned.
+
+**Issue 3 — `NodeNotFound` 500 (found by the new tests)**
+
+When no node matched and the value had no `@` (`value=a`, `value=%`,
+`value=zz`), `key` stayed `None` and `nx.ego_graph(G, None, ...)` raised
+`NodeNotFound`, which nothing caught — `GET /graph/related?value=a` was an
+unauthenticated-input **500 for every logged-in caller**, trivially
+triggerable and repeatable.
+
+**Change**
+
+- `related_entities()` takes `organization_id`, defaulting to a new public
+  `ALL_TENANTS` sentinel so internal callers must state their intent rather
+  than inherit a default. `_org_clause()` maps it to `AND TRUE`,
+  `organization_id = :org`, or `AND FALSE` for a user with no org — an
+  org-less user matches nothing rather than everything.
+- The router passes `ALL_TENANTS` for Admin and `user.organization_id`
+  otherwise, matching the `_org_filter` idiom used elsewhere in the file.
+- Both DB lookups are wrapped in that clause and the `ILIKE` pattern now goes
+  through a shared `escape_like()` with `escape=LIKE_ESCAPE`.
+- `escape_like()` moved out of `elastic_sync` into `app/sql_utils.py`; the
+  graph store and the `/emails` search filter now share one implementation
+  instead of the audit's two divergent idioms.
+- Unknown values with no synthesisable node return `{"nodes": [], "edges": []}`.
+
+**Not changed (deliberately).** `ensure_graph_hydrated()` still loads every
+organization into the shared graph. That is the documented design — the graph
+is shared threat intel and the router strips foreign email nodes — so
+re-scoping it is an architecture change, not a patch. The tests pre-seed the
+graph so `ensure_graph_hydrated()` short-circuits, isolating the branch that
+was actually unscoped.
+
+**Tests** — `tests/test_graph_neo.py`, 6 new. All 6 fail on the pre-fix code
+(4 on the missing `organization_id` parameter, 1 on the missing `_org_clause`,
+1 on `NodeNotFound`); the endpoint test additionally demonstrates the
+cross-tenant `domain:` / `campaign:` leak. Each tenancy test asserts the
+`ALL_TENANTS` variant still resolves the row, so a pass proves scoping rather
+than a broken lookup.
+
 ## Still open
 
 ### From this audit
@@ -513,8 +587,6 @@ in `package.json`), resolved with `npm install`.
   already stores. Removing the field breaks self-hosted users who enter their
   own OAuth client secret in the UI unless a separate credential-store
   endpoint is added first. **Needs a product decision, so not started.**
-- `graph/store.py:363` — unescaped `LIKE` plus no organization filter on a
-  traversal query. Real; not yet fixed.
 - `masking.py:19,17` — the E164 pattern spans newlines and the card pattern
   backtracks. Real; not yet fixed.
 - `header_parser.py:32-37` — `fROM`-style casing yields `from_addr=''`, a

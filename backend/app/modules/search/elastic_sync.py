@@ -8,6 +8,8 @@
 import logging
 from typing import Any
 
+from ...sql_utils import escape_like
+
 log = logging.getLogger("elastic")
 
 
@@ -47,11 +49,6 @@ def index_email(email_id: str, email_doc: dict, analysis_doc: dict) -> dict:
     except Exception as e:
         log.warning("elastic index failed for %s: %s", email_id, e)
         return {"indexed": False, "error": str(e)[:300]}
-
-
-def _escape_like(raw: str) -> str:
-    """Escape LIKE wildcards so user input can't trigger full scans (Step 3)."""
-    return raw.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def delete_email(email_id: str) -> dict:
@@ -155,7 +152,7 @@ def search_emails(query: str, limit: int = 50, db=None,
     from ... import models
     if db is None:
         return {"backend": "none", "hits": []}
-    like = f"%{_escape_like(query)}%"
+    like = f"%{escape_like(query)}%"
     q = db.query(models.EmailRecord).filter(or_(
         models.EmailRecord.subject.ilike(like, escape="\\"),
         models.EmailRecord.sender_address.ilike(like, escape="\\"),
