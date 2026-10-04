@@ -3,7 +3,7 @@
 - payment card numbers: 13–19 digits (spaces/dashes allowed) that pass the
   Luhn checksum — bare digit runs that fail Luhn are left alone.
 - US SSNs: NNN-NN-NNNN.
-- phone numbers: E.164 (`+` followed by 7–15 digits, separators allowed) and
+- phone numbers: E.164 (`+` followed by 7+ digits, separators allowed) and
   NANP 10-digit numbers only when written with separators/parentheses.
 - email local-parts (`***@domain`); domains are kept for forensics.
 
@@ -16,7 +16,11 @@ import re
 
 CARD_CANDIDATE_RE = re.compile(r"\b(?:\d[ \-.]*){13,19}\b")
 SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-E164_RE = re.compile(r"\+\d(?:[\d.\s\-()]*\d)?")
+# Only the visual separators E.164 permits (space, '.', '-', '(', ')'). This
+# class must NOT contain \s: a newline-spanning match swallowed the following
+# line, so 'call +1\n2025550123' lost its line break and an over-long run
+# spanning lines was returned unmasked (see _mask_e164).
+E164_RE = re.compile(r"\+\d(?:[ .\-()]*\d)?")
 NANP_RE = re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}\b")
 EMAIL_RE = re.compile(r"([\w.\-+]+)@([\w.\-]+\.\w+)")
 
@@ -41,8 +45,21 @@ def _mask_card(m: re.Match) -> str:
 
 
 def _mask_e164(m: re.Match) -> str:
+    """Redact any `+`-prefixed run of >= 7 digits, with no upper bound.
+
+    The 7-15 upper bound from the E.164 grammar could not be enforced safely:
+    a run over 15 digits was returned verbatim, so a space-separated pair
+    like '+12025550123 15551234567' left BOTH phone numbers in the masked
+    body. Enforcing the ceiling is what caused the leak, so this fails
+    closed instead — the match is `+` followed by digits and permitted
+    separators, which is phone-shaped by construction.
+
+    Genuine 13-19 digit card runs are unaffected: CARD_CANDIDATE_RE runs
+    first with its Luhn gate, so anything that reaches here has already been
+    rejected as a card.
+    """
     digits = re.sub(r"\D", "", m.group(0))
-    if 7 <= len(digits) <= 15:
+    if len(digits) >= 7:
         return "[PHONE-REDACTED]"
     return m.group(0)
 
