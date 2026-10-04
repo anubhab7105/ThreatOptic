@@ -29,7 +29,7 @@ from ..modules.auth.rate_limit import audit, limiter
 from ..modules.auth.vault import decrypt_secret, encrypt_secret
 from ..modules.ingestion import connectors
 from ..services.mailbox_poll import poll_all_mailboxes
-from .deps import get_current_user, require_roles
+from .deps import READ_WRITE, get_current_user, require_roles
 
 log = logging.getLogger("oauth")
 router = APIRouter(prefix="/oauth", tags=["oauth"])
@@ -247,7 +247,7 @@ def authorize(
     provider: str,
     payload: AuthorizeIn,
     request: Request,
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_roles(*READ_WRITE)),
     db: Session = Depends(get_db),
 ):
     """Create an opaque server-side state + PKCE pair, return the consent URL."""
@@ -422,7 +422,7 @@ def disconnect(provider: str, user: models.User = Depends(require_roles("Admin",
 async def sync_now(
     payload: SyncNowIn,
     request: Request,
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_roles(*READ_WRITE)),
     db: Session = Depends(get_db),
 ):
     from ..services.mailbox_poll import poll_all_mailboxes

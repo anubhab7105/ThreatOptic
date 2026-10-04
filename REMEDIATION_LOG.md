@@ -241,6 +241,58 @@ the policy: `test_retention_purges_old_clean_body_only` (now
 `test_retention_full_delete_malicious` (now
 `test_retention_deletes_expired_clean_and_keeps_malicious`).
 
+### P0-4 — ReadOnly role could reach every credential and ingest mutation
+
+**Status:** resolved
+**Severity:** High (RBAC)
+
+**Files**
+
+- `backend/app/routers/deps.py` (holds `READ_WRITE` now)
+- `backend/app/routers/api.py` (re-exports it)
+- `backend/app/routers/gmail.py`
+- `backend/app/routers/oauth.py`
+- `backend/tests/test_gmail.py`
+
+**Issue**
+
+`api.py` gated its mutating endpoints on `require_roles(*READ_WRITE)`
+(`Admin`, `Analyst`), but six endpoints in the mail-connector routers were
+gated on `get_current_user` alone:
+
+| Endpoint | Action a ReadOnly user could take |
+| --- | --- |
+| `POST /gmail/auth-url` | mint an OAuth consent URL + server-side state |
+| `POST /gmail/callback` | attach a mailbox and persist credentials |
+| `POST /gmail/sync` | trigger ingestion |
+| `DELETE /gmail/disconnect` | destroy the connection and its credentials |
+| `POST /oauth/{provider}/authorize` | mint org OAuth state |
+| `POST /oauth/sync-now` | trigger a mailbox poll for the whole org |
+
+`POST /oauth/{provider}/callback` is unauthenticated by necessity (the IdP
+redirects the browser there), which is why its authorisation is enforced
+server-side against the state row instead — that path was already correct.
+
+**Change**
+
+`READ_WRITE` moved to `deps.py`, next to `require_roles`, and is re-exported
+from `api.py` so existing imports keep working while every router gates on a
+single definition of "may write". All six endpoints now use
+`require_roles(*READ_WRITE)`. `oauth.py:403` `DELETE /{provider}` was already
+correct and is unchanged.
+
+**Tests**
+
+- `test_readonly_cannot_reach_mutating_gmail_endpoints` — 403 on all four
+  Gmail endpoints, and `GET /gmail/status` still 200 so the gate does not
+  over-restrict reads.
+- `test_readonly_cannot_reach_mutating_oauth_endpoints` — 403 on both OAuth
+  endpoints.
+- `test_analyst_can_still_reach_gmail_auth_url` — positive control against
+  locking out legitimate writers.
+
+Both 403 tests were verified to fail against the un-gated routers.
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.

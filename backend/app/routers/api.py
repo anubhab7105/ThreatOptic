@@ -47,8 +47,8 @@ def _singleflight_end(key: str, event: threading.Event) -> None:
 
 MAX_RAW_BYTES = 5 * 1024 * 1024
 
-# ReadOnly = read-only; Analyst = ingest + edit cases; Admin = all + delete/retention/provisioning.
-READ_WRITE = ("Admin", "Analyst")
+# Re-exported from deps so every router shares one definition.
+from .deps import READ_WRITE  # noqa: F401
 
 
 def _org_filter(query, model, user: models.User):

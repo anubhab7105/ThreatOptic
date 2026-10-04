@@ -78,6 +78,12 @@ def get_current_user(
     return user
 
 
+# ReadOnly = read-only; Analyst = ingest + edit cases; Admin = all +
+# delete/retention/provisioning. Lives here rather than in api.py so every
+# router gates on one definition of "may write".
+READ_WRITE = ("Admin", "Analyst")
+
+
 def require_roles(*roles: str):
     def _check(user: models.User = Depends(get_current_user)) -> models.User:
         if user.role not in roles:

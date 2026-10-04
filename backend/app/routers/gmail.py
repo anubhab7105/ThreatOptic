@@ -11,7 +11,7 @@ from ..database import get_db
 from ..modules.auth import vault
 from ..modules.ingestion import connectors
 from ..services.pipeline import process_raw_email
-from .deps import get_current_user
+from .deps import READ_WRITE, get_current_user, require_roles
 
 log = logging.getLogger("gmail")
 router = APIRouter(prefix="/gmail", tags=["gmail"])
@@ -129,7 +129,7 @@ def _status_payload(user: models.User, db: Session) -> dict:
 @router.post("/auth-url", response_model=schemas.GmailAuthUrlOut)
 def auth_url(
     payload: schemas.GmailAuthUrlIn,
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_roles(*READ_WRITE)),
     db: Session = Depends(get_db),
 ):
     from .oauth import create_oauth_state
@@ -147,7 +147,7 @@ def auth_url(
 @router.post("/callback", response_model=schemas.GmailStatus)
 async def callback(
     payload: schemas.GmailCallbackIn,
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_roles(*READ_WRITE)),
     db: Session = Depends(get_db),
 ):
     from .oauth import consume_oauth_state
@@ -239,7 +239,7 @@ async def callback(
 @router.post("/sync", response_model=schemas.GmailSyncResult)
 async def sync(
     payload: schemas.GmailSyncIn,
-    user: models.User = Depends(get_current_user),
+    user: models.User = Depends(require_roles(*READ_WRITE)),
     db: Session = Depends(get_db),
 ):
     acct = db.query(models.GmailAccount).filter(models.GmailAccount.user_id == user.id).first()
@@ -332,7 +332,7 @@ async def sync(
 
 
 @router.delete("/disconnect")
-def disconnect(user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+def disconnect(user: models.User = Depends(require_roles(*READ_WRITE)), db: Session = Depends(get_db)):
     """Fully disconnect the caller's Gmail mailbox (P0).
 
     Deletes BOTH the Gmail credential row and the caller's own

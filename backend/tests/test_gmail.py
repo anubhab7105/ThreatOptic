@@ -254,3 +254,77 @@ def test_gmail_cross_user_hijack_blocked(monkeypatch):
             db.commit()
         finally:
             db.close()
+
+
+# ---------------------------------------------------------------------------
+# H6: ReadOnly must not reach endpoints that mutate credentials or ingest mail.
+# ---------------------------------------------------------------------------
+
+def test_readonly_cannot_reach_mutating_gmail_endpoints():
+    """A ReadOnly user is authenticated but must not be authorised to write.
+
+    These four endpoints were gated on `get_current_user` only, so a
+    read-only account could mint an OAuth consent URL, attach a mailbox,
+    trigger ingestion and delete its own credentials -- all write actions
+    that api.py already restricts to READ_WRITE.
+    """
+    from app.main import app
+    from app.config import get_settings
+
+    settings = get_settings()
+    with TestClient(app) as c:
+        h, _ = login(role="ReadOnly", email=f"ro-{uuid.uuid4().hex[:8]}@test.local")
+
+        r = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"})
+        assert r.status_code == 403, r.text
+
+        r = c.post("/api/v1/gmail/callback", headers=h, json={
+            "code": "x", "state": "y", "redirect_uri": "http://localhost:5173/"})
+        assert r.status_code == 403, r.text
+
+        r = c.post("/api/v1/gmail/sync", headers=h, json={})
+        assert r.status_code == 403, r.text
+
+        r = c.delete("/api/v1/gmail/disconnect", headers=h)
+        assert r.status_code == 403, r.text
+
+        # ... but reading their own connection status is still allowed.
+        assert c.get("/api/v1/gmail/status", headers=h).status_code == 200
+
+
+def test_readonly_cannot_reach_mutating_oauth_endpoints(monkeypatch):
+    """Same gate on the org OAuth surface."""
+    from app.main import app
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
+
+    with TestClient(app) as c:
+        h, _ = login(role="ReadOnly", email=f"ro-oauth-{uuid.uuid4().hex[:8]}@test.local")
+
+        r = c.post("/api/v1/oauth/google/authorize", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"})
+        assert r.status_code == 403, r.text
+
+        r = c.post("/api/v1/oauth/sync-now", headers=h, json={})
+        assert r.status_code == 403, r.text
+
+
+def test_analyst_can_still_reach_gmail_auth_url(monkeypatch):
+    """Positive control: the gate must not lock out legitimate writers."""
+    from app.main import app
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_client_id", "demo-id")
+    monkeypatch.setattr(settings, "google_client_secret", "demo-secret")
+
+    with TestClient(app) as c:
+        h, _ = login(role="Analyst", email=f"an-{uuid.uuid4().hex[:8]}@test.local")
+        r = c.post("/api/v1/gmail/auth-url", headers=h, json={
+            "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"})
+        assert r.status_code == 200, r.text
+        assert "accounts.google.com" in r.json()["auth_url"]
