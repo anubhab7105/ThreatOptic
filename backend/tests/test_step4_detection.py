@@ -385,3 +385,53 @@ def test_misp_unconfigured_and_error_paths(monkeypatch):
     monkeypatch.setattr(requests, "post", _boom)
     assert feeds.query_misp_batch(["a.test"]) == {"a.test": 0}
     assert feeds._MISP_CACHE == {}
+
+
+# ---------------------------------------------------------------------------
+# ReDoS: `<(script|style)\b.*?</\1\s*>` with re.DOTALL is quadratic.
+# ---------------------------------------------------------------------------
+
+def test_strip_script_style_is_linear_on_unterminated_tags():
+    """Repeated unterminated `<script>` must not cost quadratic CPU.
+
+    The old pattern re-tried every end offset for every opening tag:
+    ~24s at 256KB, projecting to hours at the 10MB MAX_EML_BYTES ceiling.
+    """
+    import time
+    from app.modules.ingestion.parser import strip_script_style
+
+    small, large = "<script>" * 2_000, "<script>" * 80_000
+    t0 = time.perf_counter()
+    strip_script_style(small)
+    t_small = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    strip_script_style(large)
+    t_large = time.perf_counter() - t0
+
+    # 40x the input must not cost anywhere near 1600x the time.
+    assert t_large < max(t_small * 40, 0.5), (
+        f"script/style strip looks super-linear: {t_small:.4f}s -> {t_large:.4f}s")
+
+
+def test_strip_script_style_removes_element_and_content():
+    from app.modules.ingestion.parser import strip_script_style
+
+    assert "alert" not in strip_script_style("<script>alert(1)</script>")
+    assert "alert" not in strip_script_style("<SCRIPT>alert(1)</SCRIPT>")
+    assert "x" not in strip_script_style("<style>p{color:red}</style>")
+    assert strip_script_style("<script >bad()</script >keep").strip() == "keep"
+    # Unterminated: drop to end of string rather than leaving the tail behind.
+    assert strip_script_style("<script>dangling payload") == ""
+    # Non-matching tags are preserved.
+    assert strip_script_style("plain <b>text</b>") == "plain <b>text</b>"
+    assert strip_script_style("") == ""
+
+
+def test_sanitize_html_still_strips_tags_and_scripts():
+    from app.modules.ingestion.parser import sanitize_html
+
+    out = sanitize_html("<html><script>steal()</script><p>Hello <b>there</b></p></html>")
+    assert "steal" not in out
+    assert "<" not in out and ">" not in out
+    assert "Hello" in out and "there" in out

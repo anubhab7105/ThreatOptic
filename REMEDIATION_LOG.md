@@ -293,6 +293,69 @@ correct and is unchanged.
 
 Both 403 tests were verified to fail against the un-gated routers.
 
+### P0-5 — Three quadratic regexes (ReDoS) reachable from unauthenticated upload
+
+**Status:** resolved
+**Severity:** Critical (single-request CPU DoS)
+
+**Files**
+
+- `backend/app/modules/ingestion/parser.py`
+- `backend/app/modules/traceability/ip_extractor.py`
+- `backend/app/modules/forensics/received_chain.py`
+- `backend/tests/test_step4_detection.py`
+- `backend/tests/test_traceability.py`
+
+**Issue**
+
+All three patterns were measured, not assumed. Each is quadratic in the
+length of a single attacker-supplied run:
+
+| Pattern | Site | Input | Before | After |
+| --- | --- | --- | --- | --- |
+| `<(script\|style)\b.*?</\1\s*>` (`DOTALL`) | `parser.py:22` | `"<script>" * 32000` (256KB) | **23.8s** | 0.001s |
+| `[0-9a-fA-F:]{2,}(?::[0-9a-fA-F:]*)+` | `ip_extractor.py:20`, `received_chain.py:8` | `"a" * 64000` | **28.3s** | 0.0007s |
+
+Scaling is clean 4×-per-2×. `parser.py` runs on every uploaded message and
+`MAX_EML_BYTES` is 10MB, so a single unauthenticated upload projects to
+roughly **10 hours** of CPU in one request. The IP patterns run once per
+`Received` header per hop.
+
+**Change**
+
+- `strip_script_style()` replaces the regex in `parser.py`. It walks the
+  string with `str.find`, visiting each element once. An unterminated
+  `<script>`/`<style>` now drops to end-of-string instead of being left in
+  place — strictly safer, since the tail would otherwise survive as text.
+- Both IP patterns became
+  `(?<![0-9A-Fa-f:.])(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]*)`.
+  The **lookbehind is load-bearing**: `findall` restarts at every offset, so
+  without it each position re-scans the remaining run. Pinning matches to run
+  boundaries removes the nested quantifiers entirely. An atomic group was
+  tried first and does *not* help — it prevents backtracking within one
+  attempt but the scan is still repeated per start position.
+- `ipaddress` validation is unchanged, so both remain candidate scanners.
+
+Behaviour was diffed against the old patterns across 16 inputs. Output is
+identical except `::1`, which the old `{2,}` prefix could never match and the
+new pattern now finds — a coverage gain.
+
+**Tests**
+
+- `test_strip_script_style_is_linear_on_unterminated_tags`
+- `test_strip_script_style_removes_element_and_content`
+- `test_sanitize_html_still_strips_tags_and_scripts`
+- `test_ip_regex_is_linear_on_hostile_hex_run` — budgets compare a small input
+  against a 20× larger one so a return to quadratic behaviour fails rather
+  than merely being slow
+- `test_extract_all_ips_survives_hostile_received_header` — end-to-end, 2s cap
+- `test_ip_candidate_pattern_still_extracts_valid_addresses` — includes the
+  `1.2.3.4abc` and `::1` cases
+- `test_ip_pattern_rejects_junk_and_trailing_hex`
+
+Against the vulnerable patterns these tests do not fail quickly — they hang
+(confirmed: killed at 150s and 600s). That is the ReDoS reproducing.
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.

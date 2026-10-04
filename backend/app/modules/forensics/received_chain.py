@@ -5,8 +5,15 @@ from typing import Any
 
 # Candidate IPs (v4 + v6); every candidate is validated with ipaddress —
 # 999.999.999.999 and friends never survive (Step 4).
+#
+# The leading lookbehind is load-bearing for performance. Without it, findall
+# restarts the pattern at every offset, so a long run of hex characters with
+# no colon (e.g. an attacker-supplied `Received` header) re-scans the whole
+# remaining run once per character: ~28s on a 64KB run, quadratic. Pinning
+# the start to a run boundary makes it linear (4MB in ~40ms) and drops the
+# need for the nested quantifiers that caused the blowup.
 IP_CANDIDATE_RE = re.compile(
-    r"\[?((?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,}(?::[0-9a-fA-F:]*)+)\]?"
+    r"(?<![0-9A-Fa-f:.])(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]*)"
 )
 # e.g. from mail.example.com (host [1.2.3.4]) by mx.google.com with ESMTPS id ...
 RECEIVED_FROM_RE = re.compile(r"from\s+([^\s\(\)]+)?\s*(?:\(([^\)]*)\))?", re.IGNORECASE)

@@ -19,12 +19,55 @@ MAX_EML_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS = 20
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
-_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+_SCRIPT_STYLE_OPEN_RE = re.compile(r"<(script|style)\b", re.IGNORECASE)
+
+
+def strip_script_style(html_text: str) -> str:
+    """Remove <script>/<style> elements together with their content.
+
+    Hand-rolled instead of `<(script|style)\\b.*?</\\1\\s*>` with re.DOTALL.
+    That pattern is quadratic: when no closing tag follows an opening tag,
+    the lazy `.*?` plus the `\\1` backreference re-tries every end offset, and
+    find/replace restarts at each `<`. Measured at ~24s for 256KB of repeated
+    `<script>` (~10 hours projected at the 10MB MAX_EML_BYTES ceiling), from a
+    single unauthenticated upload.
+
+    Walking the string with str.find visits each element once, so this is
+    linear. An unterminated <script>/<style> now drops to end-of-string
+    instead of being left in place; that is strictly safer, since the
+    remainder could otherwise survive as visible text.
+    """
+    text = html_text or ""
+    lowered = text.lower()
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        lt = text.find("<", i)
+        if lt < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:lt])
+        m = _SCRIPT_STYLE_OPEN_RE.match(text, lt)
+        if not m:
+            out.append("<")
+            i = lt + 1
+            continue
+        tag = m.group(1).lower()
+        close = lowered.find(f"</{tag}", m.end())
+        if close < 0:
+            break  # unterminated: drop the remainder
+        gt = text.find(">", close)
+        if gt < 0:
+            break
+        out.append(" ")
+        i = gt + 1
+    return "".join(out)
 
 
 def sanitize_html(html_text: str) -> str:
     """Remove script/style elements, then strip all tags. Returns text."""
-    no_scripts = _SCRIPT_STYLE_RE.sub(" ", html_text or "")
+    no_scripts = strip_script_style(html_text)
     try:
         import bleach
         cleaned = bleach.clean(no_scripts, tags=[], attributes={}, strip=True)

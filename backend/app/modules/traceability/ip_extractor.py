@@ -16,9 +16,12 @@ import os
 import re
 from typing import Any
 
-# Candidate IPs (v4 + v6)
+# Candidate IPs (v4 + v6). The lookbehind pins each match to the start of a
+# run so findall cannot re-scan it per offset; without it a long colon-free
+# hex run is quadratic (~28s at 64KB). Every candidate is validated by
+# _valid_ip()/ipaddress, so this stays a candidate scanner, not a matcher.
 IP_REGEX = re.compile(
-    r"\[?((?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,}(?::[0-9a-fA-F:]*)+)\]?"
+    r"(?<![0-9A-Fa-f:.])(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:]*)"
 )
 
 
