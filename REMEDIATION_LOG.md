@@ -631,6 +631,64 @@ case returns `from_addr=''`, `rECEIVED` returns zero hops, the duplicate
 `From` produces no flag, `header_value` does not exist, and
 `X-ORIGINATING-IP` yields no IPs).
 
+### P0-11 — E.164 masker spanned newlines and leaked whole runs of numbers
+
+**Status:** resolved
+**Severity:** High (PII leak in masked text)
+
+**Files**
+
+- `backend/app/modules/privacy/masking.py`
+- `backend/tests/test_privacy.py`
+
+**Issue 1 — the separator class contained `\s`**
+
+`E164_RE = r"\+\d(?:[\d.\s\-()]*\d)?"` — `\s` includes `\n`. A match ran
+across lines, so `call +1\n2025550123` was replaced by a single
+`[PHONE-REDACTED]` and the masked body silently lost the message's line
+structure. The class now contains only the visual separators E.164 permits.
+
+**Issue 2 — the over-long run returned verbatim (the actual leak)**
+
+`_mask_e164` redacted only when `7 <= len(digits) <= 15` and otherwise
+returned `m.group(0)` unchanged. Since the match is greedy, a run over 15
+digits **is** the whole run, so returning it verbatim disclosed every phone
+number inside it:
+
+```
+'+12025550123 15551234567'  ->  unchanged before, [PHONE-REDACTED] after
+```
+
+The upper bound is what caused the leak, so it is not enforceable the way it
+was written. `_mask_e164` now redacts any `+`-prefixed run of **7 or more**
+digits, with no ceiling. The 7-digit floor stays, so `+1` in prose is still
+left alone. Genuine 13–19 digit card runs are unaffected — `CARD_CANDIDATE_RE`
+runs first with its Luhn gate, so anything reaching `_mask_e164` has already
+been rejected as a card.
+
+**Issue 3 — `CARD_CANDIDATE_RE` "backtracks": not reproducible**
+
+The audit flags `r"\b(?:\d[ \-.]*){13,19}\b"` as a nested-quantifier ReDoS.
+The shape is the textbook one, so it was measured before touching it: five
+adversarial shapes (digit/separator runs, trailing-space runs that defeat the
+closing `\b`, dot-separated runs) at 50→400 repetitions each, all under
+0.05 ms. The leading `\d` in every repetition makes the partition
+near-deterministic — separators are only given back when a digit follows —
+so there is no exponential or quadratic path. **Left unchanged**, with
+`test_card_pattern_stays_bounded_on_adversarial_input` added as a regression
+guard rather than a claim of a live vulnerability.
+
+**Observed, not fixed:** `CARD_CANDIDATE_RE`'s trailing `[ \-.]*` eats the
+space *after* a masked card, so `"Card 4111 1111 1111 1111 ok"` becomes
+`"Card [CARD-REDACTED]ok"`. Cosmetic whitespace loss in the same cosmetic
+class as the E.164 newline bug. Fixing it means restructuring the repetition
+count, which risks the Luhn detection it gates; deferred.
+
+**Tests** — `tests/test_privacy.py`, 5 new. 2 fail on the pre-fix code (the
+newline swallow and the over-long-run leak); the other 3 are deliberate
+guards for behaviour this change preserves (the 7-digit floor, the 8-digit
+case, and the card-pattern timing).
+
 ## Still open
 
 ### From this audit
@@ -649,8 +707,7 @@ case returns `from_addr=''`, `rECEIVED` returns zero hops, the duplicate
   already stores. Removing the field breaks self-hosted users who enter their
   own OAuth client secret in the UI unless a separate credential-store
   endpoint is added first. **Needs a product decision, so not started.**
-- `masking.py:19,17` — the E164 pattern spans newlines and the card pattern
-  backtracks. Real; not yet fixed.
+
 - MISP residuals in `feeds.py`: unbounded `_MISP_CACHE` growth (`:162`) and a
   silent 30-value truncation (`MISP_VALUE_CAP`) against inputs of up to 60,
   which contradicts the "coverage identical" comment.
