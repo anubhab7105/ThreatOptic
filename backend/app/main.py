@@ -224,9 +224,39 @@ def health():
     }
 
 
+@app.get("/health/ready")
+def health_ready():
+    """Readiness for the k8s probe: DB reachability only, and never rate limited.
+
+    This used to be the readiness probe's target (`/health/detailed`), which
+    is a diagnostic endpoint with a per-IP rate limit. A probe polling it
+    every 15s consumed 4 of 5 requests per minute from one source address, so
+    a single operator `curl` during an incident -- exactly when people reach
+    for it -- pushed the probe over the limit. The probe then got 429s,
+    `failureThreshold: 3` removed the pod from the Service, and the next
+    probe failed too: a total outage caused by looking for the cause.
+
+    Model availability belongs in the diagnostic, not the gate. Returns 503
+    when the database is unreachable so the probe fails on the real signal.
+    """
+    from .database import engine
+
+    try:
+        with engine.connect() as c:
+            c.exec_driver_sql("SELECT 1")
+    except Exception as e:
+        log.warning("readiness db check failed: %s", e)
+        return JSONResponse({"status": "not_ready", "db": False}, status_code=503)
+    return {"status": "ready", "db": True}
+
+
 @app.get("/health/detailed")
-@limiter.limit("5/minute")
+# Not the probe target (see /health/ready). The limit only exists to bound an
+# unauthenticated endpoint that touches the database; it is deliberately far
+# above any operator or automation rate so it can never evict real traffic.
+@limiter.limit("60/minute")
 def health_detailed(request: Request):
+    """Operator diagnostic: database plus model availability. Not for probes."""
     from .database import engine
     db_ok = True
     try:

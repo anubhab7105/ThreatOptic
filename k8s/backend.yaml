@@ -4,9 +4,15 @@ metadata:
   name: email-forensics-backend
 spec:
   # F8 constraint: replicas > 1 share NO in-memory state. The attribution
-  # graph is only consistent across pods when NEO4J_URI points at a shared
-  # Neo4j (see graph_consistency_note()); do not scale past 1 without it.
-  replicas: 2
+  # graph, the rate-limit counters, app.cache and _MISP_CACHE are all
+  # per-process, so two pods answer from divergent graphs and divergent
+  # buckets, and MAX_GRAPH_NODES eviction makes them diverge further.
+  # graph_consistency_note() only *warns* about this at runtime, so the safe
+  # default is 1 replica + EXPECTED_REPLICAS=1.
+  # To scale out: configure a shared Neo4j, verify /health/detailed reports
+  # the graph is served from Neo4j, THEN raise both values together and pin
+  # the network to an external rate-limit store.
+  replicas: 1
   selector:
     matchLabels: { app: email-forensics-backend }
   template:
@@ -53,7 +59,9 @@ spec:
             - name: APP_ENV
               value: "production"
             - name: EXPECTED_REPLICAS
-              value: "2"
+              # Must match spec.replicas. >1 without a shared Neo4j makes
+              # graph_consistency_note() fire and attribution diverge.
+              value: "1"
             - name: CORS_ORIGINS
               value: "https://socforensics.io"
             - name: FRONTEND_URL
@@ -72,7 +80,11 @@ spec:
             periodSeconds: 30
             failureThreshold: 3
           readinessProbe:
-            httpGet: { path: /health/detailed, port: 8000 }
+            # /health/ready, NOT /health/detailed. The detailed diagnostic is
+            # rate limited per source address and every kubelet probe shares
+            # one node address, so polling it let operator traffic evict the
+            # probe and take the pod out of the Service.
+            httpGet: { path: /health/ready, port: 8000 }
             initialDelaySeconds: 10
             periodSeconds: 15
             failureThreshold: 3

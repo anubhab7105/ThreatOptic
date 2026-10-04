@@ -748,6 +748,69 @@ truncation or sends one unbounded POST both fail.
 
 ## Still open
 
+### P0-13 — The readiness probe polled a rate-limited diagnostic endpoint
+
+**Status:** resolved (except the image digest, see below)
+**Severity:** High (self-inflicted outage) + Medium (availability, config drift)
+
+**Files**
+
+- `backend/app/main.py` (new `GET /health/ready`)
+- `k8s/backend.yaml`
+- `backend/tests/test_step7_deploy.py`, `readme.md`, `DEPLOY.md`
+
+**Issue 1 — the probe could lock itself out (the serious one)**
+
+`readinessProbe` targeted `/health/detailed`, which carried
+`@limiter.limit("5/minute")` keyed on `get_remote_address`. Every kubelet
+probe comes from a node address, and `periodSeconds: 15` is 4 requests per
+minute — four of the five allowed. So a *single* `curl /health/detailed`
+during an incident, i.e. exactly when an operator reaches for it, consumed
+the remaining token. The next probe got `429`, `failureThreshold: 3` pulled
+the pod out of the Service, the pod after that failed too, and the cluster
+was fully out while being diagnosed.
+
+**Issue 2 — the probe ran work it did not need**
+
+`/health/detailed` loads the NLP classifier, runs the URL-ML bundle's trust
+gate, queries the database, and returns `live_lookups` — a configuration
+value — from an unauthenticated endpoint, every 15 seconds, to answer a
+question that is only "can this pod serve traffic?". Model availability is a
+diagnostic, not a readiness gate.
+
+**Issue 3 — `replicas: 2` contradicted the code's own constraint**
+
+The manifest said `replicas: 2` while the comment immediately above it said
+"replicas > 1 share NO in-memory state ... do not scale past 1 without it".
+Beyond the attribution graph, `app.cache`, the slowapi counters and
+`_MISP_CACHE` are all per-process, and `MAX_GRAPH_NODES` eviction guarantees
+the two graphs drift apart. `graph_consistency_note()` only *warns* at
+runtime, so nothing stopped the divergence. Now `replicas: 1` with
+`EXPECTED_REPLICAS: "1"`, plus instructions for scaling out safely.
+
+**Change**
+
+- New `GET /health/ready`: database reachability only, **not rate limited**,
+  and `503` when the database is unreachable so the probe fails on the real
+  signal rather than a `200 {"status": "degraded"}` body it has to parse.
+- `/health/detailed` keeps its response shape (`live_demo_check.py` and
+  `DEPLOY.md` depend on it) and its limit, raised `5/minute` →
+  `60/minute` with a comment saying why it must never evict real traffic.
+- Both probe paths in the manifest are asserted not to be
+  `/health/detailed`, so the collision cannot come back.
+
+**Not fixed — needs the release pipeline.** `image: email-forensics-backend:1.0.0`
+is a tag, not a digest. The manifest documents that the release job
+substitutes `@sha256:...`; I cannot mint a real digest, and inventing one
+would produce a manifest that pulls nothing.
+
+**Tests** — `tests/test_step7_deploy.py`: `test_k8s_hardening` updated (it
+asserted `replicas == 2`, `EXPECTED_REPLICAS == "2"` and
+`readinessProbe == /health/detailed` — the buggy configuration), plus 2 new.
+All 3 fail pre-fix (`2 == 1`, and `/health/ready` is `404`).
+
+## Still open
+
 ### From this audit
 
 - **H21 — frontend token storage is real, but needs a decision.** `supabaseClient.ts`
@@ -765,9 +828,9 @@ truncation or sends one unbounded POST both fail.
   own OAuth client secret in the UI unless a separate credential-store
   endpoint is added first. **Needs a product decision, so not started.**
 
-- `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
-  runs unauthenticated model inference and returns `live_lookups`; `replicas:
-  2` with no shared state; image pinned to a tag rather than a digest.
+- `k8s/backend.yaml`: image pinned to a tag rather than a digest. Everything
+  else in that finding is fixed in P0-13; the digest has to come from the
+  release job, which cannot run from here.
 - The remaining Medium and Low findings (upload size, dashboard full scans,
   rate limits, log redaction, compose/k8s hardening, dependency pinning) are
   untouched. Several are already narrower than the audit describes — H8 is

@@ -180,7 +180,7 @@ The script checks env/keys, API health, login, an ingest roundtrip whose Why-bre
 - `SMTP_ENABLED=1` (+ `SMTP_HOST`/`SMTP_PORT`, default `127.0.0.1:1025`) — start the inline SMTP relay; received mail is queued and analyzed by a background consumer task. Harden with `SMTP_REQUIRE_AUTH=1` + `SMTP_USERNAME`/`SMTP_PASSWORD`, `SMTP_TLS_CERT`/`SMTP_TLS_KEY` (STARTTLS), `SMTP_DATA_LIMIT_BYTES`.
 - Managed Postgres: `alembic upgrade head` from `backend/` (SQLite dev uses the fast built-in path). Ingest is idempotent per tenant (duplicate bytes return the stored verdict).
 - `VITE_API_URL` (frontend) — backend base URL for split hosting; same-origin by default. See `frontend/.env.example`.
-- Health: `GET /health` (liveness) and `GET /health/detailed` (DB + NLP status).
+- Health: `GET /health` (liveness), `GET /health/ready` (readiness — DB only, unrated, 503 when the DB is down), and `GET /health/detailed` (operator diagnostic: DB + model status, rate limited, **not** a probe target).
 
 ### Present-Stage Notes (September 2026)
 - "AI" scope: the running ML is TF-IDF + LogisticRegression (30% of fraud score) plus hand-written linguistic cues; transformer reranking is a dormant hook, not installed. See PRD § Present-Stage Scope Note.

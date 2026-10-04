@@ -16,27 +16,77 @@ def _load(p):
 def test_k8s_hardening():
     docs = list(yaml.safe_load_all(_load("k8s/backend.yaml")))
     dep = next(d for d in docs if d["kind"] == "Deployment")
-    assert dep["spec"]["replicas"] == 2
+    # F8: replicas > 1 share no in-memory state (graph, rate-limit counters,
+    # app.cache, _MISP_CACHE). graph_consistency_note() only warns, so the
+    # manifest must not ask for 2. Was `replicas: 2`.
+    assert dep["spec"]["replicas"] == 1
     pod = dep["spec"]["template"]["spec"]
     assert pod["securityContext"]["runAsNonRoot"] is True
     c = pod["containers"][0]
     assert c["securityContext"]["readOnlyRootFilesystem"] is True
     assert c["securityContext"]["allowPrivilegeEscalation"] is False
     assert c["livenessProbe"]["httpGet"]["path"] == "/health"
-    assert c["readinessProbe"]["httpGet"]["path"] == "/health/detailed"
+    # Was /health/detailed: a per-IP rate-limited diagnostic shared by every
+    # kubelet probe, so operator traffic could evict the probe (429 ->
+    # NotReady -> pod pulled from the Service).
+    assert c["readinessProbe"]["httpGet"]["path"] == "/health/ready"
     assert c["resources"]["requests"] and c["resources"]["limits"]
     env = {e["name"]: e for e in c["env"]}
     # secrets via secretKeyRef, never plaintext values
     for name in ("DATABASE_URL", "SECRET_KEY", "CUSTODY_KEY", "NEO4J_PASSWORD"):
         assert "secretKeyRef" in env[name].get("valueFrom", {}), name
     assert "value" not in env["SECRET_KEY"]
-    # F8 constraint documented + Neo4j wired for the 2 replicas
-    assert "NEO4J_URI" in env and env["EXPECTED_REPLICAS"]["value"] == "2"
-    assert "do not scale past 1 without it" in _load("k8s/backend.yaml")
+    # F8 constraint documented; EXPECTED_REPLICAS must track spec.replicas
+    assert "NEO4J_URI" in env
+    assert env["EXPECTED_REPLICAS"]["value"] == str(dep["spec"]["replicas"])
+    assert "share NO in-memory state" in _load("k8s/backend.yaml")
+    # no probe may target a rate-limited endpoint
+    for probe in ("livenessProbe", "readinessProbe"):
+        assert c[probe]["httpGet"]["path"] != "/health/detailed", probe
     # release pinning documented (digest substituted at release; see Tracker)
     assert "sha256" in _load("k8s/backend.yaml")
     ing = next(d for d in docs if d["kind"] == "Ingress")
     assert ing["spec"]["tls"] and ing["spec"]["rules"]
+
+
+def test_readiness_endpoint_reports_db_and_is_never_rate_limited():
+    """A probe polling a per-IP rate limit can lock itself out."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        # more than the old 5/minute limit, and well past a 15s probe period
+        codes = [c.get("/health/ready").status_code for _ in range(30)]
+        assert set(codes) == {200}, codes
+        assert c.get("/health/ready").json() == {"status": "ready", "db": True}
+        # the detailed diagnostic is still reachable and still reports models
+        d = c.get("/health/detailed")
+        assert d.status_code == 200 and "url_ml" in d.json()
+
+
+def test_readiness_fails_closed_when_the_database_is_down(monkeypatch):
+    """A non-2xx is the signal the kubelet acts on; a 200 'degraded' body is not."""
+    from fastapi.testclient import TestClient
+
+    import app.database as dbmod
+    from app.main import app
+
+    class _Dead:
+        def connect(self):
+            raise RuntimeError("connection refused")
+
+        def dispose(self):
+            pass
+
+    monkeypatch.setattr(dbmod, "engine", _Dead())
+    with TestClient(app) as c:
+        # patch AFTER startup: the lifespan calls rebuild_engine(), which
+        # reassigns dbmod.engine and would undo the patch.
+        monkeypatch.setattr(dbmod, "engine", _Dead())
+        r = c.get("/health/ready")
+        assert r.status_code == 503, r.text
+        assert r.json()["db"] is False
 
 
 def test_secret_template_has_no_values():

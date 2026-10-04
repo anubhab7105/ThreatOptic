@@ -122,10 +122,16 @@ MS_CLIENT_SECRET=
    curl https://[your-railway-domain]/health
    # Expected: {"status":"ok","app":"Email Threat & Forensics Platform"}
 
+   curl https://[your-railway-domain]/health/ready
+   # Expected: {"status":"ready","db":true}
+
    curl https://[your-railway-domain]/health/detailed
    # Expected: {"status":"ok","db":true, ...}
    ```
    If `"db":true` — Supabase Postgres is connected. ✅
+   (`/health/ready` is the readiness probe target; `/health/detailed` adds
+   model status and is rate limited, so don't point a probe or a monitor
+   that fires often at it.)
 
 ### 2.5 Run Alembic Migrations
 
