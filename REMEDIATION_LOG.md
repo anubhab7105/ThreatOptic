@@ -495,22 +495,65 @@ failed on `src/landing/*` with `Cannot find module 'zustand'`; that was a
 stale `node_modules` from unrelated concurrent work (`zustand` was already
 in `package.json`), resolved with `npm install`.
 
-## Still open in Phase 0
+## Still open
 
-Recorded in the handover notes; not yet started.
+### From this audit
 
-- Secret enforcement does not cover the Alembic entrypoint. `alembic upgrade
-  head` succeeds with `SECRET_KEY`, `CUSTODY_KEY` and `TOKEN_ENCRYPTION_KEY`
-  all empty, because `alembic/env.py` never calls `require_secrets()`. The
-  Celery worker (`app/services/tasks.py:15-28`) is likewise ungated, though no
-  worker is deployed in any compose/k8s/Dockerfile target today.
+- **H21 — frontend token storage is real, but needs a decision.** `supabaseClient.ts`
+  sets `persistSession: true`, so supabase-js writes the access *and* refresh
+  token to `localStorage`; any XSS yields full account takeover. Moving to
+  memory-only tokens plus an HttpOnly refresh cookie is the fix, but it needs
+  Supabase SSR cookie plumbing and touches every authenticated call site.
+  Not started — it is an architecture change, not a patch.
+- **H22 / C1-residual — the SPA transmits `client_secret`.** `pages.tsx:301,334,386,2157,2175`
+  post it and `AuthorizeIn`/`SyncNowIn` accept it. C1's headline claim
+  (secret in the `?state=` URL) was **stale** — the state is an opaque
+  `secrets.token_urlsafe(32)` token and the secret is vault-encrypted
+  server-side. What remains is that the browser sends a secret the backend
+  already stores. Removing the field breaks self-hosted users who enter their
+  own OAuth client secret in the UI unless a separate credential-store
+  endpoint is added first. **Needs a product decision, so not started.**
+- `graph/store.py:363` — unescaped `LIKE` plus no organization filter on a
+  traversal query. Real; not yet fixed.
+- `masking.py:19,17` — the E164 pattern spans newlines and the card pattern
+  backtracks. Real; not yet fixed.
+- `header_parser.py:32-37` — `fROM`-style casing yields `from_addr=''`, a
+  header-identity bypass. Real; not yet fixed.
+- MISP residuals in `feeds.py`: unbounded `_MISP_CACHE` growth (`:162`) and a
+  silent 30-value truncation (`MISP_VALUE_CAP`) against inputs of up to 60,
+  which contradicts the "coverage identical" comment.
+- `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
+  runs unauthenticated model inference and returns `live_lookups`; `replicas:
+  2` with no shared state; image pinned to a tag rather than a digest.
+- The remaining Medium and Low findings (upload size, dashboard full scans,
+  rate limits, log redaction, compose/k8s hardening, dependency pinning) are
+  untouched. Several are already narrower than the audit describes — H8 is
+  fixed via `redacted_db_url()`, H23 via the `/ws/ticket` exchange, and the
+  `Exception`-handler and `localStorage` claims were re-verified as accurate
+  only where noted above.
+
+### From the earlier audit, still open
+
+- Secret enforcement does not cover the Celery worker
+  (`app/services/tasks.py:15-28`), though no worker is deployed in any
+  compose/k8s/Dockerfile target today. (The Alembic entrypoint was
+  deliberately **not** gated on `require_secrets()` — see P0-7.)
 - `require_secrets()` validates only `SECRET_KEY` and `ELASTICSEARCH_URL`. The
   vault key and the custody key are checked later, or lazily at use time.
 - No gitleaks pre-commit hook and no CI guard against tracked `.env` files.
   (No `.env` is currently tracked and `.gitignore:4-6` covers the pattern, so
   this is preventative.)
-- `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
-  runs unauthenticated model inference and returns `live_lookups`; `replicas:
-  2` with no shared state; image pinned to a tag rather than a digest.
+- Two migration revisions still to write: `timestamp` → `timestamptz` on 14
+  columns, and `uq_email_hash_org` → partial unique index.
 - `Tracker.md:4` still claims `seed.py` exists and is gated behind
   `ALLOW_SEED=1`. The file and its test were removed.
+
+### Needs operator action (cannot be done from here)
+
+- Production is stamped `b7c2d1a9e4f5` and will run `c9e8f7a6b3d2` then
+  `e5a1c93d7b28` on the next deploy. `c9e8f7a6b3d2` has never been applied in
+  production and failed there previously. `database.py:121` logs only
+  `alembic upgrade failed: <ExcType>`, so run `alembic upgrade head` by hand
+  to see the real error.
+- Live third-party keys (Supabase, Google/Microsoft OAuth, MISP, VirusTotal)
+  must be rotated by the operator; the agent has no access to those consoles.
