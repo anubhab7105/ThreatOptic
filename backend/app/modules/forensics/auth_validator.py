@@ -6,9 +6,15 @@ Trust model (P0, fail closed):
 - They are honored ONLY when attributable to a configured trusted relay
   boundary: the header's authserv-id must suffix-match TRUSTED_RELAY_HOSTS
   (env or settings, same source as origin-IP extraction).
-- Even then, a trusted upstream "pass" NEVER overrides a locally computed
-  hard failure. Local and upstream verdicts are reported separately
+- Even then, a trusted upstream verdict NEVER overrides a locally-attempted
+  result. It may only stand in for `unverifiable` — no sender IP, live
+  lookups disabled, or the validator library missing. A local `temperror`,
+  `permerror`, `none` or `fail` is authoritative and is never upgraded to
+  `pass`. Local and upstream verdicts are reported separately
   (result["upstream"]) with provenance, so analysts see both.
+- Claims and authserv-id are read from the SAME header: the bottom-most
+  Authentication-Results, i.e. the one stamped by our own MTAs. Prepending
+  an AR header cannot make an attacker the speaker for our boundary.
 - No envelope sender (Return-Path) means SPF has no identity to check:
   status "none" — never silently checked against the display From domain.
 - No global DNS resolver mutation: per-lookup isolated resolvers only.
@@ -41,24 +47,58 @@ def _trusted_relay_hosts() -> set[str]:
     return hosts
 
 
-def _authserv_id(raw_headers: dict) -> str:
-    """Hostname of the MTA that stamped Authentication-Results ("" if none)."""
+_AR_HEADER_NAMES = frozenset({
+    "authentication-results", "arc-authentication-results", "x-authentication-results",
+})
+
+
+def _ar_headers(raw_headers: dict) -> list[str]:
+    """Every Authentication-Results-style header value, in header order."""
+    out: list[str] = []
     if not isinstance(raw_headers, dict):
-        return ""
+        return out
     for k, v in raw_headers.items():
-        if str(k).lower() in ("authentication-results", "arc-authentication-results", "x-authentication-results"):
-            text = " ".join(v) if isinstance(v, list) else str(v or "")
-            first = text.strip().split(";")[0].strip().split()
-            if first:
-                return first[0].lower().rstrip(".")
-    return ""
+        if str(k).lower() in _AR_HEADER_NAMES:
+            out.append(" ".join(v) if isinstance(v, list) else str(v or ""))
+    return out
+
+
+def _boundary_ar_header(raw_headers: dict) -> tuple[str, str]:
+    """(authserv_id, text) of the ONE Authentication-Results header that is
+    eligible for trust, or ("", "") when there is none.
+
+    P0 path binding: in a Received chain, a header stamped by our own MTAs
+    is the one appended LAST (lowest in the header block, nearest the
+    delivery we observed). Everything above it was added by hosts the sender
+    controls, so an attacker who prepends
+    `Authentication-Results: mx.our-relay.example; spf=pass ...` must not be
+    able to speak for our boundary. We therefore read ONLY the bottom-most
+    AR header; if that one is not attributable to the trusted boundary, we
+    do not trust the message at all — no earlier header gets a vote.
+
+    Returning a single header for BOTH attribution and claim extraction is
+    deliberate: previously _authserv_id() and parse_auth_headers() walked the
+    header dict independently, so a planted `x-authentication-results` could
+    supply the trusted authserv-id while the status claims were read from an
+    attacker-authored `authentication-results`.
+    """
+    for text in reversed(_ar_headers(raw_headers)):
+        first = text.strip().split(";")[0].strip().split()
+        if first:
+            return first[0].lower().rstrip("."), text
+    return "", ""
+
+
+def _authserv_id(raw_headers: dict) -> str:
+    """Hostname of the MTA that stamped the trusted Authentication-Results."""
+    return _boundary_ar_header(raw_headers)[0]
 
 
 def _upstream_trusted(raw_headers: dict) -> tuple[bool, str]:
     """(trusted, authserv_id): upstream headers count ONLY when the stamping
     host belongs to the configured trusted relay boundary. Fail closed:
     unconfigured boundary or unknown stamper => untrusted."""
-    sid = _authserv_id(raw_headers)
+    sid, _text = _boundary_ar_header(raw_headers)
     if not sid:
         # Received-SPF alone carries no authserv-id; without attribution it
         # cannot be tied to our boundary either.
@@ -120,14 +160,12 @@ def parse_auth_headers(raw_headers: dict) -> dict[str, dict[str, str]]:
             st = m.group(1).lower()
             results["spf"] = {"status": st, "detail": f"upstream-received-spf: {recv_spf[:120].strip()}"}
 
-    # 2. Authentication-Results / ARC-Authentication-Results headers
-    auth_lines: list[str] = []
-    for k, v in raw_headers.items():
-        k_lower = str(k).lower()
-        if k_lower in ("authentication-results", "arc-authentication-results", "x-authentication-results"):
-            auth_lines.append(str(v))
-
-    combined = " ; ".join(auth_lines)
+    # 2. Authentication-Results / ARC-Authentication-Results headers.
+    # P0: read ONLY the boundary header (see _boundary_ar_header) so that
+    # attribution and claims always come from the same, bottom-most AR
+    # header. Joining every AR header let an attacker-authored one supply
+    # the `spf=pass ...` claim that a trusted sibling stamped elsewhere.
+    combined = _boundary_ar_header(raw_headers)[1]
     if combined:
         if "spf" not in results:
             spf_m = re.search(r"\bspf\s*=\s*([a-zA-Z]+)", combined, re.IGNORECASE)
@@ -160,23 +198,61 @@ def _with_upstream(result: dict[str, Any], upstream_claim: dict[str, Any] | None
     return result
 
 
+# Statuses RFC 7489 / RFC 7208 define. Anything else in an upstream header is
+# attacker noise and is never treated as a verdict.
+_VERDICT_STATUSES = frozenset({
+    "pass", "fail", "softfail", "neutral", "none", "temperror", "permerror", UNVERIFIABLE,
+})
+
+
+def _trusted_upstream_verdict(local_status: str, upstream_claim: dict[str, Any] | None,
+                              trust_upstream: bool = False) -> dict[str, Any] | None:
+    """Verdict to substitute for `local_status`, or None to keep the local one.
+
+    Two conditions must BOTH hold, and neither defaults to satisfied:
+
+    1. `trust_upstream` — the caller verified the stamping host is inside the
+       configured trusted relay boundary via _upstream_trusted().
+    2. `local_status == UNVERIFIABLE` — the one state meaning "we could not
+       attempt the check at all" (no sender IP, live lookups disabled, the
+       validator library missing).
+
+    A locally-attempted verdict is authoritative and is NEVER upgraded. That
+    includes:
+      - `temperror`/`permerror` — a transient/permanent DNS failure must stay
+        a DNS failure; reporting `pass` for a lookup we could not complete
+        is the classic Authentication-Results fail-open.
+      - `none` — we read the headers and there is no DKIM-Signature, or the
+        _dmarc domain publishes no record. An upstream `pass` then means the
+        signature/record was stripped, which is evidence, not a fallback.
+      - `fail` — an explicit failure is never overruled.
+
+    Callers attach the claim with _with_upstream() either way, so the analyst
+    still sees the upstream reading and its provenance.
+    """
+    if not trust_upstream or local_status != UNVERIFIABLE or not upstream_claim:
+        return None
+    status = str(upstream_claim.get("status", "") or "").strip().lower()
+    if status not in _VERDICT_STATUSES or status == UNVERIFIABLE:
+        return None
+    return {"status": status,
+            "detail": f"trusted-upstream: {str(upstream_claim.get('detail', ''))[:300]}",
+            "upstream": dict(upstream_claim)}
+
+
 def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
                  upstream: dict[str, Any] | None = None, trust_upstream: bool = False) -> dict[str, Any]:
     upstream_spf = (upstream or {}).get("spf")
 
     if not (sender_ip or "").strip():
-        if trust_upstream and upstream_spf:
-            return {"status": upstream_spf.get("status", UNVERIFIABLE),
-                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_spf)}
-        return _with_upstream({"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}, upstream_spf)
+        local = {"status": UNVERIFIABLE, "detail": "no sender IP available; SPF not checked"}
+        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_spf, trust_upstream)
+        return sub or _with_upstream(local, upstream_spf)
 
     if not _live():
-        if trust_upstream and upstream_spf:
-            return {"status": upstream_spf.get("status", UNVERIFIABLE),
-                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_spf)}
-        return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}, upstream_spf)
+        local = {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; SPF not checked"}
+        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_spf, trust_upstream)
+        return sub or _with_upstream(local, upstream_spf)
 
     if not envelope_from:
         # No envelope identity => SPF has nothing to check. "none", never
@@ -189,17 +265,17 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
         if result == "fail":
             # Hard failure stands even against a trusted upstream pass.
             return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
-        if result in ("none", "temperror") and trust_upstream and upstream_spf:
-            return {"status": upstream_spf.get("status", result),
-                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_spf)}
+        # P0: `none` and `temperror` are locally-attempted verdicts. A DNS
+        # failure is never reported as an upstream `pass`, and neither is
+        # the absence of an SPF record. The claim rides along for provenance.
         return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
     except Exception as e:
-        if trust_upstream and upstream_spf:
-            return {"status": upstream_spf.get("status", "temperror"),
-                    "detail": f"trusted-upstream: {upstream_spf.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_spf)}
-        return _with_upstream({"status": "temperror", "detail": f"spf-unavailable: {e}"}, upstream_spf)
+        # P0: a validator crash is `unverifiable` — we never reached a verdict
+        # — not `temperror`, which RFC 7208 reserves for DNS lookup problems
+        # and which downstream scoring treats as a real signal.
+        local = {"status": UNVERIFIABLE, "detail": f"spf-unavailable: {e}"}
+        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_spf, trust_upstream)
+        return sub or _with_upstream(local, upstream_spf)
 
 
 def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
@@ -210,10 +286,9 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
     has_sig = bool(dkim_sig.strip())
 
     if not has_sig:
-        if trust_upstream and upstream_dkim:
-            return {"status": upstream_dkim.get("status", "none"),
-                    "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_dkim)}
+        # P0: we read the headers and there is no DKIM-Signature. That is a
+        # definitive `none`, so a trusted upstream `pass` is NOT a fallback —
+        # it would mean the signature was stripped between here and there.
         return _with_upstream({"status": "none", "detail": "no-dkim-signature-header"}, upstream_dkim)
 
     # RFC 6376 Section 3.5: x= Signature Expiration. If expired, fail closed.
@@ -234,11 +309,12 @@ def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,
         # attached for provenance but never overrides the fail.
         return _with_upstream({"status": "fail", "detail": "dkimpy-verify-failed"}, upstream_dkim)
     except Exception as e:
-        if trust_upstream and upstream_dkim:
-            return {"status": upstream_dkim.get("status", UNVERIFIABLE),
-                    "detail": f"trusted-upstream: {upstream_dkim.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_dkim)}
-        return _with_upstream({"status": UNVERIFIABLE, "detail": f"dkim-unavailable: {e}"}, upstream_dkim)
+        # The validator itself is unavailable (not a verification failure), so
+        # this is the one DKIM case where a trusted upstream verdict may stand
+        # in for `unverifiable`.
+        local = {"status": UNVERIFIABLE, "detail": f"dkim-unavailable: {e}"}
+        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_dkim, trust_upstream)
+        return sub or _with_upstream(local, upstream_dkim)
 
 
 def dkim_signing_domain(raw_headers: dict) -> str:
@@ -285,11 +361,9 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         return _with_upstream({"status": UNVERIFIABLE, "detail": "no-from-domain"}, upstream_dmarc)
 
     if not _live():
-        if trust_upstream and upstream_dmarc:
-            return {"status": upstream_dmarc.get("status", UNVERIFIABLE),
-                    "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
-                    "upstream": dict(upstream_dmarc)}
-        return _with_upstream({"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}, upstream_dmarc)
+        local = {"status": UNVERIFIABLE, "detail": "live-lookups-disabled; DMARC not checked"}
+        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_dmarc, trust_upstream)
+        return sub or _with_upstream(local, upstream_dmarc)
 
     recs = _txt_records(f"_dmarc.{from_domain}")
     # Also check parent domain if subdomain (e.g., mail.example.com -> example.com)
@@ -322,10 +396,9 @@ def validate_dmarc(from_domain: str, spf_res: dict | None = None, dkim_res: dict
         else:
             return _with_upstream({"status": "fail", "detail": f"dmarc-alignment-failed (policy: {pol})", "policy": pol, "record": dmarc[0][:200]}, upstream_dmarc)
 
-    if trust_upstream and upstream_dmarc:
-        return {"status": upstream_dmarc.get("status", "none"),
-                "detail": f"trusted-upstream: {upstream_dmarc.get('detail', '')}"[:300],
-                "upstream": dict(upstream_dmarc)}
+    # P0: no _dmarc record for this domain is a definitive `none` (RFC 7489
+    # §6.6.3), not a gap to be filled by whatever the upstream claims. The
+    # claim is attached for provenance only.
     return _with_upstream({"status": "none", "detail": "no-dmarc-record"}, upstream_dmarc)
 
 

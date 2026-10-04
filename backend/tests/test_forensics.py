@@ -147,3 +147,202 @@ def test_no_global_resolver_mutation():
     """P0: the module must not mutate the global DNS resolver."""
     import app.modules.forensics.auth_validator as av
     assert not hasattr(av, "_ensure_dns_resolver")
+
+
+# ---------------------------------------------------------------------------
+# C2: Authentication-Results must never upgrade a locally-attempted verdict.
+# ---------------------------------------------------------------------------
+
+def _fake_spf(monkeypatch, result):
+    """Install a stub `spf` module whose check2 returns `result`."""
+    import sys
+    import types
+    fake = types.ModuleType("spf")
+    fake.check2 = lambda **kw: (result, "simulated")
+    monkeypatch.setitem(sys.modules, "spf", fake)
+
+
+def test_temperror_is_not_upgraded_to_upstream_pass(monkeypatch):
+    """C2/P0: a transient DNS failure must stay `temperror`.
+
+    The pre-fix code substituted the trusted upstream status here, so a
+    `temperror` (lookup never completed) was reported as `pass` -- the exact
+    fail-open the audit flagged.
+    """
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    _fake_spf(monkeypatch, "temperror")
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=pass"},
+        "93.184.216.34", "")
+
+    assert out["upstream_trusted"] is True, "precondition: upstream IS trusted here"
+    assert out["spf"]["status"] == "temperror", "temperror must not become pass"
+    # The claim is still visible to the analyst, just not authoritative.
+    assert out["spf"]["upstream"]["status"] == "pass"
+
+
+def test_spf_none_is_not_upgraded_to_upstream_pass(monkeypatch):
+    """C2/P0: `none` (no SPF record published) is a definitive local result."""
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    _fake_spf(monkeypatch, "none")
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=pass"},
+        "93.184.216.34", "")
+
+    assert out["spf"]["status"] == "none"
+    assert out["spf"]["upstream"]["status"] == "pass"
+
+
+def test_spf_permerror_is_not_upgraded_to_upstream_pass(monkeypatch):
+    """C2/P0: a permanent error must never be reported as a pass either."""
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    _fake_spf(monkeypatch, "permerror")
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=pass"},
+        "93.184.216.34", "")
+
+    assert out["spf"]["status"] == "permerror"
+
+
+def test_spf_library_crash_is_unverifiable_not_temperror(monkeypatch):
+    """C2/P0: a validator crash means "no verdict reached", not a DNS error.
+
+    RFC 7208 reserves `temperror` for DNS lookup problems; a broken/missing
+    pyspf is not one, and scoring code treats the two differently.
+    """
+    import sys
+    import types
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.delenv("TRUSTED_RELAY_HOSTS", raising=False)
+
+    exploding = types.ModuleType("spf")
+
+    def _boom(**kw):
+        raise RuntimeError("resolver exploded")
+
+    exploding.check2 = _boom
+    monkeypatch.setitem(sys.modules, "spf", exploding)
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>"},
+        "93.184.216.34", "")
+
+    assert out["spf"]["status"] == "unverifiable"
+    assert "spf-unavailable" in out["spf"]["detail"]
+
+
+def test_dkim_missing_signature_is_not_upgraded_to_upstream_pass(monkeypatch):
+    """C2/P0: no DKIM-Signature is `none`; an upstream pass would mean the
+    signature was stripped in transit, which is evidence, not a fallback."""
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: False)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; dkim=pass; spf=pass"},
+        "93.184.216.34", "")
+
+    assert out["upstream_trusted"] is True
+    assert out["dkim"]["status"] == "none"
+    assert out["dkim"]["upstream"]["status"] == "pass"
+    # spf here is `unverifiable` (live lookups off), so it MAY be substituted.
+    assert out["spf"]["status"] == "pass"
+
+
+def test_dmarc_absent_record_is_not_upgraded_to_upstream_pass(monkeypatch):
+    """C2/P0: RFC 7489 6.6.3 -- no _dmarc record is `none`, not a gap."""
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: True)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+    monkeypatch.setattr(av, "_txt_records", lambda name: [])
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; dmarc=pass; spf=pass"},
+        "93.184.216.34", "")
+
+    assert out["dmarc"]["status"] == "none"
+    assert out["dmarc"]["upstream"]["status"] == "pass"
+
+
+def test_authserv_id_and_claims_come_from_the_same_header():
+    """C2/P0: attribution and claims must not be read from different headers.
+
+    Pre-fix, `_authserv_id()` returned the first AR header found while
+    `parse_auth_headers()` regex-scanned a join of all of them, so a planted
+    `x-authentication-results` could supply the trusted authserv-id while the
+    status claims came from an attacker-authored header.
+    """
+    from app.modules.forensics.auth_validator import _authserv_id, parse_auth_headers
+
+    headers = {
+        # Attacker-controlled, first in header order:
+        "x-authentication-results": "mx.ours.test; spf=pass",
+        # Ours, appended last by our own MTA:
+        "authentication-results": "evil-relay.test; spf=fail",
+    }
+    assert _authserv_id(headers) == "evil-relay.test"
+    assert parse_auth_headers(headers)["spf"]["status"] == "fail"
+
+
+def test_attacker_cannot_forge_trusted_authserv_id_by_prepending(monkeypatch):
+    """C2/P0: prepending a trusted-looking AR header must not win.
+
+    Our own MTA stamps last, so the bottom-most header is authoritative. An
+    attacker prepending `Authentication-Results: mx.ours.test; spf=pass`
+    therefore gets ignored rather than believed.
+    """
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+
+    from app.modules.forensics.auth_validator import _upstream_trusted
+    headers = {
+        "Authentication-Results": "mx.ours.test; spf=pass",   # attacker, prepended
+        "ARC-Authentication-Results": "evil-relay.test; spf=fail",  # actually the boundary
+    }
+    trusted, sid = _upstream_trusted(headers)
+    assert sid == "evil-relay.test", "claims follow the bottom-most header"
+    assert trusted is False, (
+        "a prepended header must not make the attacker the speaker for our "
+        "boundary, even with the boundary configured")
+
+
+def test_trusted_upstream_still_substitutes_for_unverifiable(monkeypatch):
+    """C2 regression guard: the narrow legitimate substitution still works.
+
+    Without this the module would silently ignore every relay-forwarded
+    verdict, which is the feature the trusted-relay config exists for.
+    """
+    import app.modules.forensics.auth_validator as av
+    monkeypatch.setattr(av, "_live", lambda: False)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
+
+    out = av.validate_all(
+        b"raw",
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=softfail"},
+        "", "")  # no sender IP -> unverifiable
+
+    assert out["upstream_trusted"] is True
+    assert out["spf"]["status"] == "softfail"
+    assert "trusted-upstream" in out["spf"]["detail"]
