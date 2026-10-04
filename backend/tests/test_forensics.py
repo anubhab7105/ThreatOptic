@@ -219,17 +219,18 @@ def test_spf_permerror_is_not_upgraded_to_upstream_pass(monkeypatch):
     assert out["spf"]["status"] == "permerror"
 
 
-def test_spf_library_crash_is_unverifiable_not_temperror(monkeypatch):
-    """C2/P0: a validator crash means "no verdict reached", not a DNS error.
+def test_spf_library_crash_stays_temperror_not_upstream_pass(monkeypatch):
+    """C2/P0: a crashing validator must not be reported as a pass.
 
-    RFC 7208 reserves `temperror` for DNS lookup problems; a broken/missing
-    pyspf is not one, and scoring code treats the two differently.
+    It stays `temperror` rather than `unverifiable` on purpose: scoring
+    weights unverifiable (5.0) far below temperror (15.0), so collapsing the
+    two would quietly lower the risk score for a broken deployment.
     """
     import sys
     import types
     import app.modules.forensics.auth_validator as av
     monkeypatch.setattr(av, "_live", lambda: True)
-    monkeypatch.delenv("TRUSTED_RELAY_HOSTS", raising=False)
+    monkeypatch.setenv("TRUSTED_RELAY_HOSTS", "mx.ours.test")
 
     exploding = types.ModuleType("spf")
 
@@ -241,10 +242,12 @@ def test_spf_library_crash_is_unverifiable_not_temperror(monkeypatch):
 
     out = av.validate_all(
         b"raw",
-        {"From": "a@b.com", "Return-Path": "<bounce@b.com>"},
+        {"From": "a@b.com", "Return-Path": "<bounce@b.com>",
+         "Authentication-Results": "mx.ours.test; spf=pass"},
         "93.184.216.34", "")
 
-    assert out["spf"]["status"] == "unverifiable"
+    assert out["upstream_trusted"] is True, "precondition: upstream IS trusted"
+    assert out["spf"]["status"] == "temperror", "a crash must not become pass"
     assert "spf-unavailable" in out["spf"]["detail"]
 
 

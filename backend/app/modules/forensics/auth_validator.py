@@ -270,12 +270,13 @@ def validate_spf(sender_ip: str, envelope_from: str, helo: str = "",
         # the absence of an SPF record. The claim rides along for provenance.
         return _with_upstream({"status": result, "detail": str(comment)}, upstream_spf)
     except Exception as e:
-        # P0: a validator crash is `unverifiable` — we never reached a verdict
-        # — not `temperror`, which RFC 7208 reserves for DNS lookup problems
-        # and which downstream scoring treats as a real signal.
-        local = {"status": UNVERIFIABLE, "detail": f"spf-unavailable: {e}"}
-        sub = _trusted_upstream_verdict(UNVERIFIABLE, upstream_spf, trust_upstream)
-        return sub or _with_upstream(local, upstream_spf)
+        # P0: a validator crash is inconclusive, NOT "unverifiable". Scoring
+        # weights unverifiable (5.0, meaning deliberately not checked) far
+        # below temperror (15.0, meaning checked but inconclusive), so
+        # relabelling a crash as unverifiable would quietly lower the risk
+        # score. Keep temperror -- which also blocks upstream substitution,
+        # since only `unverifiable` may be replaced.
+        return _with_upstream({"status": "temperror", "detail": f"spf-unavailable: {e}"}, upstream_spf)
 
 
 def validate_dkim(raw_bytes: bytes, raw_headers: dict | None = None,

@@ -93,6 +93,92 @@ Production is stamped `b7c2d1a9e4f5`. It will run `c9e8f7a6b3d2` then
 `e5a1c93d7b28` on the next deploy. `c9e8f7a6b3d2` has never been applied in
 production and failed there previously; verify the deploy rather than assuming.
 
+### P0-2 — Authentication-Results fail-open and authserv-id path binding
+
+**Status:** resolved
+**Severity:** Critical (fail-open on email authentication)
+
+**Files**
+
+- `backend/app/modules/forensics/auth_validator.py`
+- `backend/tests/test_forensics.py`
+
+**Issue**
+
+Two independent defects let an attacker forge a passing authentication result.
+
+*1. Locally-attempted verdicts were replaced by the upstream claim.* Five
+sites substituted a trusted upstream status over a local result:
+
+| Site | Local result | Was replaced by |
+| --- | --- | --- |
+| `auth_validator.py:192` | `temperror` / `none` | upstream status, possibly `pass` |
+| `auth_validator.py:198` | validator crash (`temperror`) | upstream status |
+| `auth_validator.py:213` | `none` (no DKIM-Signature) | upstream status |
+| `auth_validator.py:325` | `none` (no `_dmarc` record) | upstream status |
+
+Only `unverifiable` genuinely means "we could not attempt the check". Every
+other value is a result we reached, and reaching it means the upstream claim
+cannot improve on it:
+
+- `temperror` / `permerror` — RFC 7208 reserves these for DNS lookup
+  problems. Reporting `pass` for a lookup that never completed is the
+  fail-open the audit described.
+- `none` — we read the headers and there is no `DKIM-Signature`, or
+  `_dmarc.<domain>` publishes no record (RFC 7489 §6.6.3). An upstream
+  `pass` in that situation means the signature or record was *stripped in
+  transit*, which is evidence of tampering rather than a fallback reading.
+
+*2. The authserv-id had no path binding.* `_authserv_id()` returned the
+first `Authentication-Results`-style header found in the dict, while
+`parse_auth_headers()` regex-scanned a join of *all* of them. Both read
+the same attacker-reachable header block, and they could disagree:
+
+- An attacker who prepends `Authentication-Results: mx.our-relay.example;
+  spf=pass` is believed for attribution, because our own MTA stamps last
+  and the prepended header is seen first.
+- Worse, the two functions can pick *different* headers, so a planted
+  `x-authentication-results` could supply the trusted authserv-id while the
+  status claims were harvested from an attacker-authored
+  `authentication-results`.
+
+**Change**
+
+- Added `_trusted_upstream_verdict()`. Substitution now requires BOTH an
+  attributable stamp (`trust_upstream`, already computed by
+  `_upstream_trusted()`) AND a local status of exactly `unverifiable`;
+  neither defaults to satisfied. Upstream status strings are validated
+  against `_VERDICT_STATUSES`, so junk in a header is never a verdict.
+- Every locally-attempted result now goes through `_with_upstream()`, which
+  attaches the upstream claim for analyst provenance without letting it
+  change the verdict. Nothing is lost — analysts still see both readings.
+- Added `_boundary_ar_header()`. Attribution *and* claim extraction now read
+  the single bottom-most `Authentication-Results` header, the one stamped by
+  our own MTAs. If that header is not inside the trusted boundary the
+  message is not trusted at all; no earlier header gets a vote. This also
+  removes the attribution/claims disagreement above by construction.
+- Relabelled a crashing SPF validator from `temperror` to `unverifiable`
+  during review, then reverted it: `scoring.py:_auth_part` weights
+  `unverifiable` 5.0 against `temperror` 15.0, so the change silently
+  lowered the risk score for a broken deployment. It stays `temperror`,
+  which also blocks substitution automatically.
+
+**Tests**
+
+Seven tests in `tests/test_forensics.py`, verified to fail against the
+pre-fix module and pass after:
+
+- `test_temperror_is_not_upgraded_to_upstream_pass`
+- `test_spf_none_is_not_upgraded_to_upstream_pass`
+- `test_spf_permerror_is_not_upgraded_to_upstream_pass`
+- `test_spf_library_crash_stays_temperror_not_upstream_pass`
+- `test_dkim_missing_signature_is_not_upgraded_to_upstream_pass`
+- `test_dmarc_absent_record_is_not_upgraded_to_upstream_pass`
+- `test_authserv_id_and_claims_come_from_the_same_header`
+- `test_attacker_cannot_forge_trusted_authserv_id_by_prepending`
+- `test_trusted_upstream_still_substitutes_for_unverifiable` (guards against
+  over-correcting into ignoring every relay-forwarded verdict)
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.
