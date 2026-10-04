@@ -765,9 +765,6 @@ truncation or sends one unbounded POST both fail.
   own OAuth client secret in the UI unless a separate credential-store
   endpoint is added first. **Needs a product decision, so not started.**
 
-- MISP residuals in `feeds.py`: unbounded `_MISP_CACHE` growth (`:162`) and a
-  silent 30-value truncation (`MISP_VALUE_CAP`) against inputs of up to 60,
-  which contradicts the "coverage identical" comment. **Both fixed in P0-12.**
 - `k8s/backend.yaml`: readiness probe polls `/health/detailed` every 15s, which
   runs unauthenticated model inference and returns `live_lookups`; `replicas:
   2` with no shared state; image pinned to a tag rather than a digest.
