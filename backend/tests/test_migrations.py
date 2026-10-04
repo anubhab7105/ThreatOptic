@@ -1095,3 +1095,111 @@ def test_the_drift_migration_is_idempotent(populated_db) -> None:
         finally:
             alembic_op._proxy = previous
     engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# The Alembic entrypoint must target the database it was told to, and refuse
+# placeholder credentials.
+# ---------------------------------------------------------------------------
+
+def _load_env_module(monkeypatch, x_args=None, ini_url=None):
+    """Import alembic/env.py with a stubbed alembic `context`.
+
+    The stub must be installed *before* the import: env.py reads
+    context.is_offline_mode() and context.config at module scope.
+    """
+    import contextlib
+    import importlib.util
+    import pathlib
+
+    ctx = types.SimpleNamespace()
+    ctx.get_x_argument = lambda as_dictionary=False: (x_args or {})
+    ctx.configure = lambda **kw: None
+    ctx.begin_transaction = lambda: contextlib.nullcontext()
+    ctx.is_offline_mode = lambda: True          # offline: no engine is built
+    ctx.run_migrations = lambda: None
+    cfg = types.SimpleNamespace(
+        get_main_option=lambda name, default=None: (ini_url if name == "sqlalchemy.url" else default))
+    ctx.config = cfg          # env.py does `config = context.config` at import
+
+    monkeypatch.setattr("alembic.context", ctx, raising=False)
+    monkeypatch.setattr("alembic.config", cfg, raising=False)
+
+    env_path = pathlib.Path(__file__).resolve().parents[1] / "alembic" / "env.py"
+    spec = importlib.util.spec_from_file_location("_alembic_env_probe", env_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def settings_url(monkeypatch):
+    """Point resolved_db_url() at a known value and undo the lru_cache."""
+    from app.config import get_settings
+
+    def _set(url: str):
+        monkeypatch.setenv("DATABASE_URL", url)
+        monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        get_settings.cache_clear()
+    yield _set
+    get_settings.cache_clear()
+
+
+def test_alembic_env_honours_explicit_url_override(monkeypatch, settings_url):
+    """`-x url=` must beat DATABASE_URL.
+
+    env.py used to return resolved_db_url() unconditionally, ignoring both
+    the override and sqlalchemy.url. An operator had no way to target a
+    specific database and a stray DATABASE_URL silently won -- which is how a
+    scratch migration once ran against the development database here and left
+    it stamped with a since-deleted revision.
+    """
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch, x_args={"url": "postgresql://explicit/override"})
+    assert module._url() == "postgresql://explicit/override"
+
+
+def test_alembic_env_prefers_ini_url_over_settings(monkeypatch, settings_url):
+    """sqlalchemy.url outranks the resolved settings URL, but loses to -x."""
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch, x_args={}, ini_url="postgresql://ini/db")
+    assert module._url() == "postgresql://ini/db"
+
+
+def test_alembic_env_falls_back_to_resolved_settings(monkeypatch, settings_url):
+    """With neither override present, the settings URL is still used."""
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch, x_args={}, ini_url=None)
+    # resolved_db_url() normalises the driver scheme, so compare the target
+    # rather than the literal string.
+    assert module._url().endswith("env/from-settings/db")
+
+
+def test_alembic_env_refuses_placeholder_target(monkeypatch, settings_url):
+    """Fail closed rather than migrating with a placeholder credential."""
+    import pytest
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch)
+    for bad in ("", "   ", "postgresql://u:changeme@host/db",
+                "postgresql://u:pw@host/db?opt=<placeholder>",
+                "postgresql://u:YOUR-PASSWORD@host/db"):
+        monkeypatch.setattr(module, "_url", lambda bad=bad: bad)
+        with pytest.raises(RuntimeError, match="Refusing to run migrations"):
+            module._require_migratable_target()
+
+
+def test_alembic_env_accepts_a_real_target(monkeypatch, settings_url):
+    """The guard must not block a legitimate URL."""
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch)
+    monkeypatch.setattr(module, "_url", lambda: "postgresql://u:realsecret@host:5432/socdev")
+    module._require_migratable_target()  # must not raise
+
+
+def test_alembic_env_redacts_password_when_logging(monkeypatch, settings_url):
+    """The migration banner must never print the password."""
+    settings_url("postgresql://env/from-settings/db")
+    module = _load_env_module(monkeypatch)
+    shown = module._redact("postgresql://user:hunter2@host:5432/db")
+    assert "hunter2" not in shown
+    assert "user" in shown and "db" in shown

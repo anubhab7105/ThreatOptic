@@ -414,6 +414,87 @@ whole query, which is no longer true once the query is correctly wrapped in
 a tenant filter — it now asserts the match *and* that `org-1` reached the ES
 query.
 
+### P0-7 — Alembic entrypoint could only target the ambient DATABASE_URL
+
+**Status:** resolved
+**Severity:** High (deployment safety)
+
+**Files**
+
+- `backend/alembic/env.py`
+- `backend/tests/test_migrations.py`
+
+**Issue**
+
+`_url()` returned `get_settings().resolved_db_url()` unconditionally. It
+ignored both an `-x url=...` override and `sqlalchemy.url` from
+`alembic.ini`, so the only way to choose a database was to mutate the
+environment — and an ambient or stale `DATABASE_URL` silently won.
+
+This is not theoretical. A scratch migration run during earlier remediation
+targeted the **development** database `socdev` instead of the scratch
+database and left it stamped with a revision that was later deleted,
+producing `Can't locate revision identified by '90458c1163e2'`. Nothing in
+the tool reported which database it was touching.
+
+**Change**
+
+- Precedence is now `-x url=` > `sqlalchemy.url` > `resolved_db_url()`.
+- `_require_migratable_target()` fails closed on an empty URL or one still
+  containing a placeholder (`<`, `>`, `placeholder`, `changeme`,
+  `your-password`, `xxx`), so migrations cannot run against a
+  half-provisioned target.
+- Every online migration prints the target with the password redacted
+  (`alembic: migrating postgresql://user:***@host/db`).
+
+A note on the originally proposed change: this does **not** add
+`require_secrets()` to the Alembic entrypoint. A migration reads no JWT
+secret, so gating it on `SECRET_KEY` would be cargo-cult — it would block
+deploys without closing a hole. The actual hazard was targeting the wrong
+database, which is what this fixes.
+
+**Tests**
+
+Six tests in `tests/test_migrations.py`, five of which fail against the
+previous `env.py`. They import `env.py` directly with a stubbed
+`alembic.context` installed *before* the import, since the module reads
+`context.is_offline_mode()` at module scope.
+
+- `test_alembic_env_honours_explicit_url_override`
+- `test_alembic_env_prefers_ini_url_over_settings`
+- `test_alembic_env_falls_back_to_resolved_settings`
+- `test_alembic_env_refuses_placeholder_target`
+- `test_alembic_env_accepts_a_real_target` — guards against over-blocking
+- `test_alembic_env_redacts_password_when_logging`
+
+### P0-8 — Vite dev server bound to every interface
+
+**Status:** resolved
+**Severity:** High (information disclosure on the LAN)
+
+**Files**
+
+- `frontend/vite.config.ts`
+- `frontend/package.json`
+
+**Issue**
+
+`"dev": "vite --host"` bound the dev server to `0.0.0.0`. The dev server
+serves unminified sources, the repo's `.env` values through `envDir: '..'`,
+and a proxy to the API — all reachable by anything that can route to the
+host, with no authentication.
+
+**Change**
+
+`host: '127.0.0.1'` on both `server` and `preview`, and the `--host` flag
+removed from the `dev` script. Passing `--host` on the command line still
+overrides it for deliberate device testing.
+
+`npm test` (53 tests) and `npm run build` both pass. The build initially
+failed on `src/landing/*` with `Cannot find module 'zustand'`; that was a
+stale `node_modules` from unrelated concurrent work (`zustand` was already
+in `package.json`), resolved with `npm install`.
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.

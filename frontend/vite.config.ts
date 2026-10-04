@@ -23,12 +23,17 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      // Loopback only. The dev server ships unminified source and the .env
+      // values it loads, so binding 0.0.0.0 (via `--host`) exposes the whole
+      // app to anyone on the LAN. Use `--host` explicitly on purpose if you
+      // need device testing.
+      host: '127.0.0.1',
       proxy: {
         '/api': { target: proxyTarget, changeOrigin: true, ws: true },
         '/health': { target: proxyTarget, changeOrigin: true },
       },
     },
-    preview: { port: 4173 },
+    preview: { port: 4173, host: '127.0.0.1' },
     build: {
       sourcemap: false,
       chunkSizeWarningLimit: 600,
