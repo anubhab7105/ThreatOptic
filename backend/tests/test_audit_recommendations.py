@@ -124,7 +124,7 @@ def test_search_sqlite_returns_snippet():
     db.commit()
     db.refresh(email)
     try:
-        res = search_emails("cryptographic authorization", db=db)
+        res = search_emails("cryptographic authorization", db=db, all_orgs=True)
         assert res["backend"] == "sqlite"
         assert len(res["hits"]) > 0
         hit = next((h for h in res["hits"] if h["id"] == email.id), None)

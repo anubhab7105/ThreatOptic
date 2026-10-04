@@ -356,6 +356,64 @@ new pattern now finds — a coverage gain.
 Against the vulnerable patterns these tests do not fail quickly — they hang
 (confirmed: killed at 150s and 600s). That is the ReDoS reproducing.
 
+### P0-6 — Search tenant scope was implicit and fail-open; Admin scope was wrong
+
+**Status:** resolved
+**Severity:** Critical (tenant isolation, latent)
+
+**Files**
+
+- `backend/app/modules/search/elastic_sync.py`
+- `backend/app/routers/api.py`
+- `backend/tests/test_search.py`, `test_audit_recommendations.py`, `test_step3_privacy.py`
+
+**Issue**
+
+`search_emails(query, limit=50, db=None, organization_id="__all__")` — the
+default scope was the literal `"__all__"`, and both the ES branch
+(`if organization_id != "__all__"`) and the SQLite branch
+(`if organization_id != "__all__"`) skipped the tenant filter entirely for
+it. Any new caller that omitted the argument would have searched every
+organization.
+
+This was latent, not exploitable: the only caller,
+`api.py:375 /search`, always passed an explicit value.
+
+A second defect sat behind it. `api.py` passed
+`organization_id=None if user.role == "Admin" else user.organization_id`,
+but `None` is the legitimate value for "row has no organization". In the ES
+branch it became `must_not exists organization_id` and in the SQLite branch
+`organization_id IS NULL` — both meaning *org-less rows only*. An Admin
+searching therefore saw none of the real tenants' mail, which is a
+functional bug that would mask cross-tenant over-exposure if "fixed" by
+simply widening the filter.
+
+**Change**
+
+- The scope is now mandatory. Omitting it raises `ValueError` instead of
+  quietly returning everything.
+- Added an explicit `all_orgs: bool = False`. Cross-tenant search is a
+  deliberate act, and `api.py` now requests it for Admin via
+  `all_orgs=True`.
+- `limit` is clamped to 1..100 on both paths; previously only the ES branch
+  clamped it while SQLite applied the raw value.
+
+**Tests**
+
+- `test_search_refuses_implicit_all_tenants_scope`
+- `test_search_scopes_to_requesting_tenant` — asserts an org-A search cannot
+  return org-B's row
+- `test_admin_search_is_not_limited_to_orgless_rows` — pins `None` as
+  "org-less" and `all_orgs=True` as cross-tenant
+- `test_search_limit_is_clamped`
+
+Three existing tests called `search_emails` without a scope, i.e. they were
+relying on the unsafe default; each now states its scope.
+`test_search_uses_elastic_when_configured` asserted `multi_match` was the
+whole query, which is no longer true once the query is correctly wrapped in
+a tenant filter — it now asserts the match *and* that `org-1` reached the ES
+query.
+
 ## Still open in Phase 0
 
 Recorded in the handover notes; not yet started.

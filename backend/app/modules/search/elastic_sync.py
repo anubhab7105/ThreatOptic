@@ -87,7 +87,39 @@ def _extract_snippet(row: Any, query: str, window: int = 60) -> str:
     return (getattr(row, "subject", "") or "")[:120]
 
 
-def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__") -> dict:
+class _Unset:
+    """Sentinel that refuses to stand in for a tenant scope."""
+    def __repr__(self):
+        return "<unset organization_id>"
+
+
+# Fail closed: a forgotten tenant scope used to default to "__all__", which
+# silently searched every organization in both backends. Callers must now
+# state the scope explicitly.
+_UNSET = _Unset()
+
+
+def search_emails(query: str, limit: int = 50, db=None,
+                  organization_id: str | None | _Unset = _UNSET,
+                  all_orgs: bool = False) -> dict:
+    """Full-text search, scoped to one tenant by default.
+
+    `organization_id` semantics:
+      - a string  -> only that organization
+      - None       -> only rows that have no organization assigned
+      - all_orgs=True -> every organization (Admin cross-tenant search)
+
+    Passing neither raises, so a new caller cannot leak all tenants by
+    omission.
+    """
+    if isinstance(organization_id, _Unset) and not all_orgs:
+        raise ValueError(
+            "search_emails requires an explicit organization_id "
+            "(or all_orgs=True for a deliberate cross-tenant search)")
+    scope_all = bool(all_orgs)
+    org = None if isinstance(organization_id, _Unset) else organization_id
+    limit = min(max(int(limit), 1), 100)
+
     from ...config import get_settings
 
     es = _client()
@@ -98,21 +130,21 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
                 "fields": ["email.subject^3", "email.sender_address^2",
                            "email.recipient_address", "email.body_text_masked"],
             }}
-            if organization_id != "__all__":
+            if not scope_all:
                 # Tenant filter inside ES; docs without org match NULL-org tenants.
                 # Legacy docs may only have email.organization_id, so check both.
-                if organization_id is None:
+                if org is None:
                     es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"must_not": {"exists": {"field": "organization_id"}}}}]}}
                 else:
                     should = [
-                        {"term": {"organization_id": organization_id}},
-                        {"term": {"email.organization_id": organization_id}},
+                        {"term": {"organization_id": org}},
+                        {"term": {"email.organization_id": org}},
                     ]
                     es_query = {"bool": {"must": [es_query], "filter": [{"bool": {"should": should, "minimum_should_match": 1}}]}}
             res = es.search(
                 index=get_settings().elastic_index,
                 query=es_query,
-                size=min(max(limit, 1), 100),
+                size=limit,
             )
             hits = [{"id": h["_id"], **(h.get("_source") or {})} for h in res["hits"]["hits"]]
             return {"backend": "elasticsearch", "hits": hits}
@@ -129,8 +161,8 @@ def search_emails(query: str, limit: int = 50, db=None, organization_id="__all__
         models.EmailRecord.sender_address.ilike(like, escape="\\"),
         models.EmailRecord.recipient_address.ilike(like, escape="\\"),
         models.EmailRecord.body_text_masked.ilike(like, escape="\\")))
-    if organization_id != "__all__":
-        q = q.filter(models.EmailRecord.organization_id == organization_id)
+    if not scope_all:
+        q = q.filter(models.EmailRecord.organization_id == org)
     rows = q.order_by(desc(models.EmailRecord.timestamp)).limit(limit).all()
     return {"backend": "sqlite", "hits": [
         {"id": r.id, "email": {"subject": r.subject, "sender_address": r.sender_address,

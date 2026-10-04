@@ -372,7 +372,14 @@ def search(request: Request, q: str = Query(..., min_length=1, max_length=200), 
            db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """Full-text forensic search: Elasticsearch when configured, SQLite fallback (F10)."""
     from ..modules.search.elastic_sync import search_emails
-    return search_emails(q, limit=limit, db=db, organization_id=None if user.role == "Admin" else user.organization_id)
+    # Admins search across every org deliberately; everyone else is pinned to
+    # their own. Passing organization_id=None for Admin used to mean "rows with
+    # no org", which silently hid all real tenants from them.
+    return search_emails(
+        q, limit=limit, db=db,
+        all_orgs=(user.role == "Admin"),
+        organization_id=None if user.role == "Admin" else user.organization_id,
+    )
 
 
 @router.get("/graph/related")
