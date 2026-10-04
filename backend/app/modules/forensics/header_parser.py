@@ -13,6 +13,74 @@ SPOOFED_IDENTITY_HINTS = (
     "paypal", "apple", "microsoft", "google", "amazon", "bank",
 )
 
+# RFC 5322 2.2: header field names are case-insensitive. Senders pick the
+# casing, so every lookup has to be too -- `fROM:`, `rECEIVED:` and
+# `FrOm:` previously reached the parsers as-is, blanking from_addr and
+# suppressing every From/Received-derived detection.
+#
+# Canonical spellings for the names this codebase looks up. Anything not
+# listed keeps the sender's casing.
+CANONICAL_HEADER_NAMES = {
+    "from": "From",
+    "to": "To",
+    "cc": "Cc",
+    "bcc": "Bcc",
+    "reply-to": "Reply-To",
+    "return-path": "Return-Path",
+    "received": "Received",
+    "received-spf": "Received-SPF",
+    "subject": "Subject",
+    "date": "Date",
+    "message-id": "Message-ID",
+    "in-reply-to": "In-Reply-To",
+    "references": "References",
+    "x-mailer": "X-Mailer",
+    "user-agent": "User-Agent",
+    "dkim-signature": "DKIM-Signature",
+    "authentication-results": "Authentication-Results",
+    "arc-authentication-results": "ARC-Authentication-Results",
+    "x-authentication-results": "X-Authentication-Results",
+    "content-type": "Content-Type",
+    "content-transfer-encoding": "Content-Transfer-Encoding",
+    "x-originating-ip": "X-Originating-IP",
+    "x-sender-ip": "X-Sender-IP",
+    "x-client-ip": "X-Client-IP",
+    "x-real-ip": "X-Real-IP",
+    "x-forwarded-for": "X-Forwarded-For",
+    "x-original-client-ip": "X-Original-Client-IP",
+    "cf-connecting-ip": "CF-Connecting-IP",
+    "true-client-ip": "True-Client-IP",
+}
+
+
+def canonical_header_name(name: str) -> str:
+    """Canonical spelling for a header name, case-insensitively."""
+    cleaned = str(name).strip()
+    return CANONICAL_HEADER_NAMES.get(cleaned.lower(), cleaned)
+
+
+def header_value(raw_headers: Any, name: str, default: str = "") -> str:
+    """Case-insensitive header lookup.
+
+    Exact hit first (the common path once parser.parse_eml has canonicalised
+    the keys), then a case-insensitive scan so rows persisted before that
+    normalisation -- or dicts handed in by a caller -- still resolve.
+    """
+    if not isinstance(raw_headers, dict):
+        return default
+    if name in raw_headers:
+        val = raw_headers[name]
+        if isinstance(val, list):
+            return "\n".join(str(v) for v in val)
+        return str(val or "")
+    low = name.lower()
+    for k, v in raw_headers.items():
+        if str(k).strip().lower() == low:
+            if isinstance(v, list):
+                return "\n".join(str(x) for x in v)
+            return str(v or "")
+    return default
+
 
 def _identity_spoof(disp_name: str, from_addr: str) -> bool:
     """Display name trades on an identity the sender domain doesn't own."""
@@ -29,12 +97,12 @@ def _identity_spoof(disp_name: str, from_addr: str) -> bool:
 
 
 def parse_headers(raw_headers: dict[str, Any]) -> dict[str, Any]:
-    frm = str(raw_headers.get("From", ""))
-    reply_to = str(raw_headers.get("Reply-To", ""))
-    return_path = str(raw_headers.get("Return-Path", ""))
-    x_mailer = str(raw_headers.get("X-Mailer", raw_headers.get("User-Agent", "")))
-    message_id = str(raw_headers.get("Message-ID", raw_headers.get("Message-Id", "")))
-    auth_results = str(raw_headers.get("Authentication-Results", ""))
+    frm = header_value(raw_headers, "From")
+    reply_to = header_value(raw_headers, "Reply-To")
+    return_path = header_value(raw_headers, "Return-Path")
+    x_mailer = header_value(raw_headers, "X-Mailer") or header_value(raw_headers, "User-Agent")
+    message_id = header_value(raw_headers, "Message-ID")
+    auth_results = header_value(raw_headers, "Authentication-Results")
 
     def extract(addr: str) -> tuple[str, str]:
         m = DISPLAY_RE.match(addr.strip())

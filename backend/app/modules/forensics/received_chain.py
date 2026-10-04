@@ -3,6 +3,8 @@ import ipaddress
 import re
 from typing import Any
 
+from .header_parser import header_value
+
 # Candidate IPs (v4 + v6); every candidate is validated with ipaddress —
 # 999.999.999.999 and friends never survive (Step 4).
 #
@@ -34,7 +36,7 @@ def split_received(raw_headers: dict[str, Any]) -> list[str]:
     boundaries (a newline followed by a non-whitespace char) so folded
     multi-line Received headers don't become fake hops (Step 4).
     """
-    val = raw_headers.get("Received", "")
+    val = header_value(raw_headers, "Received")
     if isinstance(val, list):
         return [str(v).replace("\r\n", "\n").replace("\r", "\n").strip()
                 for v in val if str(v).strip()]
@@ -84,8 +86,8 @@ def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
     if len(path) == 1:
         flags.append("single-hop-suspicious")
     # forged sender: From domain vs Return-Path domain mismatch
-    rp_dom = _clean_domain(str(raw_headers.get("Return-Path", "")))
-    frm_dom = _clean_domain(str(raw_headers.get("From", "")))
+    rp_dom = _clean_domain(str(header_value(raw_headers, "Return-Path")))
+    frm_dom = _clean_domain(str(header_value(raw_headers, "From")))
     from .psl import same_organization
     # Same-organization comparison (PSL-aware): bounce@mail.company.com vs
     # ceo@company.com is legitimate; bounce@evil.test vs ceo@company.com
@@ -94,7 +96,7 @@ def detect_routing_anomalies(path: list[dict], raw_headers: dict) -> list[str]:
         flags.append("return-path-mismatch")
     # Message-ID domain vs From domain, compared by REGISTRABLE domain so
     # mail.paypal.com vs paypal.com no longer false-positives (Step 4).
-    mid_dom = _clean_domain(str(raw_headers.get("Message-ID", "")))
+    mid_dom = _clean_domain(str(header_value(raw_headers, "Message-ID")))
     if mid_dom and frm_dom and not same_organization(mid_dom, frm_dom):
         flags.append("message-id-mismatch")
     return flags

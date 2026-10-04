@@ -569,6 +569,68 @@ cross-tenant `domain:` / `campaign:` leak. Each tenancy test asserts the
 `ALL_TENANTS` variant still resolves the row, so a pass proves scoping rather
 than a broken lookup.
 
+### P0-10 — Header-name casing bypassed the whole header-forensics layer
+
+**Status:** resolved
+**Severity:** High (detection bypass; attacker-controlled)
+
+**Files**
+
+- `backend/app/modules/forensics/header_parser.py`
+- `backend/app/modules/ingestion/parser.py`
+- `backend/app/modules/forensics/received_chain.py`, `auth_validator.py`
+- `backend/app/modules/traceability/ip_extractor.py`
+- `backend/tests/test_forensics.py`
+
+**Issue**
+
+RFC 5322 §2.2 makes header field names case-insensitive, but
+`Message.raw_items()` preserves whatever the sender typed. `parse_eml()`
+copied those keys into `raw_headers` verbatim, and every consumer looked
+headers up by exact name. A sender could therefore pick the casing:
+
+- `fROM: attacker@evil.test` → `from_addr = ''`, which silently disabled
+  `display-name-spoof`, `reply-to-mismatch`, the punycode and lookalike
+  domain checks, and the From/Return-Path comparison in
+  `detect_routing_anomalies`. A spoofed From with a live Reply-To mismatch
+  scored clean.
+- `rECEIVED: …` → `split_received()` returned `[]`, so the hop chain
+  vanished: `missing-received-chain` fired as an artifact, `origin_ip` could
+  not be attributed from the chain, and the SPF/reputation checks that
+  consume it never ran. The Received chain is entirely sender-controlled
+  text, so this was the highest-value target of the three.
+- `From:` and `fROM:` in one message became two dict entries, so the
+  `multiple-from` spoofing signal never fired.
+- `X-ORIGINATING-IP` / `Authentication-Results` casing defeats
+  `ip_extractor`, which only tried `k` and `k.lower()`.
+
+`auth_validator` already had its own case-insensitive lookup, so this was
+four modules doing it four different ways — two of them not at all.
+
+**Change**
+
+- `header_parser` gains `canonical_header_name()` (a preferred spelling per
+  known header, sender casing preserved for anything unrecognised) and
+  `header_value()`, one case-insensitive accessor handling list values.
+- `parse_eml()` canonicalises keys through a lowercase→keyed map, so
+  duplicates differing only in case now merge. That fixes
+  `multiple-from` and `Received`-chain joining at the source rather than at
+  each call site.
+- `parse_headers`, `received_chain`, and `ip_extractor` all read through
+  `header_value()`; `auth_validator._get_header()` delegates to it and its
+  private copy is deleted.
+- `header_value()` scans case-insensitively as a fallback, so rows
+  persisted *before* this normalisation still resolve.
+
+The sender's original casing is no longer stored. That is deliberate: it is
+not consumed anywhere, and keeping it would mean every future lookup has to
+remember to be case-insensitive.
+
+**Tests** — `tests/test_forensics.py`, 5 new; all 5 fail pre-fix (the `fROM`
+case returns `from_addr=''`, `rECEIVED` returns zero hops, the duplicate
+`From` produces no flag, `header_value` does not exist, and
+`X-ORIGINATING-IP` yields no IPs).
+
 ## Still open
 
 ### From this audit
@@ -589,8 +651,6 @@ than a broken lookup.
   endpoint is added first. **Needs a product decision, so not started.**
 - `masking.py:19,17` — the E164 pattern spans newlines and the card pattern
   backtracks. Real; not yet fixed.
-- `header_parser.py:32-37` — `fROM`-style casing yields `from_addr=''`, a
-  header-identity bypass. Real; not yet fixed.
 - MISP residuals in `feeds.py`: unbounded `_MISP_CACHE` growth (`:162`) and a
   silent 30-value truncation (`MISP_VALUE_CAP`) against inputs of up to 60,
   which contradicts the "coverage identical" comment.

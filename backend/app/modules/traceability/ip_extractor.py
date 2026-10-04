@@ -16,6 +16,8 @@ import os
 import re
 from typing import Any
 
+from ..forensics.header_parser import header_value
+
 # Candidate IPs (v4 + v6). The lookbehind pins each match to the start of a
 # run so findall cannot re-scan it per offset; without it a long colon-free
 # hex run is quadratic (~28s at 64KB). Every candidate is validated by
@@ -72,7 +74,7 @@ def _extract_header_ips(raw_headers: dict[str, Any] | None) -> list[str]:
         "True-Client-IP",
     ]
     for k in header_keys:
-        val = raw_headers.get(k) or raw_headers.get(k.lower())
+        val = header_value(raw_headers, k)
         if val:
             if isinstance(val, list):
                 for v in val:
@@ -83,7 +85,7 @@ def _extract_header_ips(raw_headers: dict[str, Any] | None) -> list[str]:
     # 2. Authentication-Results and Received-SPF client-ip values
     auth_keys = ["Received-SPF", "Authentication-Results", "ARC-Authentication-Results"]
     for k in auth_keys:
-        val = raw_headers.get(k) or raw_headers.get(k.lower())
+        val = header_value(raw_headers, k)
         if val:
             text = " ".join(val) if isinstance(val, list) else str(val)
             for m in re.finditer(r"(?:client-ip|sender IP is)\s*=?\s*([^\s;,\)]+)", text, re.I):

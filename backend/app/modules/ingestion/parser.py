@@ -15,6 +15,8 @@ import re
 from email.message import Message
 from typing import Any
 
+from ..forensics.header_parser import canonical_header_name
+
 MAX_EML_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS = 20
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -88,12 +90,22 @@ def parse_eml(raw: bytes) -> dict[str, Any]:
         raise ValueError(f"malformed message: {e}")
 
     raw_headers: dict[str, str] = {}
+    # Header names are case-insensitive (RFC 5322 2.2) but msg.raw_items()
+    # preserves whatever the sender typed, so `fROM:` and `From:` used to
+    # become two entries: parsers that look a header up by exact name saw
+    # nothing, and the duplicate-detection below missed the extra From.
+    seen_names: dict[str, str] = {}
     for k, v in msg.raw_items():
+        name = str(k).strip()
+        low = name.lower()
+        key = seen_names.get(low)
+        if key is None:
+            key = seen_names[low] = canonical_header_name(name)
         # keep first occurrence + join duplicates for Received chains
-        if k in raw_headers:
-            raw_headers[k] = raw_headers[k] + "\n" + str(v)
+        if key in raw_headers:
+            raw_headers[key] = raw_headers[key] + "\n" + str(v)
         else:
-            raw_headers[k] = str(v)
+            raw_headers[key] = str(v)
 
     subject = str(msg.get("Subject", ""))
     sender = str(msg.get("From", ""))

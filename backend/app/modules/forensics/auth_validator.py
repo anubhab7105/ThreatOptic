@@ -125,16 +125,9 @@ def _clean_domain(raw: str) -> str:
 
 
 def _get_header(raw_headers: dict, name: str) -> str:
-    """Case-insensitive header retrieval from raw headers dictionary."""
-    if not isinstance(raw_headers, dict):
-        return ""
-    if name in raw_headers:
-        return str(raw_headers[name] or "")
-    target = name.lower()
-    for k, v in raw_headers.items():
-        if str(k).lower() == target:
-            return str(v or "")
-    return ""
+    """Case-insensitive header retrieval (shared helper)."""
+    from .header_parser import header_value
+    return header_value(raw_headers, name)
 
 
 def _return_path_domain(raw_headers: dict) -> str:

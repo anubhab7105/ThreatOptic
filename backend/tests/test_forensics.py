@@ -1,6 +1,7 @@
 """Forensics module unit tests (F11): header parsing edge cases."""
 from app.modules.forensics.header_parser import parse_headers
 from app.modules.forensics.received_chain import detect_routing_anomalies, reconstruct_path
+from app.modules.ingestion.parser import parse_eml
 
 
 def test_reconstruct_empty_and_single():
@@ -349,3 +350,72 @@ def test_trusted_upstream_still_substitutes_for_unverifiable(monkeypatch):
     assert out["upstream_trusted"] is True
     assert out["spf"]["status"] == "softfail"
     assert "trusted-upstream" in out["spf"]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Header names are case-insensitive (RFC 5322 2.2). msg.raw_items() preserves
+# the sender's casing, so `fROM:` / `rECEIVED:` used to blank the parsed value
+# and silently disable every detection derived from that header.
+# ---------------------------------------------------------------------------
+
+_CASING_VARIANTS = ["From", "fROM", "FrOm", "FROM", "from"]
+
+
+def _raw(from_name="From", recv_name="Received"):
+    return (
+        f"{from_name}: attacker@evil.test\n"
+        "Reply-To: ceo@bank.co.uk\n"
+        "Return-Path: <bounce@evil-relay.test>\n"
+        f"{recv_name}: from a.evil.test (a.evil.test [203.0.113.7]) by mx.good.test;\n"
+        "Subject: wire transfer\n\nbody"
+    ).encode()
+
+
+def test_from_header_casing_does_not_blind_header_forensics():
+    for name in _CASING_VARIANTS:
+        out = parse_headers(parse_eml(_raw(from_name=name))["raw_headers"])
+        assert out["from_addr"] == "attacker@evil.test", (name, out)
+        # every From-derived check must still fire
+        assert "reply-to-mismatch" in out["flags"], (name, out["flags"])
+        # and the From/Return-Path comparison in the routing checks
+        assert "return-path-mismatch" in detect_routing_anomalies(
+            [{"ips": ["1.1.1.1"]}],
+            parse_eml(_raw(from_name=name))["raw_headers"]), name
+
+
+def test_received_header_casing_does_not_hide_the_hop_chain():
+    for name in ["Received", "rECEIVED", "received", "RECEIVED"]:
+        p = parse_eml(_raw(recv_name=name))
+        hops = reconstruct_path(p["raw_headers"])
+        assert len(hops) == 1, (name, hops)
+        assert hops[0]["ips"] == ["203.0.113.7"], (name, hops)
+
+
+def test_duplicate_from_with_differing_case_is_still_multiple_from():
+    """Exact-case key comparison split `From:` and `fROM:` into two entries,
+    so the spoofing signal the duplicate itself represents was lost."""
+    raw = b"From: victim@bank.co.uk\nfROM: attacker@evil.test\nSubject: t\n\nb"
+    out = parse_headers(parse_eml(raw)["raw_headers"])
+    assert "multiple-from" in out["flags"], out
+
+
+def test_header_value_is_case_insensitive_for_stored_rows():
+    """Rows persisted before parse_eml normalised the keys must still resolve."""
+    from app.modules.forensics.header_parser import header_value
+
+    stored = {"fROM": "attacker@evil.test", "rECEIVED": "from a ([1.2.3.4])"}
+    assert header_value(stored, "From") == "attacker@evil.test"
+    assert header_value(stored, "Received") == "from a ([1.2.3.4])"
+    assert header_value(stored, "Missing") == ""
+    assert header_value(None, "From") == ""
+    assert header_value({"From": ["a@x.test", "b@x.test"]}, "From") == "a@x.test\nb@x.test"
+
+
+def test_ip_extraction_ignores_header_name_casing():
+    from app.modules.traceability.ip_extractor import _extract_header_ips
+
+    for name in ["X-Originating-IP", "x-originating-ip", "X-ORIGINATING-IP"]:
+        assert _extract_header_ips({name: "203.0.113.9"}) == ["203.0.113.9"], name
+    for name in ["Authentication-Results", "authentication-results"]:
+        got = _extract_header_ips({name: "mx.g.test; client-ip=203.0.113.10"})
+        assert got == ["203.0.113.10"], (name, got)
