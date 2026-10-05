@@ -19,3 +19,19 @@ k8s/secret.yaml
 backend/email_forensics.db
 backend/retention_audit.log
 .pytest_cache/
+.coverage
+htmlcov/
+build/
+coverage/
+
+# OS and IDE files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node/npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
