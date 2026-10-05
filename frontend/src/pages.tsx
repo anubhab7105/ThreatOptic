@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiError, assertIdpUrl, downloadReport, jdel, jget, jpatch, jpost, pollTask, uploadEmFile } from './api';
 import { useAuth } from './auth';
 import { AuthPill, CopyButton, PasswordToggle } from './components';
@@ -120,7 +120,8 @@ export function LoginPage() {
     canonical: '/login',
     image: 'https://socforensics.io/og-image.svg',
   });
-  const { login, register } = useAuth();
+  const { login, register, user } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -128,14 +129,22 @@ export function LoginPage() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // If auth state resolves to signed-in while on /login (e.g. session
+  // restore), leave /login — the authed Shell has no /login route.
+  useEffect(() => {
+    if (user) navigate('/dashboard', { replace: true });
+  }, [user, navigate]);
+
   const submit = async () => {
     if (!email.trim() || !password) return;
     setBusy(true);
     setErr('');
     setNotice('');
     try {
-      if (mode === 'login') await login(email.trim(), password);
-      else {
+      if (mode === 'login') {
+        await login(email.trim(), password);
+        navigate('/dashboard', { replace: true });
+      } else {
         const res = await register(email.trim(), password);
         if (res.needsConfirmation) setNotice('Account created — check your email to confirm, then sign in.');
       }

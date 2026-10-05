@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { KeyboardShortcuts, useKeyboardShortcuts } from './components';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import './theme.css';
 import { AuthProvider, useAuth } from './auth';
 import { ThemeProvider, useTheme } from './theme';
@@ -476,6 +476,8 @@ useEffect(() => {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsConditions />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              {/* Signed-in users have no /login page — redirect instead of 404. */}
+              <Route path="/login" element={<Navigate to="/dashboard" replace />} />
               {import.meta.env.DEV ? <Route path="/design-system" element={<DesignSystem />} /> : null}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
