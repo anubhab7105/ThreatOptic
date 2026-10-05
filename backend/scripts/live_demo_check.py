@@ -4,12 +4,17 @@ Verifies everything a judge will touch, in order:
   1. environment/keys (offline; unit-testable via check_env())
   2. API liveness + detailed health (needs the backend running)
   3. authenticated end-to-end: login -> ingest -> breakdown -> campaigns ->
-     model metrics (needs seeded admin/admin123 or --username/--password)
+     model metrics (needs --username/--password or DEMO_USERNAME/DEMO_PASSWORD)
 
 Usage:
     python backend/scripts/live_demo_check.py [--api http://localhost:8000]
-    python backend/scripts/live_demo_check.py --api http://localhost:8000 -u admin -p admin123
+    python backend/scripts/live_demo_check.py --api http://localhost:8000 -u <username> -p <password>
+    DEMO_USERNAME=<username> DEMO_PASSWORD=<password> python backend/scripts/live_demo_check.py
 Exit code 0 = demo-ready, 1 = something needs attention (all findings printed).
+
+Credentials are never hard-coded: pass --username/--password explicitly or via
+the DEMO_USERNAME / DEMO_PASSWORD environment variables (see .env.example).
+The password is only held in memory for the login request and is never logged.
 """
 import argparse
 import os
@@ -44,8 +49,10 @@ def _line(ok: bool, msg: str, checks: list) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8000")
-    ap.add_argument("-u", "--username", default="admin")
-    ap.add_argument("-p", "--password", default="admin123")
+    # No hard-coded credentials: defaults come from the environment so the
+    # password never lives in source control. CLI flags override the env.
+    ap.add_argument("-u", "--username", default=os.environ.get("DEMO_USERNAME", ""))
+    ap.add_argument("-p", "--password", default=os.environ.get("DEMO_PASSWORD", ""))
     ap.add_argument("--env-only", action="store_true")
     args = ap.parse_args()
 
@@ -77,6 +84,10 @@ def main() -> int:
         return 1
 
     try:
+        if not args.username or not args.password:
+            _line(False, "demo credentials missing: pass --username/--password or set DEMO_USERNAME/DEMO_PASSWORD (password is never logged)", checks)
+            print("ATTENTION NEEDED")
+            return 1
         tok = httpx.post(f"{base}/api/v1/auth/login",
                          json={"username": args.username, "password": args.password},
                          timeout=10).json()["access_token"]

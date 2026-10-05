@@ -55,6 +55,11 @@ TRUTHY_VALUES = {"1", "true", "yes", "on"}
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_env_path, extra="ignore")
 
+    # Ordinary (non-secret) configuration with safe in-code defaults.
+    # Each field is overridden by its UPPER_SNAKE env name (APP_NAME,
+    # API_PREFIX, FRONTEND_URL, GOOGLE_REDIRECT_URI, CORS_ORIGINS, ...),
+    # so deployments customize via the environment / root .env (see
+    # .env.example) instead of editing code. No secrets live here.
     app_name: str = "Email Threat & Forensics Platform"
     api_prefix: str = "/api/v1"
     # No default: must be provisioned via env/secrets manager. Startup
@@ -73,6 +78,8 @@ class Settings(BaseSettings):
 
     # Comma-separated browser origins allowed to call the API. Credentials
     # are only safe with an explicit list — never "*".
+    # Non-secret default; override via CORS_ORIGINS in the environment for any
+    # deployment whose frontend origin differs (see .env.example).
     cors_origins: str = "https://email-scanner-chi.vercel.app"
     # Optional regex origins for hosts that cannot be enumerated, e.g.
     # `https://[a-z0-9-]+\.vercel\.app` for per-PR Vercel preview deploys.
@@ -190,12 +197,14 @@ class Settings(BaseSettings):
     custody_key_previous: str = ""
 
     # Gmail OAuth2 demo connector (optional; per-request overrides also accepted).
+    # Non-secret default; override via GOOGLE_REDIRECT_URI in the environment.
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "https://email-scanner-chi.vercel.app"
 
     # Organization mailbox polling (F7): Microsoft Graph credentials,
     # frontend base URL for OAuth callbacks, poll interval (0 = disabled).
+    # FRONTEND_URL default is non-secret; override per deployment via env.
     ms_client_id: str = ""
     ms_client_secret: str = ""
     frontend_url: str = "https://email-scanner-chi.vercel.app"
