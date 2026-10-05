@@ -1,49 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://socforensics.io/</loc>
+    <loc>https://email-scanner-chi.vercel.app/</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/campaigns</loc>
+    <loc>https://email-scanner-chi.vercel.app/campaigns</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/cases</loc>
+    <loc>https://email-scanner-chi.vercel.app/cases</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/mailboxes</loc>
+    <loc>https://email-scanner-chi.vercel.app/mailboxes</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/model</loc>
+    <loc>https://email-scanner-chi.vercel.app/model</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/privacy</loc>
+    <loc>https://email-scanner-chi.vercel.app/privacy</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/terms</loc>
+    <loc>https://email-scanner-chi.vercel.app/terms</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://socforensics.io/login</loc>
+    <loc>https://email-scanner-chi.vercel.app/login</loc>
     <lastmod>2026-09-25</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>

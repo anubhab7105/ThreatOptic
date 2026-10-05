@@ -2,7 +2,7 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://socforensics.io/sitemap.xml
+Sitemap: https://email-scanner-chi.vercel.app/sitemap.xml
 
 # LLM crawlers
 User-agent: GPTBot

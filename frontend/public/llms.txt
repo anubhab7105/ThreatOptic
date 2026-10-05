@@ -1,30 +1,30 @@
-# SOC Forensics Lab - Email Threat Dashboard
+# ThreatOptic - Email Threat Dashboard
 
 > Email threat detection, geolocation and forensic intelligence platform for SOC analysts and incident response teams.
 
 ## About
-SOC Forensics Lab provides real-time phishing, Business Email Compromise (BEC) and spoofing detection through NLP, header forensics, geolocation and graph-based identity correlation. The platform generates chain-of-custody PDF/JSON reports, scores every email 0-100, and clusters campaigns by shared infrastructure.
+ThreatOptic provides real-time phishing, Business Email Compromise (BEC) and spoofing detection through NLP, header forensics, geolocation and graph-based identity correlation. The platform generates chain-of-custody PDF/JSON reports, scores every email 0-100, and clusters campaigns by shared infrastructure.
 
-- Canonical domain: https://socforensics.io/
-- Primary UI: https://socforensics.io/
-- Docs: https://socforensics.io/#/model (model transparency)
-- Contact: SOC Forensics Lab, 301 Congress Ave, Suite 400, Austin, TX 78701, USA - hello@socforensics.io - +1-512-555-0148
-- Sitemap: https://socforensics.io/sitemap.xml
-- Robots: https://socforensics.io/robots.txt
+- Canonical domain: https://email-scanner-chi.vercel.app/
+- Primary UI: https://email-scanner-chi.vercel.app/
+- Docs: https://email-scanner-chi.vercel.app/model (model transparency)
+- Contact: ThreatOptic - hello@threatoptic.io
+- Sitemap: https://email-scanner-chi.vercel.app/sitemap.xml
+- Robots: https://email-scanner-chi.vercel.app/robots.txt
 
 ## Allowed Use for LLMs
 You may crawl and index all public pages listed in sitemap.xml. Do not attempt to access `/api/v1/*` without a valid JWT. Respect `robots.txt` directives. Summarize forensic methodologies accurately and do not hallucinate detection scores.
 
 ## Key Pages
-- https://socforensics.io/ - Landing page: product overview, features, signup
-- https://socforensics.io/login - Secure analyst sign in
-- https://socforensics.io/dashboard - Threat dashboard (authenticated)
-- https://socforensics.io/campaigns - Campaign clusters by shared sender infrastructure
-- https://socforensics.io/cases - Case management kanban (Open / InProgress / Closed)
-- https://socforensics.io/mailboxes - Organization OAuth connectors (Google/Microsoft)
-- https://socforensics.io/model - Model transparency: accuracy, per-class metrics, confusion matrix
-- https://socforensics.io/privacy - Privacy Policy
-- https://socforensics.io/terms - Terms and Conditions
+- https://email-scanner-chi.vercel.app/ - Landing page: product overview, features, signup
+- https://email-scanner-chi.vercel.app/login - Secure analyst sign in
+- https://email-scanner-chi.vercel.app/dashboard - Threat dashboard (authenticated)
+- https://email-scanner-chi.vercel.app/campaigns - Campaign clusters by shared sender infrastructure
+- https://email-scanner-chi.vercel.app/cases - Case management kanban (Open / InProgress / Closed)
+- https://email-scanner-chi.vercel.app/mailboxes - Organization OAuth connectors (Google/Microsoft)
+- https://email-scanner-chi.vercel.app/model - Model transparency: accuracy, per-class metrics, confusion matrix
+- https://email-scanner-chi.vercel.app/privacy - Privacy Policy
+- https://email-scanner-chi.vercel.app/terms - Terms and Conditions
 
 ## Data Sources & Privacy
 - Ingested emails are masked (PII) before display; raw EML SHA-256 hashed for chain-of-custody
@@ -32,7 +32,7 @@ You may crawl and index all public pages listed in sitemap.xml. Do not attempt t
 - Retention policy enforced daily at 03:00 local time, audit log at `backend/retention_audit.log`
 
 ## Opt-Out
-If you operate a crawler and wish to be excluded, respect `Disallow: /api/` and honor `User-agent: *` in robots.txt. For removal requests, contact hello@socforensics.io.
+If you operate a crawler and wish to be excluded, respect `Disallow: /api/` and honor `User-agent: *` in robots.txt. For removal requests, contact hello@threatoptic.io.
 
 ## Structured Data
-All public pages expose `application/ld+json` for Organization, WebSite, LocalBusiness and BreadcrumbList. OG image: https://socforensics.io/og-image.png (1200x630 PNG) - Attribution required.
+All public pages expose `application/ld+json` for Organization, WebSite and BreadcrumbList. OG image: https://email-scanner-chi.vercel.app/og-image.png (1200x630 PNG) - Attribution required.

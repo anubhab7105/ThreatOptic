@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: email-forensics-backend
+  name: threatoptic-backend
 spec:
   # F8 constraint: replicas > 1 share NO in-memory state. The attribution
   # graph, the rate-limit counters, app.cache and _MISP_CACHE are all
@@ -14,10 +14,10 @@ spec:
   # the network to an external rate-limit store.
   replicas: 1
   selector:
-    matchLabels: { app: email-forensics-backend }
+    matchLabels: { app: threatoptic-backend }
   template:
     metadata:
-      labels: { app: email-forensics-backend }
+      labels: { app: threatoptic-backend }
     spec:
       securityContext:
         runAsNonRoot: true
@@ -29,25 +29,25 @@ spec:
           # RELEASE: images are immutable release tags (never :latest).
           # The release pipeline retags the tested image and,
           # where the registry supports it, pins the digest, e.g.
-          #   email-forensics-backend:1.0.0@sha256:<digest from the push>
-          image: email-forensics-backend:1.0.0
+          #   threatoptic-backend:1.0.0@sha256:<digest from the push>
+          image: threatoptic-backend:1.0.0
           imagePullPolicy: IfNotPresent
           ports: [{ containerPort: 8000 }]
           env:
             - name: DATABASE_URL
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: database-url } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: database-url } }
             - name: NEO4J_URI
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-uri } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: neo4j-uri } }
             - name: NEO4J_USER
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-user } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: neo4j-user } }
             - name: NEO4J_PASSWORD
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: neo4j-password } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: neo4j-password } }
             - name: SECRET_KEY
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: secret-key } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: secret-key } }
             - name: CUSTODY_KEY
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: custody-key } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: custody-key } }
             - name: TOKEN_ENCRYPTION_KEY
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: token-encryption-key } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: token-encryption-key } }
             - name: ELASTICSEARCH_URL
               # P0: credentials (basic_auth) cross this connection — plaintext
               # http is refused at boot in production (see require_secrets).
@@ -55,7 +55,7 @@ spec:
             - name: ELASTICSEARCH_USER
               value: "elastic"
             - name: ELASTICSEARCH_PASSWORD
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: elastic-password } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: elastic-password } }
             - name: APP_ENV
               value: "production"
             - name: EXPECTED_REPLICAS
@@ -63,17 +63,17 @@ spec:
               # graph_consistency_note() fire and attribution diverge.
               value: "1"
             - name: CORS_ORIGINS
-              value: "https://socforensics.io"
+              value: "https://email-scanner-chi.vercel.app"
             - name: FRONTEND_URL
-              value: "https://socforensics.io"
+              value: "https://email-scanner-chi.vercel.app"
             - name: GOOGLE_CLIENT_ID
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: google-client-id, optional: true } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: google-client-id, optional: true } }
             - name: GOOGLE_CLIENT_SECRET
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: google-client-secret, optional: true } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: google-client-secret, optional: true } }
             - name: MS_CLIENT_ID
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: ms-client-id, optional: true } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: ms-client-id, optional: true } }
             - name: MS_CLIENT_SECRET
-              valueFrom: { secretKeyRef: { name: soc-secrets, key: ms-client-secret, optional: true } }
+              valueFrom: { secretKeyRef: { name: threatoptic-secrets, key: ms-client-secret, optional: true } }
           livenessProbe:
             httpGet: { path: /health, port: 8000 }
             initialDelaySeconds: 20
@@ -99,29 +99,29 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: email-forensics-backend
+  name: threatoptic-backend
 spec:
-  selector: { app: email-forensics-backend }
+  selector: { app: threatoptic-backend }
   ports: [{ port: 8000, targetPort: 8000 }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: email-forensics-ingress
+  name: threatoptic-ingress
   annotations:
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["socforensics.io"]
-      secretName: socforensics-tls
+    - hosts: ["email-scanner-chi.vercel.app"]
+      secretName: threatoptic-tls
   rules:
-    - host: socforensics.io
+    - host: email-scanner-chi.vercel.app
       http:
         paths:
           - path: /api
             pathType: Prefix
-            backend: { service: { name: email-forensics-backend, port: { number: 8000 } } }
+            backend: { service: { name: threatoptic-backend, port: { number: 8000 } } }
           - path: /health
             pathType: Exact
-            backend: { service: { name: email-forensics-backend, port: { number: 8000 } } }
+            backend: { service: { name: threatoptic-backend, port: { number: 8000 } } }

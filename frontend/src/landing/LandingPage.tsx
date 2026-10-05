@@ -18,7 +18,7 @@ import {
 } from './sampleData';
 import './landing.css';
 
-const CANONICAL_BASE = 'https://socforensics.io';
+const CANONICAL_BASE = 'https://email-scanner-chi.vercel.app';
 
 function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
@@ -346,7 +346,7 @@ export function LandingPage() {
     title: 'ThreatOptic | See the attack behind every email',
     description: 'Score suspicious emails, dissect their headers, trace their origin and map who they connect to — in one explainable workspace.',
     canonical: '/',
-    image: 'https://socforensics.io/og-image.png',
+    image: 'https://email-scanner-chi.vercel.app/og-image.png',
   });
   const rootRef = useReveal();
   const [drawerOpen, setDrawerOpen] = useState(false);

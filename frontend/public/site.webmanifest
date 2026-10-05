@@ -1,6 +1,6 @@
 {
-  "name": "SOC Forensics — Email Threat Dashboard",
-  "short_name": "SOC Forensics",
+  "name": "ThreatOptic — Email Threat Dashboard",
+  "short_name": "ThreatOptic",
   "description": "AI-powered email threat detection, geolocation and forensic intelligence for SOC analysts.",
   "start_url": "/",
   "display": "standalone",

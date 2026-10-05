@@ -1,6 +1,6 @@
-# PowerShell launcher for Email Threat & Forensics Platform
+# PowerShell launcher for ThreatOptic - Email Threat & Forensics Platform
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "   Starting Email Threat & Forensics Platform      " -ForegroundColor Cyan
+Write-Host "   Starting ThreatOptic - Email Threat Platform  " -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 
 $Root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }

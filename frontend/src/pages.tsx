@@ -6,7 +6,7 @@ import { AuthPill, CopyButton, PasswordToggle } from './components';
 import { Alert, Badge, Button, Card, Drawer, EmptyState, ErrorState, Input, Modal, SegmentedControl, Select, SeverityBadge, SeverityIcon, Skeleton, SortTh, Spinner, StatusIndicator, Table, Tabs, Textarea, Toggle, Tooltip, Well } from './primitives';
 import { useChartTheme } from './useChartTheme';
 
-const CANONICAL_BASE = 'https://socforensics.io';
+const CANONICAL_BASE = 'https://email-scanner-chi.vercel.app';
 
 function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/<\//g, '<\\/');
@@ -105,7 +105,7 @@ function InternalLinks({ current }: { current: string }) {
         ))}
       </div>
       <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-        Also: <a href="/sitemap.xml">Sitemap</a> · <a href="/robots.txt">Robots</a> · <a href="/llms.txt">LLMs</a> · <a href="https://socforensics.io/">socforensics.io</a>
+        Also: <a href="/sitemap.xml">Sitemap</a> · <a href="/robots.txt">Robots</a> · <a href="/llms.txt">LLMs</a> · <a href="https://email-scanner-chi.vercel.app/">ThreatOptic live demo</a>
       </div>
     </div>
   );
@@ -115,10 +115,10 @@ function InternalLinks({ current }: { current: string }) {
 
 export function LoginPage() {
   usePageMeta({
-    title: 'Sign In - SOC Forensics Lab | Secure Analyst Access',
+    title: 'Sign In - ThreatOptic | Secure Analyst Access',
     description: 'JWT-secured sign in for SOC analysts. Access the email threat dashboard with forensic intelligence, geolocation and chain-of-custody reporting.',
     canonical: '/login',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const { login, register, user } = useAuth();
   const navigate = useNavigate();
@@ -220,7 +220,7 @@ export function LoginPage() {
       </div>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Sign In - ThreatOptic',
         description: 'Secure analyst sign-in for the forensic intelligence platform',
         url: `${CANONICAL_BASE}/login`, isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -571,10 +571,10 @@ type EmailRow = {
 
 export function Dashboard() {
   usePageMeta({
-    title: 'Global Threat Dashboard - SOC Forensics Lab | Real-Time Email Threats',
+    title: 'Global Threat Dashboard - ThreatOptic | Real-Time Email Threats',
     description: 'Real-time phishing, BEC and spoofing detection across ingested mail. Analyze emails, view fraud scores, track campaigns and export chain-of-custody reports.',
     canonical: '/',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const [stats, setStats] = useState<any>(null);
   const [emails, setEmails] = useState<EmailRow[]>([]);
@@ -1041,7 +1041,7 @@ export function Dashboard() {
 
       <InternalLinks current="/" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Global Threat Dashboard - ThreatOptic',
         description: 'Real-time phishing and BEC detection dashboard', url: `${CANONICAL_BASE}/`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -1560,10 +1560,10 @@ export function EmailView({ id }: { id: string }) {
   const subject = d?.email?.subject || '(no subject)';
   const fraudScore = d?.analysis?.fraud_score ?? 0;
   usePageMeta({
-    title: d ? `${subject} - Score ${fraudScore} - SOC Forensics Lab` : `Email Forensics - SOC Forensics Lab`,
+    title: d ? `${subject} - Score ${fraudScore} - ThreatOptic` : `ThreatOptic`,
     description: d ? `Forensic analysis for "${subject}" - classification ${d.analysis?.threat_classification || 'unknown'}, action ${d.analysis?.action_taken || '-'}, authentication and geolocation trace.` : 'Email forensic detail with header chain, geolocation and identity graph.',
     canonical: `/email/${id}`,
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
 
   useEffect(() => {
@@ -1855,10 +1855,10 @@ export function EmailView({ id }: { id: string }) {
 
 export function Campaigns() {
   usePageMeta({
-    title: 'Campaigns - Shared Infrastructure Clusters - SOC Forensics Lab',
+    title: 'Campaigns - Shared Infrastructure Clusters - ThreatOptic',
     description: 'Graph-detected campaign clusters sharing sender infrastructure, domains and IPs. Analyze confidence, attribution and forensic timelines.',
     canonical: '/campaigns',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1916,7 +1916,7 @@ export function Campaigns() {
       )}
       <InternalLinks current="/campaigns" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'CollectionPage', name: 'Campaigns - ThreatOptic',
         description: 'Shared infrastructure campaign clusters', url: `${CANONICAL_BASE}/campaigns`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -1929,10 +1929,10 @@ export function CampaignDetail({ id }: { id: string }) {
   const [err, setErr] = useState('');
   const cardName = d?.card?.name || `Campaign ${id.slice(0, 8)}`;
   usePageMeta({
-    title: `${cardName} - Campaign Detail - SOC Forensics Lab`,
+    title: `${cardName} - Campaign Detail - ThreatOptic`,
     description: d ? `Campaign ${cardName} with ${d.card.email_count} emails, confidence ${Math.round(d.card.confidence * 100)}%, shared IP ${d.card.ip}. Attribution graph and email list.` : 'Campaign attribution detail with graph and forensic emails.',
     canonical: `/campaign/${id}`,
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   useEffect(() => {
     setD(null);
@@ -2000,10 +2000,10 @@ export function CampaignDetail({ id }: { id: string }) {
 
 export function ModelInfo() {
   usePageMeta({
-    title: 'Model Transparency & Metrics - SOC Forensics Lab',
+    title: 'Model Transparency & Metrics - ThreatOptic',
     description: 'Phishing/BEC/clean classifier transparency: accuracy, macro F1, per-class precision/recall and confusion matrix from held-out evaluation.',
     canonical: '/model',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const [m, setM] = useState<any>(null);
   const [err, setErr] = useState('');
@@ -2109,7 +2109,7 @@ export function ModelInfo() {
       </Card>
       <InternalLinks current="/model" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'Model Transparency - ThreatOptic',
         description: 'Classifier evaluation metrics and confusion matrix', url: `${CANONICAL_BASE}/model`,
         author: { '@id': `${CANONICAL_BASE}/#organization` }
       })}} />
@@ -2121,10 +2121,10 @@ export function ModelInfo() {
 
 export function Mailboxes() {
   usePageMeta({
-    title: 'Mailboxes - OAuth Connectors - SOC Forensics Lab',
+    title: 'Mailboxes - OAuth Connectors - ThreatOptic',
     description: 'Organization-level OAuth connectors for Google and Microsoft mailboxes with encrypted refresh tokens, polling and manual sync.',
     canonical: '/mailboxes',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const [conns, setConns] = useState<any[]>([]);
   const [err, setErr] = useState('');
@@ -2342,7 +2342,7 @@ export function Mailboxes() {
         </Modal>
       ) : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Mailboxes - ThreatOptic',
         description: 'OAuth mailbox connectors', url: `${CANONICAL_BASE}/mailboxes`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -2383,10 +2383,10 @@ function useLayoutMode(): 'desktop' | 'tablet' | 'mobile' {
 
 export function Cases() {
   usePageMeta({
-    title: 'Case Management - Kanban Board - SOC Forensics Lab',
+    title: 'Case Management - Kanban Board - ThreatOptic',
     description: 'Track forensic investigations from triage to closure. Kanban board for Open, In Progress and Closed cases with email linkage.',
     canonical: '/cases',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   const { user } = useAuth();
   const isAdmin = user?.role === 'Admin';
@@ -2617,7 +2617,7 @@ export function Cases() {
       ) : null}
       <InternalLinks current="/cases" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Case Management - ThreatOptic',
         description: 'Kanban case management for forensic investigations', url: `${CANONICAL_BASE}/cases`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -2629,16 +2629,16 @@ export function Cases() {
 
 export function PrivacyPolicy() {
   usePageMeta({
-    title: 'Privacy Policy - SOC Forensics Lab',
-    description: 'How SOC Forensics Lab handles email data, cookies, and analyst accounts. Retention, masking, and your rights.',
+    title: 'Privacy Policy - ThreatOptic',
+    description: 'How ThreatOptic handles email data, cookies, and analyst accounts. Retention, masking, and your rights.',
     canonical: '/privacy',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Privacy Policy' }]} />
       <h1>Privacy Policy</h1>
-      <p className="sub">Effective 20 Sep 2026 - SOC Forensics Lab, 301 Congress Ave, Austin, TX 78701. Contact hello@socforensics.io</p>
+      <p className="sub">Effective 20 Sep 2026 - ThreatOptic. Contact hello@threatoptic.io</p>
       <div className="card">
         <h3>What we collect</h3>
         <p>Analyst credentials (email, role via Supabase Auth), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
@@ -2647,14 +2647,14 @@ export function PrivacyPolicy() {
         <h3>Cookies</h3>
         <p>Essential cookies keep you signed in (in-memory JWT, not localStorage) and remember theme and consent choice. No advertising cookies. Analytics is off by default. Use the banner to accept or decline essential storage.</p>
         <h3>Your rights</h3>
-        <p>Request access or deletion of your analyst account and ingested data via hello@socforensics.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
+        <p>Request access or deletion of your analyst account and ingested data via hello@threatoptic.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
         <h3>Data location</h3>
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
       </div>
       <InternalLinks current="/privacy" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - SOC Forensics Lab',
-        description: 'Privacy policy for SOC Forensics Lab', url: `${CANONICAL_BASE}/privacy`,
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Privacy Policy - ThreatOptic',
+        description: 'Privacy policy for ThreatOptic', url: `${CANONICAL_BASE}/privacy`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>
@@ -2665,16 +2665,16 @@ export function PrivacyPolicy() {
 
 export function TermsConditions() {
   usePageMeta({
-    title: 'Terms and Conditions - SOC Forensics Lab',
-    description: 'Terms for using the SOC Forensics email threat platform. Acceptable use, liability, and reporting.',
+    title: 'Terms and Conditions - ThreatOptic',
+    description: 'Terms for using the ThreatOptic email threat platform. Acceptable use, liability, and reporting.',
     canonical: '/terms',
-    image: 'https://socforensics.io/og-image.svg',
+    image: 'https://email-scanner-chi.vercel.app/og-image.svg',
   });
   return (
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Terms and Conditions' }]} />
       <h1>Terms and Conditions</h1>
-      <p className="sub">Effective 20 Sep 2026 - Use of socforensics.io is governed by these terms.</p>
+      <p className="sub">Effective 20 Sep 2026 - Use of ThreatOptic is governed by these terms.</p>
       <div className="card">
         <h3>Acceptable use</h3>
         <p>Upload only mail you are authorized to analyze. Do not ingest illegal content or attempt to bypass authentication, retrain the classifier without approval, or scrape threat intel feeds.</p>
@@ -2683,14 +2683,14 @@ export function TermsConditions() {
         <h3>Availability</h3>
         <p>Service is provided as-is. The team may update scoring weights, retention, and polling intervals. Check Model Transparency for current metrics.</p>
         <h3>Liability</h3>
-        <p>To the full extent permitted by law, SOC Forensics Lab is not liable for indirect damages from missed or flagged mail.</p>
+        <p>To the full extent permitted by law, ThreatOptic is not liable for indirect damages from missed or flagged mail.</p>
         <h3>Contact</h3>
-        <p>Questions: hello@socforensics.io. Postal: 301 Congress Ave, Suite 400, Austin, TX 78701.</p>
+        <p>Questions: hello@threatoptic.io.</p>
       </div>
       <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - SOC Forensics Lab',
-        description: 'Terms and conditions for SOC Forensics Lab', url: `${CANONICAL_BASE}/terms`,
+        '@context': 'https://schema.org', '@type': 'WebPage', name: 'Terms and Conditions - ThreatOptic',
+        description: 'Terms and conditions for ThreatOptic', url: `${CANONICAL_BASE}/terms`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
     </div>

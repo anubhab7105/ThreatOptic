@@ -25,7 +25,7 @@ const TermsConditions = lazy(() => import('./pages').then(m => ({ default: m.Ter
 const DesignSystem = lazy(() => import('./designSystem').then(m => ({ default: m.DesignSystem })));
 
 // Canonical domain - custom domain configured via CNAME / Cloudflare (see frontend/public/CNAME)
-const CANONICAL_BASE = 'https://socforensics.io';
+const CANONICAL_BASE = 'https://email-scanner-chi.vercel.app';
 
 /** Serialize for <script> injection: escape `</` so crafted strings can
  * never break out of the script tag (C14 stored-XSS). */
@@ -132,11 +132,11 @@ function CookieConsent() {
 
 function NotFoundPage() {
   useEffect(() => {
-    document.title = 'Page Not Found - SOC Forensics Lab';
+    document.title = 'Page Not Found - ThreatOptic';
     setMeta('description', 'The requested forensic resource was not found. Return to the threat dashboard, campaigns, or case board.');
     setCanonical('/404');
     const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle) ogTitle.setAttribute('content', 'Page Not Found - SOC Forensics Lab');
+    if (ogTitle) ogTitle.setAttribute('content', 'Page Not Found - ThreatOptic');
   }, []);
   return (
     <div className="page">
@@ -144,7 +144,7 @@ function NotFoundPage() {
       <h1>404 - Page Not Found</h1>
       <p className="sub">The forensic resource you requested does not exist or has been moved. This incident has not been logged - it is a routing miss, not a threat.</p>
       <div className="card" style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        <img src="/favicon.svg" alt="SOC Forensics shield logo - link back to dashboard" width={84} height={84} style={{ flexShrink: 0 }} loading="lazy" />
+        <img src="/favicon.svg" alt="ThreatOptic shield logo - link back to dashboard" width={84} height={84} style={{ flexShrink: 0 }} loading="lazy" />
         <div>
           <p style={{ marginTop: 0 }}>Try one of these instead:</p>
           <ul style={{ margin: '8px 0', paddingLeft: 18 }}>
@@ -154,7 +154,7 @@ function NotFoundPage() {
             <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
             <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
-          <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@socforensics.io - Austin, TX SOC.</p>
+          <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@threatoptic.io.</p>
         </div>
       </div>
       <div className="card" style={{ marginTop: 16 }}>
@@ -166,11 +166,11 @@ function NotFoundPage() {
           <span style={{ color: 'var(--muted)' }}>-</span>
           <a href="/llms.txt">LLMs</a>
           <span style={{ color: 'var(--muted)' }}>-</span>
-          <a href="https://socforensics.io/" rel="canonical">socforensics.io</a>
+          <a href="https://email-scanner-chi.vercel.app/" rel="canonical">ThreatOptic live demo</a>
         </div>
       </div>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({
-        '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - SOC Forensics Lab',
+        '@context': 'https://schema.org', '@type': 'WebPage', name: '404 Not Found - ThreatOptic',
         description: 'Requested forensic resource not found', url: `${CANONICAL_BASE}/404`,
         isPartOf: { '@id': `${CANONICAL_BASE}/#website` }
       })}} />
@@ -370,7 +370,7 @@ useEffect(() => {
         <SkipToContent />
         <ScrollProgress />
         <nav className="nav" aria-label="Primary">
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+          <Link to="/" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
         </nav>
         <div className="page"><div className="skel" style={{ height: 120 }} aria-hidden="true" /></div>
       </div>
@@ -384,7 +384,7 @@ useEffect(() => {
         <SkipToContent />
         <ScrollProgress />
         <nav className="nav" aria-label="Primary" style={{ justifyContent: 'space-between' }}>
-          <Link to="/" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+          <Link to="/" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
           <ThemeToggle />
         </nav>
         <ErrorBoundary>
@@ -409,7 +409,7 @@ useEffect(() => {
       <ScrollProgress />
       <BackToTop />
       <nav className="nav" aria-label="Primary">
-        <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> Email Forensics SOC</Link>
+        <Link to="/dashboard" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
         <Link to="/dashboard" className={`nl${onDashboard}`} aria-current={onDashboard ? 'page' : undefined}>Dashboard</Link>
         <Link to="/campaigns" className={`nl${onCampaigns}`}>Campaigns</Link>
         <Link to="/cases" className={`nl${on('/cases')}`}>Cases</Link>
@@ -438,7 +438,7 @@ useEffect(() => {
       <div className={`mobile-menu${mobileMenuOpen ? ' open' : ''}`} role="dialog" aria-modal="true" aria-label="Navigation menu">
         <div className="mobile-menu-panel">
           <div className="mobile-menu-header">
-            <Link to="/dashboard" className="brand" aria-label="SOC Forensics Lab home"><span aria-hidden="true">◈</span> SOC Forensics Lab</Link>
+            <Link to="/dashboard" className="brand" aria-label="ThreatOptic home"><span aria-hidden="true">◈</span> ThreatOptic</Link>
             <button className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close menu">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -491,9 +491,9 @@ useEffect(() => {
           <Link to="/dashboard">Dashboard</Link> - <Link to="/campaigns">Campaigns</Link> - <Link to="/cases">Cases</Link> - <Link to="/mailboxes">Mailboxes</Link> - <Link to="/model">Model</Link>
           {' - '}<Link to="/privacy">Privacy Policy</Link> - <Link to="/terms">Terms</Link>
           {' - '}<a href="/sitemap.xml">Sitemap</a> - <a href="/robots.txt">Robots</a> - <a href="/llms.txt">LLMs</a>
-          {' - '}<span>SOC Forensics Lab - 301 Congress Ave, Austin, TX 78701</span>
+          {' - '}<span>ThreatOptic · AI-powered email threat detection & forensics</span>
         </div>
-        <div style={{ marginTop: 6, color: 'var(--muted)' }}>© 2026 SOC Forensics Lab - socforensics.io</div>
+        <div style={{ marginTop: 6, color: 'var(--muted)' }}>© 2026 ThreatOptic - email-scanner-chi.vercel.app</div>
       </footer>
       <CookieConsent />
       <KeyboardShortcuts shortcuts={[

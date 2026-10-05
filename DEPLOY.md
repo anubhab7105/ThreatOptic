@@ -364,8 +364,8 @@ git add . && git commit -m "deploy: <description>" && git push
 
 | Issue | Impact | Fix |
 |-------|--------|-----|
-| `index.html` canonical URL hardcoded to `socforensics.io` | SEO only — app still works | Update when you get your domain |
-| `frontend/public/CNAME` says `socforensics.io` | Only matters for GitHub Pages (not used) | Ignore or delete the file |
+| `index.html` canonical URL hardcoded to `email-scanner-chi.vercel.app` | SEO only — app still works | Update when you get your domain |
+| `frontend/public/CNAME` (removed) | Was GitHub-Pages-only for the old domain; Vercel does not use it | Deleted |
 | `DEPLOY.md` references SQLite fallback + old auth routes | Documentation drift | Updated in this file |
 | `docker-compose.yml` had a local postgres service | Local dev only — doesn't affect Railway | Fixed in Phase 1 above |
 
