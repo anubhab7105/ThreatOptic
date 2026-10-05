@@ -61,8 +61,13 @@ def run_retention_job() -> dict:
              entry["purged_body"], entry["deleted"], oauth_cleaned)
     try:
         _rotate_audit_log_if_needed()
+        # Persist only minimal, non-sensitive audit metadata in clear text.
+        audit_entry = {
+            "timestamp": entry["timestamp"],
+            "event": "retention_run",
+        }
         with open(AUDIT_LOG, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+            f.write(json.dumps(audit_entry) + "\n")
     except Exception as e:
         log.warning("could not append retention audit log: %s", e)
     return entry
