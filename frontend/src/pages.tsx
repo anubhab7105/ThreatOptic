@@ -1227,7 +1227,7 @@ export function GraphSvg({ graph }: { graph: any }) {
 
       <div className="graph-layout">
       {/* SVG Visualization Canvas */}
-      <div className="graph-canvas" style={{ position: 'relative', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border-subtle)', background: 'var(--surface-inset)' }}>
+      <div className="graph-canvas" style={{ position: 'relative', overflow: 'auto', borderRadius: 16, border: '1px solid var(--border-subtle)', background: 'var(--surface-inset)', WebkitOverflowScrolling: 'touch' }}>
         <svg
           width="100%"
           viewBox={`0 0 ${w} ${h}`}
@@ -1790,6 +1790,7 @@ export function EmailView({ id }: { id: string }) {
                       <div className="map-frame">
                         <iframe
                           title="Geolocation map of email origin"
+                          className="map-embed"
                           width="100%"
                           height="380"
                           style={{ border: 0 }}
@@ -1892,7 +1893,7 @@ export function Campaigns() {
           />
         </Card>
       ) : (
-        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+        <div className="grid campaign-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))' }}>
           {cards.map((k) => (
             <Card
               key={k.id}

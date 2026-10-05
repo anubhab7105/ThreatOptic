@@ -1252,3 +1252,296 @@ table.neu-table { width: 100%; border-collapse: collapse; font-variant-numeric: 
 .activity-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .activity-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-primary); }
 .activity-time { color: var(--text-muted); font-size: 12px; }
+
+/* ============ Responsive foundation — every shape & size (appendix) ============
+   Breakpoints: ≤359 tiny / ≤767 mobile / 768–1023 tablet / ≥1024 desktop /
+   ≥1440 wide / ≥1920 ultrawide. Plus height, orientation, coarse-pointer,
+   safe-area and fluid-type rules. Token-only, no new colors. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html, body { overflow-x: clip; }
+@supports not (overflow: clip) { html, body { overflow-x: hidden; } }
+body { min-height: 100vh; min-height: 100dvh; }
+#root { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+#root > div { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+main#main-content { flex: 1; min-width: 0; width: 100%; }
+img, video { max-width: 100%; height: auto; }
+svg, canvas, iframe { max-width: 100%; }
+pre.dump, code, .mono { overflow-wrap: anywhere; word-break: break-word; }
+pre.dump { white-space: pre-wrap; max-width: 100%; }
+h1, h2, h3, p, li, dd, dt, td, th { overflow-wrap: break-word; }
+.case-head__subject, .greet-title, .login-form-title { overflow-wrap: anywhere; text-wrap: balance; }
+
+/* Fluid page rhythm — replaces fixed 22px padding on all viewports */
+.page {
+  width: 100%; max-width: 1200px; margin-inline: auto;
+  padding-inline: clamp(12px, 4vw, 22px);
+  padding-block: clamp(12px, 3vw, 22px);
+  min-width: 0;
+}
+.page-stack { gap: clamp(16px, 3vw, 24px); }
+
+/* Fluid type: headings scale down on tiny screens, never overflow */
+.page h1 { font-size: clamp(20px, 5vw, 24px); line-height: 1.2; }
+.greet-title { font-size: clamp(22px, 5.4vw, 30px); line-height: 1.12; }
+.case-head__subject { font-size: clamp(16px, 4.4vw, 20px); }
+.case-score__num { font-size: clamp(26px, 7vw, 32px); }
+
+/* Cards / wells / alerts: shrink padding + radius on small screens */
+.neu-card { min-width: 0; max-width: 100%; }
+.neu-well { min-width: 0; max-width: 100%; }
+.neu-card__header { flex-wrap: wrap; }
+.neu-card__actions { min-width: 0; }
+
+/* App shell nav — authenticated nav has 5 links + bell + theme + user + health.
+   Collapse to burger at tablet widths (fixes .nav-links selector that never matched). */
+.nav {
+  gap: 8px; row-gap: 8px;
+  padding-inline: max(12px, env(safe-area-inset-left), clamp(12px, 3vw, 20px));
+  padding-right: max(12px, env(safe-area-inset-right));
+  min-width: 0;
+}
+.nav .brand { min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
+.nav a.nl { white-space: nowrap; min-height: 40px; display: inline-flex; align-items: center; }
+.nav .health { white-space: nowrap; }
+@media (max-width: 1180px) {
+  .nav .health { display: none; }
+}
+@media (max-width: 1023px) {
+  .nav { flex-wrap: wrap; }
+  .nav a.nl { display: none; }
+  .nav .spacer { flex: 1; }
+  .mobile-menu-btn { display: inline-flex !important; align-items: center; justify-content: center; }
+}
+@media (min-width: 1024px) {
+  .mobile-menu-btn { display: none !important; }
+}
+/* Keep the legacy 768px rule working for landing + any .nav-links usage */
+@media (max-width: 768px) {
+  .landing-nav-links, .nav-links { display: none; }
+}
+/* Alert bell popover must never push viewport wider */
+.alert-popover { max-width: min(320px, 86vw); }
+@media (max-width: 767px) {
+  .nav { padding-block: 8px; }
+  .alert-popover {
+    position: fixed !important; top: 60px; left: 12px; right: 12px;
+    width: auto !important; max-width: none;
+  }
+}
+
+/* Greeting + actions: full-width stacked CTAs on phones */
+@media (max-width: 767px) {
+  .greet-row { align-items: stretch; flex-direction: column; }
+  .greet-actions { width: 100%; }
+  .greet-actions .neu-btn, .greet-actions button { flex: 1 1 auto; min-width: 0; }
+}
+
+/* KPI strip: 5 → 2-per-row → 1-per-row on tiny/foldables */
+.kpi { min-width: 0; }
+@media (max-width: 767px) {
+  .kpi-strip { gap: 12px 0; }
+  .kpi { flex: 1 1 40%; }
+  .kpi__value { font-size: clamp(22px, 6vw, 28px); }
+}
+@media (max-width: 380px) {
+  .kpi { flex-basis: 100%; margin-right: 0; padding-right: 0; }
+  .kpi + .kpi { border-left: 0; padding-left: 0; border-top: 1px solid var(--border-subtle); padding-top: 10px; }
+}
+
+/* Grids: never force a min column wider than the viewport */
+.grid { min-width: 0; }
+.campaign-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)) !important; }
+.grid.stats { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+@media (max-width: 1023px) {
+  .grid-2, .grid-3, .chart-grid, .master-detail, .graph-layout { grid-template-columns: minmax(0, 1fr); }
+}
+.chart-grid { min-width: 0; }
+.trend-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.trend { min-width: 320px; }
+.hbar-row .hbar-name { min-width: 0; }
+@media (max-width: 480px) {
+  .hbar-row .hbar-name { width: 84px; }
+  .chart-block { min-width: 0; }
+}
+
+/* Tables: dense forensic tables scroll horizontally with touch momentum.
+   min-width keeps columns readable instead of squashing to unreadable. */
+.neu-table-wrap {
+  overflow-x: auto; overflow-y: hidden;
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  scrollbar-width: thin; max-width: 100%;
+}
+table.neu-table { width: 100%; min-width: 560px; }
+.neu-table th { white-space: nowrap; }
+.neu-table td { overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  table.neu-table { min-width: 520px; }
+  .neu-table th, .neu-table td { padding: 8px 10px; font-size: 12px; }
+}
+/* Confusion matrix + per-class tables are wider — allow more room then scroll */
+@media (max-width: 767px) {
+  .neu-table-wrap:focus-within { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+}
+
+/* Forms: prevent iOS auto-zoom, stack grids, full-width actions on tiny */
+@media (max-width: 767px) {
+  .neu-input, .neu-select, .neu-textarea,
+  input[type="text"], input[type="search"], input[type="email"],
+  input[type="password"], input[type="number"], select, textarea { font-size: 16px; }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .row { gap: 8px; }
+}
+@media (max-width: 480px) {
+  .neu-card { padding: 16px; border-radius: 14px; }
+  .neu-well { padding: 12px; }
+  .neu-modal { padding: 16px; }
+  .neu-drawer { padding: 16px; }
+  .row .neu-btn, .row button { flex: 1 1 100%; }
+  .row .neu-btn--sm, .row button.small { flex: 1 1 auto; }
+  .provider-row { align-items: stretch; }
+}
+@media (max-width: 359px) {
+  .page { padding-inline: 10px; }
+  .neu-card { padding: 12px; }
+  .login-card { padding: 20px 14px !important; }
+  .greet-actions { flex-direction: column; align-items: stretch; }
+}
+
+/* Segmented / tabs / stepper: scroll, never force page-wide overflow */
+.neu-segmented, .neu-tabs, .stepper {
+  max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain; scrollbar-width: thin;
+}
+.neu-segmented button, .neu-tabs [role="tab"] { flex-shrink: 0; }
+@media (max-width: 480px) {
+  .neu-segmented { display: flex; width: 100%; }
+  .neu-segmented button { flex: 1 1 0; padding: 8px 8px; font-size: 12px; min-height: 44px; }
+}
+
+/* Login: padding + viewport height that respects mobile chrome + notch */
+.login-page-wrapper {
+  min-height: calc(100vh - 80px); min-height: calc(100dvh - 80px);
+  padding: clamp(16px, 5vw, 32px) clamp(12px, 4vw, 20px);
+  padding-left: max(clamp(12px, 4vw, 20px), env(safe-area-inset-left));
+  padding-right: max(clamp(12px, 4vw, 20px), env(safe-area-inset-right));
+}
+.login-card { max-width: 420px; width: min(100%, 420px); }
+@media (max-width: 480px) {
+  .login-card { padding: 24px 18px; border-radius: 12px; max-width: 100%; }
+  .login-form-title { font-size: 20px; }
+}
+
+/* Email detail: meta wraps, score bar shrinks, case row stacks */
+.case-meta { min-width: 0; }
+.case-meta .mono { display: inline-block; max-width: 100%; }
+#email-case-row { flex-wrap: wrap; width: 100%; }
+#email-case-row > span { min-width: 0; }
+@media (max-width: 560px) {
+  #email-case-row { flex-direction: column; align-items: stretch; }
+  #email-case-row > span { max-width: none !important; width: 100%; }
+  .case-score { flex-wrap: wrap; }
+}
+
+/* Graph: keep SVG usable on phones — scroll instead of squashing labels */
+.graph-layout { min-width: 0; }
+.graph-canvas { min-width: 0; max-width: 100%; touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.graph-canvas svg { display: block; width: 100%; height: auto; }
+@media (max-width: 700px) {
+  .graph-canvas svg { min-width: 560px; }
+  .graph-canvas { border-radius: 12px; }
+}
+
+/* Map: responsive heights for phones, landscape, short viewports */
+.map-frame { min-width: 0; }
+.map-frame iframe, .map-frame .map-embed { display: block; border: 0; width: 100%; height: 380px; }
+@media (max-width: 767px) {
+  .map-frame iframe, .map-frame .map-embed { height: 280px; }
+}
+@media (max-width: 480px) {
+  .map-frame iframe, .map-frame .map-embed { height: 240px; }
+}
+
+/* Modal / drawer / cookie / toast / back-to-top respect notch + tiny screens */
+.neu-modal-backdrop { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.neu-modal { max-width: min(520px, 100%); max-height: min(90vh, 90dvh); }
+.neu-drawer { width: min(320px, 92vw); }
+.neu-toast-stack { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); left: 12px; align-items: flex-end; }
+@media (max-width: 480px) {
+  .neu-toast-stack { left: 12px; right: 12px; max-width: none; }
+}
+.cookie-banner {
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding-inline: max(14px, env(safe-area-inset-left), env(safe-area-inset-right));
+}
+@media (max-width: 640px) {
+  .cookie-banner { flex-direction: column; align-items: stretch; }
+  .cookie-actions { width: 100%; }
+  .cookie-actions > * { flex: 1 1 auto; text-align: center; }
+}
+.back-to-top { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+
+/* Footer: wrap links, safe-area, centered stack on phones */
+.footer { padding-inline: max(16px, env(safe-area-inset-left), env(safe-area-inset-right)); }
+.footer > div { display: flex; flex-wrap: wrap; gap: 6px 10px; justify-content: center; }
+@media (max-width: 560px) {
+  .footer { font-size: 11px; }
+}
+
+/* Cases master-detail + invest list: full-bleed safe on phones */
+.master-detail { min-width: 0; }
+.invest-list__item { min-width: 0; max-width: 100%; }
+.deflist { min-width: 0; }
+.deflist dd { min-width: 0; }
+
+/* Tooltips / popovers never exceed viewport */
+.neu-tooltip__bubble { max-width: min(280px, 80vw); white-space: normal; overflow-wrap: anywhere; }
+
+/* Short / landscape screens (phones in landscape, small laptops, split view) */
+@media (max-height: 500px) and (orientation: landscape) {
+  .page { padding-block: 10px; }
+  .page-stack { gap: 12px; }
+  .login-page-wrapper { min-height: auto; padding-block: 12px; }
+  .neu-modal { max-height: 92vh; max-height: 92dvh; }
+  .neu-drawer { width: min(420px, 92vw); }
+  .map-frame iframe, .map-frame .map-embed { height: 220px; }
+  .trend { height: 72px; }
+}
+
+/* Tablet portrait: two-column grids already collapse; keep stepper + kpi breathing */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .page { max-width: 100%; }
+  .kpi { flex-basis: 30%; }
+}
+
+/* Desktop wide: use extra width without stretching lines */
+@media (min-width: 1440px) {
+  .page { max-width: 1280px; }
+}
+/* Ultrawide: cap line length, center, let charts breathe */
+@media (min-width: 1920px) {
+  .page { max-width: 1360px; }
+  .chart-grid { gap: 20px; }
+}
+
+/* Foldables / very narrow portrait (Galaxy Fold ~280px) */
+@media (max-width: 320px) {
+  .page { padding-inline: 8px; }
+  .neu-card { padding: 10px; }
+  .kpi__value { font-size: 20px; }
+  .neu-btn--lg { min-height: 44px; padding: 0 16px; font-size: 13px; }
+  table.neu-table { min-width: 480px; }
+}
+
+/* Coarse pointers: larger hit areas without changing desktop layout */
+@media (pointer: coarse) {
+  .neu-btn { min-height: 44px; }
+  .neu-icon-btn { width: 44px; height: 44px; }
+  .nav a.nl { min-height: 44px; }
+  .stepper li { min-height: 44px; }
+  .invest-list__item { padding: 14px; }
+}
+
+/* High-contrast + reduced-motion already handled above; keep tables readable */
+@media (prefers-contrast: more) {
+  .neu-table-wrap { border-width: 2px; }
+}

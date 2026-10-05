@@ -262,7 +262,7 @@ function AlertBell() {
         <span className="dot" style={{ background: live ? 'var(--success)' : 'var(--text-muted)', marginLeft: 6 }} aria-hidden="true" />
       </button>
       {open && (
-        <div className="card" style={{ position: 'absolute', right: 0, top: '110%', width: 320, zIndex: 50 }} role="alert">
+        <div className="card alert-popover" style={{ position: 'absolute', right: 0, top: '110%', width: 320, maxWidth: 'min(320px, 86vw)', zIndex: 50 }} role="alert">
           <h3>High-risk alerts {live ? '(live)' : '(offline)'}</h3>
           {alerts.length === 0 ? <p className="sub">No alerts this session.</p> : (
             <ul style={{ paddingLeft: 18, margin: 0 }}>

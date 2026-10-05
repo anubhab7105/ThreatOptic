@@ -138,3 +138,74 @@
 @media (prefers-contrast: more) {
   .landing-new__viewport, .landing-new__showcase-panel, .landing-new__well { box-shadow: none !important; }
 }
+
+/* ============ Landing responsive appendix — tiny / landscape / ultrawide ============ */
+.landing-new, .landing-new__main, .landing-new__wrap, .landing-new__hero-grid,
+.landing-new__demo-grid, .landing-new__explain, .landing-new__split,
+.landing-new__steps, .landing-new__geo-grid, .landing-new__footer-grid { min-width: 0; }
+.landing-new__hero-grid, .landing-new__demo-grid, .landing-new__explain,
+.landing-new__split, .landing-new__geo-grid { min-width: 0; }
+.landing-new__viewport, .landing-new__showcase-panel { min-width: 0; max-width: 100%; }
+.landing-new__well { min-width: 0; }
+.landing-new__well canvas { width: 100% !important; height: 100% !important; max-width: 100%; }
+.landing-new__graph-svg { min-width: 0; }
+.landing-new__demo-mail { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.landing-new__cta-row .neu-btn { min-width: 0; }
+/* Phones: stack CTAs full-width, shrink section rhythm, keep type fluid */
+@media (max-width: 480px) {
+  .landing-new__title { font-size: clamp(28px, 9vw, 36px); }
+  .landing-new__lead { font-size: 16px; }
+  .landing-new__cta-row { flex-direction: column; align-items: stretch; }
+  .landing-new__cta-row .neu-btn { width: 100%; justify-content: center; }
+  .landing-new__chips { gap: 6px; }
+  .landing-new__showcase-panel { padding: 16px; }
+  .landing-new__viewport { padding: 10px; }
+  .landing-new__cta-panel { padding: 32px 16px; }
+  .landing-new__footer { padding: 32px 16px 20px; }
+}
+/* Foldables / very narrow (≤360px): single column, tighter wells */
+@media (max-width: 360px) {
+  .landing-new__section { padding: 36px 12px; }
+  .landing-new__hero { padding: 28px 12px 36px; }
+  .landing-new__hero-grid { gap: 20px; }
+  .landing-new__steps { gap: 12px; }
+  .landing-new__well { aspect-ratio: 1 / 1.1; }
+  .landing-new__flow { align-items: stretch; }
+  .landing-new__flow-step { width: 100%; justify-content: flex-start; }
+  .landing-new__flow-sep { display: none; }
+  .landing-new__nav-actions { gap: 4px; }
+}
+/* Landscape phones / short viewports: reduce vertical rhythm, keep hero side-by-side when wide enough */
+@media (max-height: 500px) and (orientation: landscape) {
+  .landing-new__section { padding: 32px 20px; }
+  .landing-new__hero { padding: 24px 20px 32px; }
+  .landing-new__hero-grid { gap: 24px; }
+  .landing-new__well { aspect-ratio: 16 / 9; }
+}
+/* Tablet portrait: hero already stacks at 1023px; keep showcase tabs scrollable */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .landing-new__hero-grid { gap: 32px; }
+  .landing-new__steps { grid-template-columns: 1fr 1fr; }
+}
+/* Wide desktop: cap line length, widen hero canvas */
+@media (min-width: 1440px) {
+  .landing-new__wrap { max-width: 1280px; }
+  .landing-new__wrap--hero { max-width: 1400px; }
+  .landing-new__hero-grid { gap: 64px; }
+}
+/* Ultrawide: never stretch text, center everything */
+@media (min-width: 1920px) {
+  .landing-new__wrap { max-width: 1360px; }
+  .landing-new__wrap--hero { max-width: 1480px; }
+}
+/* Safe-area for notched phones + tablets */
+.landing-new__header, .landing-new__hero, .landing-new__section, .landing-new__footer {
+  padding-left: max(22px, env(safe-area-inset-left));
+  padding-right: max(22px, env(safe-area-inset-right));
+}
+@media (max-width: 767px) {
+  .landing-new__header, .landing-new__hero, .landing-new__section, .landing-new__footer {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+}
