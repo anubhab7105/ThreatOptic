@@ -8,7 +8,7 @@ ThreatOptic provides real-time phishing, Business Email Compromise (BEC) and spo
 - Canonical domain: https://email-scanner-chi.vercel.app/
 - Primary UI: https://email-scanner-chi.vercel.app/
 - Docs: https://email-scanner-chi.vercel.app/model (model transparency)
-- Contact: ThreatOptic - hello@threatoptic.io
+- Contact: ThreatOptic - anubhab7105@gmail.com
 - Sitemap: https://email-scanner-chi.vercel.app/sitemap.xml
 - Robots: https://email-scanner-chi.vercel.app/robots.txt
 
@@ -32,7 +32,7 @@ You may crawl and index all public pages listed in sitemap.xml. Do not attempt t
 - Retention policy enforced daily at 03:00 local time, audit log at `backend/retention_audit.log`
 
 ## Opt-Out
-If you operate a crawler and wish to be excluded, respect `Disallow: /api/` and honor `User-agent: *` in robots.txt. For removal requests, contact hello@threatoptic.io.
+If you operate a crawler and wish to be excluded, respect `Disallow: /api/` and honor `User-agent: *` in robots.txt. For removal requests, contact anubhab7105@gmail.com.
 
 ## Structured Data
 All public pages expose `application/ld+json` for Organization, WebSite and BreadcrumbList. OG image: https://email-scanner-chi.vercel.app/og-image.png (1200x630 PNG) - Attribution required.

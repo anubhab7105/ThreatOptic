@@ -2638,7 +2638,7 @@ export function PrivacyPolicy() {
     <div className="page">
       <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Privacy Policy' }]} />
       <h1>Privacy Policy</h1>
-      <p className="sub">Effective 20 Sep 2026 - ThreatOptic. Contact hello@threatoptic.io</p>
+      <p className="sub">Effective 20 Sep 2026 - ThreatOptic. Contact anubhab7105@gmail.com</p>
       <div className="card">
         <h3>What we collect</h3>
         <p>Analyst credentials (email, role via Supabase Auth), ingested email RFC822 content for forensic scoring, mailbox OAuth tokens stored encrypted server-side, and browser local storage for theme and cookie consent. We do not sell data.</p>
@@ -2647,7 +2647,7 @@ export function PrivacyPolicy() {
         <h3>Cookies</h3>
         <p>Essential cookies keep you signed in (in-memory JWT, not localStorage) and remember theme and consent choice. No advertising cookies. Analytics is off by default. Use the banner to accept or decline essential storage.</p>
         <h3>Your rights</h3>
-        <p>Request access or deletion of your analyst account and ingested data via hello@threatoptic.io. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
+        <p>Request access or deletion of your analyst account and ingested data via anubhab7105@gmail.com. OAuth refresh tokens can be revoked via Mailboxes disconnect.</p>
         <h3>Data location</h3>
         <p>Self-hosted SQLite by default or your Postgres/Elastic/Neo4j cluster per docker-compose. Geolocation uses offline GeoIP fallback unless live lookups are enabled.</p>
       </div>
@@ -2685,7 +2685,7 @@ export function TermsConditions() {
         <h3>Liability</h3>
         <p>To the full extent permitted by law, ThreatOptic is not liable for indirect damages from missed or flagged mail.</p>
         <h3>Contact</h3>
-        <p>Questions: hello@threatoptic.io.</p>
+        <p>Questions: anubhab7105@gmail.com.</p>
       </div>
       <InternalLinks current="/terms" />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd({

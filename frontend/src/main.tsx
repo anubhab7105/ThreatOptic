@@ -154,7 +154,7 @@ function NotFoundPage() {
             <li><Link to="/mailboxes">Mailboxes</Link> - OAuth connectors</li>
             <li><Link to="/model">Model Info</Link> - transparency, metrics, confusion matrix</li>
           </ul>
-          <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to hello@threatoptic.io.</p>
+          <p className="sub" style={{ marginBottom: 0 }}>If you followed an internal link, please report the broken path to anubhab7105@gmail.com.</p>
         </div>
       </div>
       <div className="card" style={{ marginTop: 16 }}>

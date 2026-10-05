@@ -297,5 +297,12 @@ cd frontend && npm test && npm run build                        # Vitest + produ
 
 - **Project:** ThreatOptic — built for AICTE Problem Statement 26106 (Cyber Security Cell, Software category, Blockchain & Cybersecurity theme).
 - **Status:** working demo — rule + ML hybrid detection, Supabase auth, Vercel + Railway deployment, offline-capable pipeline. Known limits: transformer reranking is a dormant hook (TF-IDF + LogisticRegression in production), large real emails ingest slowly, transient 500s during `uvicorn --reload` restarts.
-- **Contact:** hello@threatoptic.io (replace with your team's inbox before evaluation).
+- **Contact:** anubhab7105@gmail.com
 - **License:** Proprietary / Confidential. All rights reserved.
+
+<br/>
+<p align="center">
+  <strong>ThreatOptic — AI-Powered Email Threat Detection, GeoLocation & Forensic Intelligence Platform</strong><br/>
+  <sub>All India Council for Technical Education (Cyber Security Cell)</sub><br/>
+  <sub>Built for SIH 2026</sub>
+</p>
