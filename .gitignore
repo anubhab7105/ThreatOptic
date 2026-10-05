@@ -19,3 +19,20 @@ k8s/*secret*.yaml
 
 # TypeScript incremental build artifact
 frontend/tsconfig.tsbuildinfo
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build, Testing, and Linting
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
