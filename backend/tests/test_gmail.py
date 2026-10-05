@@ -1,5 +1,6 @@
 """Gmail OAuth2 connector tests (Google HTTP calls mocked — fully offline)."""
 import uuid
+from urllib.parse import urlparse
 
 from fastapi.testclient import TestClient
 from helpers import login
@@ -327,4 +328,6 @@ def test_analyst_can_still_reach_gmail_auth_url(monkeypatch):
         r = c.post("/api/v1/gmail/auth-url", headers=h, json={
             "redirect_uri": "http://localhost:5173/", "client_id": "demo-id"})
         assert r.status_code == 200, r.text
-        assert "accounts.google.com" in r.json()["auth_url"]
+        auth_url = r.json()["auth_url"]
+        parsed = urlparse(auth_url)
+        assert parsed.hostname == "accounts.google.com"
